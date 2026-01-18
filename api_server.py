@@ -33,6 +33,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from ai_dev_team import AIDevTeam, ParallelCodingEngine
+from ai_dev_team.integrations.github_webhooks import GitHubWebhookHandler
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -52,6 +53,7 @@ CORS(app, origins=[
 # Global team instance
 team: Optional[AIDevTeam] = None
 engine: Optional[ParallelCodingEngine] = None
+webhook_handler: Optional[GitHubWebhookHandler] = None
 
 
 def get_team():
@@ -61,6 +63,20 @@ def get_team():
         team = AIDevTeam(project_name="api-server")
         engine = ParallelCodingEngine(team)
     return team, engine
+
+
+def get_webhook_handler():
+    """Get or create the GitHub webhook handler"""
+    global webhook_handler
+    if webhook_handler is None:
+        from ai_dev_team.integrations.github import GitHubIntegration
+        team_instance, _ = get_team()
+        github_integration = GitHubIntegration(ai_team=team_instance)
+        webhook_handler = GitHubWebhookHandler(
+            webhook_secret=os.getenv("GITHUB_WEBHOOK_SECRET"),
+            github_integration=github_integration,
+        )
+    return webhook_handler
 
 
 def async_route(f):
@@ -347,6 +363,214 @@ async def ask_team():
 
 
 # ============================================
+# GitHub Webhook Endpoint
+# ============================================
+
+@app.route('/webhooks/github', methods=['POST'])
+@async_route
+async def github_webhook():
+    """Handle GitHub webhook events"""
+    handler = get_webhook_handler()
+
+    event_type = request.headers.get('X-GitHub-Event', '')
+    delivery_id = request.headers.get('X-GitHub-Delivery', '')
+    signature = request.headers.get('X-Hub-Signature-256', '')
+
+    # Verify signature
+    if not handler.verify_signature(request.data, signature):
+        return jsonify({"error": "Invalid signature"}), 401
+
+    payload = request.get_json() or {}
+
+    result = await handler.process_webhook(
+        event_type=event_type,
+        payload=payload,
+        delivery_id=delivery_id,
+        signature=signature,
+    )
+
+    return jsonify(result)
+
+
+# ============================================
+# Memory & Learning Endpoints
+# ============================================
+
+# Global memory instance
+memory_system = None
+
+def get_memory():
+    """Get or create the memory system instance"""
+    global memory_system
+    if memory_system is None:
+        from ai_dev_team.memory.system import MemorySystem
+        memory_system = MemorySystem(use_firestore=True)
+    return memory_system
+
+
+@app.route('/api/memory/mistake', methods=['POST'])
+@async_route
+async def store_mistake():
+    """Store a mistake pattern for learning (used by CI/CD and GitHub Actions)"""
+    data = request.get_json() or {}
+
+    description = data.get('description', '')
+    mistake_type = data.get('mistake_type', 'deployment_failure')
+    severity = data.get('severity', 'high')
+    resolution = data.get('resolution', '')
+    prevention_strategy = data.get('prevention_strategy', '')
+    project = data.get('project', 'chatterfix')
+    context = data.get('context', {})
+
+    if not description:
+        return jsonify({
+            "success": False,
+            "error": "No description provided"
+        }), 400
+
+    from ai_dev_team.memory.system import MistakeType
+
+    mistake_type_map = {
+        "code_error": MistakeType.CODE_ERROR,
+        "architecture_flaw": MistakeType.ARCHITECTURE_FLAW,
+        "performance_issue": MistakeType.PERFORMANCE_ISSUE,
+        "security_vulnerability": MistakeType.SECURITY_VULNERABILITY,
+        "deployment_failure": MistakeType.DEPLOYMENT_FAILURE,
+        "logic_error": MistakeType.LOGIC_ERROR,
+        "integration_issue": MistakeType.INTEGRATION_ISSUE,
+    }
+
+    memory = get_memory()
+
+    try:
+        mistake_id = await memory.capture_mistake(
+            mistake_type=mistake_type_map.get(mistake_type, MistakeType.DEPLOYMENT_FAILURE),
+            description=description,
+            context=context,
+            resolution=resolution,
+            prevention_strategy=prevention_strategy,
+            severity=severity,
+            project=project,
+            tags=data.get('tags', ['ci-cd', 'automated'])
+        )
+
+        logger.info(f"Stored mistake pattern: {mistake_id}")
+
+        return jsonify({
+            "success": True,
+            "mistake_id": mistake_id,
+            "message": f"Mistake pattern stored: {description[:50]}...",
+            "stats": memory.get_statistics()
+        })
+    except Exception as e:
+        logger.error(f"Error storing mistake: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/memory/solution', methods=['POST'])
+@async_route
+async def store_solution():
+    """Store a solution pattern for learning"""
+    data = request.get_json() or {}
+
+    problem_pattern = data.get('problem_pattern', '')
+    solution_steps = data.get('solution_steps', [])
+    project = data.get('project', 'chatterfix')
+
+    if not problem_pattern or not solution_steps:
+        return jsonify({
+            "success": False,
+            "error": "problem_pattern and solution_steps are required"
+        }), 400
+
+    memory = get_memory()
+
+    try:
+        solution_id = await memory.capture_solution(
+            problem_pattern=problem_pattern,
+            solution_steps=solution_steps,
+            success_rate=data.get('success_rate', 1.0),
+            project=project,
+            best_practices=data.get('best_practices', []),
+            tags=data.get('tags', ['automated'])
+        )
+
+        return jsonify({
+            "success": True,
+            "solution_id": solution_id,
+            "message": f"Solution pattern stored: {problem_pattern[:50]}..."
+        })
+    except Exception as e:
+        logger.error(f"Error storing solution: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/memory/search', methods=['GET'])
+@async_route
+async def search_memory():
+    """Search memory for mistakes and solutions"""
+    query = request.args.get('q', '')
+
+    if not query:
+        return jsonify({
+            "success": False,
+            "error": "Query parameter 'q' is required"
+        }), 400
+
+    memory = get_memory()
+
+    try:
+        results = await memory.search_all(query, limit=10)
+
+        return jsonify({
+            "success": True,
+            "query": query,
+            "mistakes": [
+                {
+                    "id": m.mistake_id,
+                    "type": m.mistake_type,
+                    "description": m.description,
+                    "severity": m.severity,
+                    "prevention": m.prevention_strategy
+                }
+                for m in results["mistakes"]
+            ],
+            "solutions": [
+                {
+                    "id": s.solution_id,
+                    "problem": s.problem_pattern,
+                    "steps": s.solution_steps,
+                    "success_rate": s.success_rate
+                }
+                for s in results["solutions"]
+            ],
+            "total_results": results["total_results"]
+        })
+    except Exception as e:
+        logger.error(f"Error searching memory: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/memory/stats', methods=['GET'])
+def memory_stats():
+    """Get memory system statistics"""
+    memory = get_memory()
+    return jsonify({
+        "success": True,
+        "stats": memory.get_statistics()
+    })
+
+
+# ============================================
 # WebSocket Support (for real-time updates)
 # ============================================
 
@@ -381,6 +605,12 @@ if __name__ == '__main__':
 ║    POST /api/ai/security    - Security audit                      ║
 ║    POST /api/ai/fix         - Fix issues                          ║
 ║    POST /api/ai/ask         - Ask the team                        ║
+║    POST /webhooks/github    - GitHub webhook handler              ║
+║  Memory & Learning:                                               ║
+║    POST /api/memory/mistake - Store mistake pattern (CI/CD)       ║
+║    POST /api/memory/solution - Store solution pattern             ║
+║    GET  /api/memory/search  - Search mistakes & solutions         ║
+║    GET  /api/memory/stats   - Memory system statistics            ║
 ╚═══════════════════════════════════════════════════════════════════╝
     """)
 

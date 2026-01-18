@@ -1,0 +1,20 @@
+# Web Platform
+fastapi>=0.109.0
+uvicorn>=0.27.0
+pydantic>=2.10.0       # Python 3.13 compatible
+python-multipart>=0.0.9
+jinja2>=3.1.2
+python-dotenv>=1.0.0
+requests>=2.31.0
+aiofiles>=23.2.1
+
+# AI Dev Team - Core
+aiohttp>=3.9.0
+
+# AI Model SDKs
+anthropic>=0.40.0      # Claude
+openai>=1.50.0         # ChatGPT
+google-generativeai>=0.8.0  # Gemini
+
+# Optional: Firebase for persistent memory
+# firebase-admin>=6.0.0

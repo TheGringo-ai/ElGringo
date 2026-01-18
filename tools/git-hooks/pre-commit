@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""
+AI Dev Team - Pre-commit Hook
+=============================
+
+Automatically reviews staged code changes before commit.
+Blocks commits with critical issues, warns on medium issues.
+
+Install with: ai-tools install-hooks
+"""
+
+import subprocess
+import sys
+import os
+
+# Find the platform directory
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PLATFORM_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+sys.path.insert(0, PLATFORM_DIR)
+
+# Load environment
+from dotenv import load_dotenv
+load_dotenv(os.path.join(PLATFORM_DIR, '.env'))
+
+import asyncio
+from ai_dev_team import AIDevTeam
+
+
+def get_staged_diff():
+    """Get the staged changes"""
+    try:
+        diff = subprocess.check_output(
+            ['git', 'diff', '--cached', '--diff-filter=ACMR'],
+            text=True
+        )
+        return diff
+    except subprocess.CalledProcessError:
+        return None
+
+
+def get_staged_files():
+    """Get list of staged files"""
+    try:
+        files = subprocess.check_output(
+            ['git', 'diff', '--cached', '--name-only', '--diff-filter=ACMR'],
+            text=True
+        ).strip().split('\n')
+        return [f for f in files if f]
+    except subprocess.CalledProcessError:
+        return []
+
+
+async def review_code(diff: str, files: list):
+    """Review the staged code with AI team"""
+    team = AIDevTeam(project_name=os.path.basename(os.getcwd()))
+
+    if not team.agents:
+        print("AI Team not available - skipping review")
+        return True, None
+
+    prompt = f"""Review this code change for a git commit. Focus on CRITICAL issues only.
+
+FILES CHANGED: {', '.join(files)}
+
+DIFF:
+{diff[:5000]}
+
+Respond in this EXACT format:
+SEVERITY: [PASS|WARN|BLOCK]
+ISSUES:
+- Issue 1 (if any)
+- Issue 2 (if any)
+SUMMARY: One line summary
+
+PASS = No issues, ok to commit
+WARN = Minor issues, ok to commit but consider fixing
+BLOCK = Critical issues (security, bugs, broken code) - do not commit
+
+Be concise. Only BLOCK for truly critical issues."""
+
+    result = await team.ask(prompt)
+
+    content = result.content.upper()
+    if "SEVERITY: BLOCK" in content or "SEVERITY:BLOCK" in content:
+        return False, result.content
+    elif "SEVERITY: WARN" in content or "SEVERITY:WARN" in content:
+        return True, result.content  # Allow but show warning
+    else:
+        return True, result.content
+
+
+def main():
+    # Get staged changes
+    diff = get_staged_diff()
+    files = get_staged_files()
+
+    if not diff or not files:
+        # No staged changes
+        sys.exit(0)
+
+    # Skip if changes are too small
+    if len(diff) < 50:
+        sys.exit(0)
+
+    print("\n🤖 AI Code Review...")
+
+    try:
+        passed, feedback = asyncio.run(review_code(diff, files))
+
+        if feedback:
+            print("\n" + "-" * 50)
+            print(feedback[:1000])
+            print("-" * 50)
+
+        if not passed:
+            print("\n❌ COMMIT BLOCKED - Critical issues found")
+            print("Fix the issues above and try again.")
+            print("To skip review: git commit --no-verify")
+            sys.exit(1)
+        else:
+            print("\n✅ Code review passed")
+            sys.exit(0)
+
+    except Exception as e:
+        # Don't block commits on review errors
+        print(f"\n⚠️ Review skipped: {e}")
+        sys.exit(0)
+
+
+if __name__ == '__main__':
+    main()

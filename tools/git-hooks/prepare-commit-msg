@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""
+AI Dev Team - Prepare Commit Message Hook
+==========================================
+
+Generates an AI-powered commit message based on staged changes.
+Populates the commit message editor with a suggested message.
+
+Install with: ai-tools install-hooks
+"""
+
+import subprocess
+import sys
+import os
+
+# Find the platform directory
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PLATFORM_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+sys.path.insert(0, PLATFORM_DIR)
+
+# Load environment
+from dotenv import load_dotenv
+load_dotenv(os.path.join(PLATFORM_DIR, '.env'))
+
+import asyncio
+from ai_dev_team import AIDevTeam
+
+
+def get_staged_info():
+    """Get staged changes summary"""
+    try:
+        stat = subprocess.check_output(
+            ['git', 'diff', '--cached', '--stat'],
+            text=True
+        )
+        diff = subprocess.check_output(
+            ['git', 'diff', '--cached'],
+            text=True
+        )
+        return stat, diff[:3000]
+    except subprocess.CalledProcessError:
+        return None, None
+
+
+async def generate_message(stat: str, diff: str):
+    """Generate commit message with AI"""
+    team = AIDevTeam(project_name=os.path.basename(os.getcwd()))
+
+    if not team.agents:
+        return None
+
+    prompt = f"""Generate a git commit message for these changes:
+
+FILES:
+{stat}
+
+DIFF:
+{diff}
+
+Format:
+- First line: type(scope): description (max 50 chars)
+- Types: feat, fix, docs, style, refactor, test, chore
+- Be specific about WHAT changed
+
+Return ONLY the commit message, nothing else."""
+
+    result = await team.ask(prompt)
+    return result.content.strip()
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit(0)
+
+    commit_msg_file = sys.argv[1]
+    commit_source = sys.argv[2] if len(sys.argv) > 2 else None
+
+    # Only generate for new commits (not amend, merge, etc.)
+    if commit_source:
+        sys.exit(0)
+
+    # Check if message already has content
+    with open(commit_msg_file, 'r') as f:
+        current = f.read()
+
+    if current.strip() and not current.startswith('#'):
+        sys.exit(0)
+
+    stat, diff = get_staged_info()
+    if not stat or not diff:
+        sys.exit(0)
+
+    try:
+        message = asyncio.run(generate_message(stat, diff))
+
+        if message:
+            with open(commit_msg_file, 'w') as f:
+                f.write(message)
+                f.write("\n\n# AI-generated commit message above")
+                f.write("\n# Edit as needed or leave as-is")
+                f.write(current)
+    except Exception:
+        pass  # Don't fail on errors
+
+    sys.exit(0)
+
+
+if __name__ == '__main__':
+    main()

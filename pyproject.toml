@@ -1,0 +1,88 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-team-platform"
+version = "1.0.0"
+description = "AI Team Platform - Multi-Model AI Orchestration for Rapid Application Development"
+readme = "AI_DEV_TEAM_README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Fred AI Team", email = "fred@example.com"}
+]
+keywords = [
+    "ai",
+    "development",
+    "claude",
+    "chatgpt",
+    "gemini",
+    "grok",
+    "orchestration",
+    "collaboration",
+    "platform",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "aiohttp>=3.8.0",
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "pydantic>=2.5.0",
+    "jinja2>=3.1.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+claude = ["anthropic>=0.18.0"]
+openai = ["openai>=1.10.0"]
+gemini = ["google-generativeai>=0.8.0"]
+firestore = ["firebase-admin>=6.0.0"]
+all = [
+    "anthropic>=0.18.0",
+    "openai>=1.10.0",
+    "google-generativeai>=0.8.0",
+    "firebase-admin>=6.0.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+ai-dev-team = "ai_dev_team.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/fredtaylor/ai-team-platform"
+Documentation = "https://github.com/fredtaylor/ai-team-platform#readme"
+Repository = "https://github.com/fredtaylor/ai-team-platform"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ai_dev_team*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

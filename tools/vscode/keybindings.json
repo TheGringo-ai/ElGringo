@@ -1,0 +1,35 @@
+// AI Dev Team - VS Code Keybindings
+// ==================================
+//
+// Add these to your VS Code keybindings.json
+// (Cmd+Shift+P > "Preferences: Open Keyboard Shortcuts (JSON)")
+//
+// Copy the contents of the array below into your keybindings.json
+
+[
+    {
+        "key": "cmd+shift+a",
+        "command": "workbench.action.tasks.runTask",
+        "args": "AI: Ask Question"
+    },
+    {
+        "key": "cmd+shift+r",
+        "command": "workbench.action.tasks.runTask",
+        "args": "AI: Review Current File"
+    },
+    {
+        "key": "cmd+shift+f",
+        "command": "workbench.action.tasks.runTask",
+        "args": "AI: Fix Error"
+    },
+    {
+        "key": "cmd+shift+c",
+        "command": "workbench.action.tasks.runTask",
+        "args": "AI: Generate Commit Message"
+    },
+    {
+        "key": "cmd+shift+t",
+        "command": "workbench.action.tasks.runTask",
+        "args": "AI: Team Status"
+    }
+]

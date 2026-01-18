@@ -1,0 +1,111 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "AI: Ask Question",
+            "type": "shell",
+            "command": "${env:HOME}/Development/Projects/AITeamPlatform/ai",
+            "args": ["ask", "${input:question}"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "focus": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "AI: Review Current File",
+            "type": "shell",
+            "command": "${env:HOME}/Development/Projects/AITeamPlatform/ai",
+            "args": ["review", "${file}"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "AI: Review Staged Changes",
+            "type": "shell",
+            "command": "${env:HOME}/Development/Projects/AITeamPlatform/ai",
+            "args": ["review", "--staged"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "AI: Generate Commit Message",
+            "type": "shell",
+            "command": "${env:HOME}/Development/Projects/AITeamPlatform/ai",
+            "args": ["commit"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "focus": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "AI: Fix Error",
+            "type": "shell",
+            "command": "${env:HOME}/Development/Projects/AITeamPlatform/ai",
+            "args": ["fix", "${input:error}"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "AI: Team Status",
+            "type": "shell",
+            "command": "${env:HOME}/Development/Projects/AITeamPlatform/ai",
+            "args": ["status"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "AI: Start Chat",
+            "type": "shell",
+            "command": "${env:HOME}/Development/Projects/AITeamPlatform/ai",
+            "args": ["chat"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "focus": true
+            },
+            "problemMatcher": [],
+            "isBackground": true
+        },
+        {
+            "label": "AI: Control Center",
+            "type": "shell",
+            "command": "python3",
+            "args": ["${env:HOME}/Development/Projects/AITeamPlatform/control_center.py"],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "focus": true
+            },
+            "problemMatcher": [],
+            "isBackground": true
+        }
+    ],
+    "inputs": [
+        {
+            "id": "question",
+            "type": "promptString",
+            "description": "What would you like to ask the AI team?"
+        },
+        {
+            "id": "error",
+            "type": "promptString",
+            "description": "Paste the error message to analyze"
+        }
+    ]
+}

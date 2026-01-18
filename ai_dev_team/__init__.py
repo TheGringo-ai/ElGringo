@@ -47,6 +47,7 @@ from .routing import TaskRouter, TaskType, TaskClassification
 from .integrations import ChatterFixConnector, check_against_learnings, find_solution
 from .parallel_coding import ParallelCodingEngine, CodeTask, CodeFix, ParallelCodingResult
 from .shared_config import SharedConfig, AIProviderConfig, ProviderType, shared_config, get_shared_config
+from .fredfix import FredFix, FixResult, create_fredfix
 
 __all__ = [
     # Core
@@ -86,4 +87,8 @@ __all__ = [
     "ProviderType",
     "shared_config",
     "get_shared_config",
+    # FredFix - Autonomous Fixer
+    "FredFix",
+    "FixResult",
+    "create_fredfix",
 ]

@@ -1,11 +1,17 @@
-"""
-Task Routing - Intelligent agent selection for tasks
-"""
-
+"""Task routing and cost optimization"""
 from .router import TaskRouter, TaskType, TaskClassification
+from .cost_optimizer import CostOptimizer, ModelTier, CostEstimate, BudgetStatus
+from .performance_tracker import (
+    PerformanceTracker,
+    TaskOutcome,
+    ModelPerformance,
+    get_performance_tracker,
+)
+from .cost_tracker import CostTracker, get_cost_tracker
 
 __all__ = [
-    "TaskRouter",
-    "TaskType",
-    "TaskClassification",
+    "TaskRouter", "TaskType", "TaskClassification",
+    "CostOptimizer", "ModelTier", "CostEstimate", "BudgetStatus",
+    "PerformanceTracker", "TaskOutcome", "ModelPerformance", "get_performance_tracker",
+    "CostTracker", "get_cost_tracker",
 ]

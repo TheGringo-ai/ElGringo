@@ -784,18 +784,38 @@ def test_hello():
 
 # Convenience function
 async def bootstrap_app(
-    name: str,
+    spec_or_name,
+    output_dir = None,
     app_type: str = "fastapi",
     features: List[str] = None,
-    output_dir: Path = None,
     enhance: bool = False,
 ) -> BootstrapResult:
-    """Quick bootstrap function"""
-    spec = AppSpec(
-        name=name,
-        app_type=app_type,
-        features=features or ["tests"],
-    )
-    output = output_dir or Path.cwd()
+    """
+    Quick bootstrap function.
+
+    Args:
+        spec_or_name: Either an AppSpec object or string name for the app
+        output_dir: Where to create the project (default: current directory)
+        app_type: App type if name is string (fastapi, cli, library)
+        features: Features if name is string (auth, database, tests, docker)
+        enhance: Whether to use AI to improve generated code
+
+    Examples:
+        # Using AppSpec
+        result = await bootstrap_app(AppSpec(name='myapp', app_type='fastapi'))
+
+        # Using name string
+        result = await bootstrap_app('myapp', features=['auth', 'tests'])
+    """
+    if isinstance(spec_or_name, AppSpec):
+        spec = spec_or_name
+    else:
+        spec = AppSpec(
+            name=spec_or_name,
+            app_type=app_type,
+            features=features or ["tests"],
+        )
+
+    output = Path(output_dir) if output_dir else Path.cwd()
     bootstrapper = AppBootstrapper()
     return await bootstrapper.generate(spec, output, enhance_with_ai=enhance)

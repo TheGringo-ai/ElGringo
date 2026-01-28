@@ -32,7 +32,8 @@ from .agents import (
     get_best_available_agent,
 )
 from .agents.ollama import create_local_agent, create_local_coder, LOCAL_MODELS
-from .routing import TaskRouter, CostOptimizer, get_performance_tracker
+from .routing import TaskRouter, CostOptimizer, get_performance_tracker, RoutingDecision, get_decision_logger
+from .preferences import get_preference_store, DevConstraints
 from .monitoring import get_health_monitor
 from .failover import get_failover_manager, get_circuit_breaker
 from .memory import MemorySystem, LearningEngine, MistakePrevention
@@ -92,6 +93,11 @@ class AIDevTeam:
         self._cost_optimizer = CostOptimizer()
         self._weighted_consensus = WeightedConsensus()
         self._performance_tracker = get_performance_tracker()
+
+        # v2: Preference store and decision logger
+        self._preference_store = get_preference_store()
+        self._decision_logger = get_decision_logger()
+        self._constraints: DevConstraints = self._preference_store.get_constraints(project_name)
 
         # Initialize health monitoring and failover
         self._health_monitor = get_health_monitor()
@@ -266,6 +272,113 @@ class AIDevTeam:
         """List of available agent names"""
         return list(self.agents.keys())
 
+    @property
+    def constraints(self) -> DevConstraints:
+        """Current developer constraints"""
+        return self._constraints
+
+    def update_constraints(self, **kwargs):
+        """
+        Update developer constraints for this project.
+
+        Examples:
+            team.update_constraints(prefer_local=True)
+            team.update_constraints(blocked_providers=["openai"])
+            team.update_constraints(verbose_routing=True)
+        """
+        for key, value in kwargs.items():
+            if hasattr(self._constraints, key):
+                setattr(self._constraints, key, value)
+            else:
+                logger.warning(f"Unknown constraint: {key}")
+        self._preference_store.save_constraints(self._constraints, self.project_name)
+        logger.info(f"Updated constraints for {self.project_name}: {kwargs}")
+
+    def set_constraint(self, key: str, value: Any):
+        """Set a single constraint (supports nested keys like 'preferred_agents.coding')"""
+        self._preference_store.set_constraint(key, value, self.project_name)
+        self._constraints = self._preference_store.get_constraints(self.project_name)
+
+    def _filter_agents_by_constraints(self, agent_names: List[str]) -> List[str]:
+        """Filter agents based on developer constraints"""
+        filtered = []
+        for name in agent_names:
+            agent = self.agents.get(name)
+            if not agent:
+                continue
+
+            # Check if agent is local
+            is_local = "local" in name.lower() or "ollama" in name.lower()
+
+            # Estimate cost (0 for local)
+            estimated_cost = 0.0 if is_local else 0.01  # Basic estimation
+
+            allowed, reason = self._constraints.should_use_agent(name, is_local, estimated_cost)
+            if allowed:
+                filtered.append(name)
+            elif self._constraints.verbose_routing:
+                logger.info(f"Agent {name} filtered: {reason}")
+
+        return filtered
+
+    def _create_routing_decision(
+        self,
+        selected: str,
+        candidates: List[str],
+        classification,
+        start_time: float,
+    ) -> RoutingDecision:
+        """Create an explainable routing decision"""
+        import time
+        from .routing import AgentScore
+
+        # Build candidate scores
+        agent_scores = []
+        for name in candidates:
+            is_local = "local" in name.lower() or "ollama" in name.lower()
+            allowed, reason = self._constraints.should_use_agent(name, is_local, 0)
+            agent_scores.append(AgentScore(
+                agent_name=name,
+                total_score=0.8 if name == selected else 0.5,
+                breakdown={"task_match": 0.6, "performance": 0.2},
+                eligible=allowed,
+                rejection_reason=None if allowed else reason,
+            ))
+
+        # Determine primary reason
+        if self._constraints.prefer_local and "local" in selected.lower():
+            reason = "Local agent preferred (privacy/cost)"
+        elif selected in self._constraints.preferred_agents.values():
+            reason = "User-preferred agent for task type"
+        else:
+            reason = f"Best match for {classification.primary_type.value} task"
+
+        # Build fallback chain (excluding selected)
+        fallbacks = [n for n in candidates if n != selected][:3]
+
+        decision = RoutingDecision(
+            selected_agent=selected,
+            task_type=classification.primary_type.value,
+            complexity=classification.complexity,
+            confidence=classification.confidence,
+            candidates=agent_scores,
+            decision_factors=["task_type", "constraints", "performance"],
+            primary_reason=reason,
+            constraints_applied=self._constraints.to_dict(),
+            constraints_matched=self._constraints.get_matched(),
+            fallback_order=fallbacks,
+            decision_time_ms=(time.time() - start_time) * 1000,
+        )
+
+        # Log the decision
+        self._decision_logger.log(decision)
+
+        # Show explanation if verbose
+        if self._constraints.verbose_routing or self._constraints.auto_explain:
+            logger.info(f"Routing Decision:\n{decision.explain(verbose=True)}")
+
+        return decision
+
     async def collaborate(
         self,
         prompt: str,
@@ -300,11 +413,28 @@ class AIDevTeam:
         )
 
         # Auto-select agents if not specified
+        routing_start_time = time.time()
         if not agents:
             available = list(self.agents.keys())
 
+            # v2: Apply developer constraints to filter agents
+            available = self._filter_agents_by_constraints(available)
+            if not available:
+                # Allow cloud fallback if all filtered
+                if self._constraints.allow_cloud_fallback:
+                    available = list(self.agents.keys())
+                    collaboration_log.append("Constraints filtered all local agents, using cloud fallback")
+
+            # Check for user-preferred agent for this task type
+            task_type_str = classification.primary_type.value
+            if task_type_str in self._constraints.preferred_agents:
+                preferred = self._constraints.preferred_agents[task_type_str]
+                if preferred in available:
+                    agents = [preferred]
+                    collaboration_log.append(f"Using user-preferred agent: {preferred}")
+
             # Use performance-enhanced routing if we have data
-            if self._performance_tracker:
+            if not agents and self._performance_tracker:
                 ranked = self._task_router.get_performance_enhanced_agents(
                     task_type=classification.primary_type,
                     available_agents=available,
@@ -315,14 +445,14 @@ class AIDevTeam:
                 collaboration_log.append(
                     f"Performance-based selection: {[(n, round(s, 2)) for n, s, _ in ranked[:3]]}"
                 )
-            else:
+            elif not agents:
                 # Fallback to router's recommendations
                 recommended = classification.recommended_agents
-                agents = [name for name in recommended if name in self.agents][:3]
+                agents = [name for name in recommended if name in available][:3]
 
             if not agents:
                 # Fallback to all available
-                agents = list(self.agents.keys())
+                agents = available if available else list(self.agents.keys())
 
             # Apply cost optimization to select best agent for complexity
             if self._cost_optimizer and agents:
@@ -343,6 +473,23 @@ class AIDevTeam:
                 )
 
             collaboration_log.append(f"Auto-selected agents: {agents}")
+
+            # v2: Create and log routing decision
+            routing_decision = self._create_routing_decision(
+                selected=agents[0] if agents else "none",
+                candidates=list(self.agents.keys()),
+                classification=classification,
+                start_time=routing_start_time,
+            )
+
+            # Log to preference store for history
+            self._preference_store.log_routing(
+                project=self.project_name,
+                agent=agents[0] if agents else "none",
+                task_type=classification.primary_type.value,
+                success=True,  # Will update after completion
+                response_time=routing_decision.decision_time_ms / 1000,
+            )
 
         # Auto-select mode if not specified
         if not mode:
@@ -912,6 +1059,13 @@ Provide a unified, synthesized response:"""
         if self._failover_manager:
             status["failover"] = self._failover_manager.get_statistics()
 
+        # v2: Add routing and constraints info
+        status["v2_routing"] = {
+            "constraints": self._constraints.to_dict(),
+            "decision_stats": self._decision_logger.get_stats(),
+            "verbose_routing": self._constraints.verbose_routing,
+        }
+
         return status
 
     def get_cost_report(self) -> Dict[str, Any]:
@@ -927,6 +1081,40 @@ Provide a unified, synthesized response:"""
                 self._cost_optimizer.daily_budget = daily
             if monthly is not None:
                 self._cost_optimizer.monthly_budget = monthly
+
+    # =================
+    # v2: Explainable Routing
+    # =================
+
+    def get_routing_stats(self) -> Dict[str, Any]:
+        """Get routing decision statistics"""
+        return {
+            "decision_logger": self._decision_logger.get_stats(),
+            "agent_performance": self._preference_store.get_agent_stats(self.project_name),
+            "constraints": self._constraints.to_dict(),
+        }
+
+    def get_recent_decisions(self, count: int = 10) -> List[Dict[str, Any]]:
+        """Get recent routing decisions with explanations"""
+        decisions = self._decision_logger.get_recent(count)
+        return [d.to_dict() for d in decisions]
+
+    def explain_last_decision(self, verbose: bool = False) -> str:
+        """Get explanation of the most recent routing decision"""
+        decisions = self._decision_logger.get_recent(1)
+        if decisions:
+            return decisions[0].explain(verbose=verbose)
+        return "No routing decisions recorded yet"
+
+    def why(self) -> str:
+        """
+        Quick shorthand to explain why the last agent was selected.
+
+        Usage:
+            result = await team.collaborate("Fix the bug")
+            print(team.why())  # "Selected: local-llama3 for debugging (prefer_local=True)"
+        """
+        return self.explain_last_decision(verbose=False)
 
     def suggest_prompt(self, prompt: str) -> Optional[str]:
         """

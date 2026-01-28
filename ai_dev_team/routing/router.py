@@ -6,9 +6,10 @@ import logging
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..agents import ModelType
+from .performance_tracker import get_performance_tracker
 
 logger = logging.getLogger(__name__)
 
@@ -72,12 +73,16 @@ class TaskRouter:
                 "weight": 1.0,
             },
             TaskType.CREATIVE: {
-                "keywords": ["design", "creative", "ui", "ux", "interface", "mockup", "prototype", "brainstorm"],
+                "keywords": ["design", "creative", "ui", "ux", "interface", "mockup", "prototype", "brainstorm",
+                            "beautiful", "stunning", "elegant", "modern", "landing", "website", "webpage", "visual"],
                 "patterns": [
                     r"\b(design|create)\s+(ui|ux|interface|mockup)",
                     r"\buser\s+(experience|interface)",
+                    r"\b(beautiful|stunning|elegant|modern)\s+",
+                    r"\blanding\s+page\b",
+                    r"\b(website|webpage)\s+(design|layout)",
                 ],
-                "weight": 1.0,
+                "weight": 1.1,  # Slightly higher weight for creative
             },
             TaskType.DEBUGGING: {
                 "keywords": ["debug", "fix", "error", "bug", "issue", "problem", "troubleshoot", "not working"],
@@ -168,6 +173,44 @@ class TaskRouter:
                 "strengths": [TaskType.CODING, TaskType.OPTIMIZATION, TaskType.DEBUGGING],
                 "capabilities": ["fast-coding", "optimization", "debugging"],
                 "performance_weight": 1.3,
+            },
+            # Llama Cloud Agents (via Groq, Together, Fireworks)
+            "llama-3-3-70b-groq": {
+                "model_type": ModelType.LOCAL,
+                "strengths": [TaskType.CODING, TaskType.ANALYSIS, TaskType.DEBUGGING],
+                "capabilities": ["fast-coding", "reasoning", "analysis", "multilingual"],
+                "performance_weight": 1.2,
+            },
+            "llama-3-3-70b-together": {
+                "model_type": ModelType.LOCAL,
+                "strengths": [TaskType.CODING, TaskType.ANALYSIS, TaskType.CREATIVE],
+                "capabilities": ["coding", "reasoning", "large-context"],
+                "performance_weight": 1.15,
+            },
+            "llama-3-1-8b-together": {
+                "model_type": ModelType.LOCAL,
+                "strengths": [TaskType.CODING, TaskType.DOCUMENTATION],
+                "capabilities": ["fast-response", "simple-tasks"],
+                "performance_weight": 0.9,
+            },
+            # Local Ollama Agents
+            "ollama-local": {
+                "model_type": ModelType.LOCAL,
+                "strengths": [TaskType.CODING, TaskType.DEBUGGING],
+                "capabilities": ["offline", "privacy", "fast-simple"],
+                "performance_weight": 0.85,
+            },
+            "local-llama3": {
+                "model_type": ModelType.LOCAL,
+                "strengths": [TaskType.CODING, TaskType.ANALYSIS],
+                "capabilities": ["offline", "privacy", "general"],
+                "performance_weight": 0.8,
+            },
+            "local-qwen-coder-7b": {
+                "model_type": ModelType.LOCAL,
+                "strengths": [TaskType.CODING, TaskType.DEBUGGING, TaskType.OPTIMIZATION],
+                "capabilities": ["offline", "coding", "debugging"],
+                "performance_weight": 0.9,
             },
         }
 
@@ -337,3 +380,106 @@ class TaskRouter:
                     best_agent = agent_name
 
         return best_agent
+
+    def get_performance_enhanced_agents(
+        self,
+        task_type: TaskType,
+        available_agents: List[str],
+        domain: Optional[str] = None,
+        prefer_fast: bool = False,
+    ) -> List[Tuple[str, float, Dict[str, Any]]]:
+        """
+        Get ranked agents using both static strengths and historical performance.
+
+        Combines predefined agent strengths with learned performance data
+        to make smarter routing decisions.
+
+        Args:
+            task_type: Type of task
+            available_agents: List of available agent names
+            domain: Optional domain for domain-specific routing
+            prefer_fast: Whether to prioritize faster models
+
+        Returns:
+            List of (agent_name, combined_score, details) tuples
+        """
+        tracker = get_performance_tracker()
+        task_type_str = task_type.value
+
+        ranked_agents = []
+
+        for agent_name in available_agents:
+            # Static score from predefined strengths
+            static_score = 0.5  # Default
+            if agent_name in self.agent_strengths:
+                config = self.agent_strengths[agent_name]
+                if task_type in config["strengths"]:
+                    static_score = 0.7 + (config["performance_weight"] - 1.0) * 0.3
+                else:
+                    static_score = 0.4
+
+            # Performance-based score from tracker
+            perf_score, _ = tracker.get_best_model(
+                task_type=task_type_str,
+                available_models=[agent_name],
+                domain=domain,
+                prefer_fast=prefer_fast,
+            )
+            # perf_score is 0.5 if no data, otherwise based on history
+
+            # Combine scores: 40% static, 60% performance (trust data more)
+            # If no performance data, fall back to static
+            model_rankings = tracker.get_model_ranking([agent_name], task_type_str)
+            if model_rankings and model_rankings[0][2].get("status") != "no_data":
+                # We have performance data
+                combined_score = (static_score * 0.4) + (model_rankings[0][1] * 0.6)
+                details = {
+                    "static_score": round(static_score, 3),
+                    "performance_score": round(model_rankings[0][1], 3),
+                    "has_performance_data": True,
+                    **model_rankings[0][2],
+                }
+            else:
+                # No performance data - use static score
+                combined_score = static_score
+                details = {
+                    "static_score": round(static_score, 3),
+                    "performance_score": 0.5,
+                    "has_performance_data": False,
+                    "status": "using_static_strengths",
+                }
+
+            ranked_agents.append((agent_name, combined_score, details))
+
+        # Sort by combined score descending
+        ranked_agents.sort(key=lambda x: x[1], reverse=True)
+
+        return ranked_agents
+
+    def classify_with_performance(
+        self,
+        prompt: str,
+        context: str = "",
+        available_agents: Optional[List[str]] = None,
+        domain: Optional[str] = None,
+    ) -> TaskClassification:
+        """
+        Classify a task and recommend agents using performance data.
+
+        Enhanced version of classify() that incorporates historical
+        performance data into agent recommendations.
+        """
+        # First do standard classification
+        classification = self.classify(prompt, context)
+
+        # If we have available agents, re-rank using performance data
+        if available_agents:
+            ranked = self.get_performance_enhanced_agents(
+                task_type=classification.primary_type,
+                available_agents=available_agents,
+                domain=domain,
+            )
+            # Update recommended agents based on performance
+            classification.recommended_agents = [name for name, _, _ in ranked[:4]]
+
+        return classification

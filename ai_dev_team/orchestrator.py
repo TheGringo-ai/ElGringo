@@ -25,6 +25,11 @@ from .agents import (
     GrokAgent,
     OllamaAgent,
     ModelType,
+    # Llama Cloud agents
+    LlamaCloudAgent,
+    create_llama_70b,
+    create_llama_fast,
+    get_best_available_agent,
 )
 from .agents.ollama import create_local_agent, create_local_coder, LOCAL_MODELS
 from .routing import TaskRouter, CostOptimizer, get_performance_tracker
@@ -34,6 +39,7 @@ from .memory import MemorySystem, LearningEngine, MistakePrevention
 from .collaboration import WeightedConsensus
 from .knowledge import TeachingSystem, get_domain_context, AutoLearner, get_coding_hub
 from .tools import FileSystemTools, BrowserTools, ShellTools, PermissionManager
+from .security import validate_tool_call, get_security_validator, ThreatLevel
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +156,9 @@ class AIDevTeam:
             self.register_agent(GrokAgent(fast_mode=True))   # Fast coder
             logger.info("Registered Grok agents (Reasoner + Coder)")
 
+        # Llama Cloud - via Groq, Together, or Fireworks APIs
+        self._setup_llama_cloud_agents()
+
         # Local models via Ollama (free, private, offline)
         self._setup_local_agents()
 
@@ -158,6 +167,31 @@ class AIDevTeam:
                 "No AI agents configured. Set API keys: "
                 "ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY"
             )
+
+    def _setup_llama_cloud_agents(self):
+        """Setup Llama Cloud agents via Groq, Together, or Fireworks"""
+        # Priority order: Groq (fastest) -> Together (most models) -> Fireworks
+        llama_registered = False
+
+        # Groq - Ultra-fast Llama inference
+        if os.getenv("GROQ_API_KEY"):
+            self.register_agent(create_llama_70b(provider="groq"))
+            logger.info("Registered Llama 3.3 70B agent (via Groq - ultra-fast)")
+            llama_registered = True
+
+        # Together AI - Most model variety including 405B
+        if os.getenv("TOGETHER_API_KEY"):
+            if not llama_registered:
+                self.register_agent(create_llama_70b(provider="together"))
+                logger.info("Registered Llama 3.3 70B agent (via Together AI)")
+            # Also register 8B for fast tasks
+            self.register_agent(create_llama_fast(provider="together"))
+            logger.info("Registered Llama 3.1 8B agent (via Together AI - fast)")
+
+        # Fireworks - Good for function calling
+        if os.getenv("FIREWORKS_API_KEY") and not llama_registered:
+            self.register_agent(create_llama_70b(provider="fireworks"))
+            logger.info("Registered Llama 3.3 70B agent (via Fireworks)")
 
     def _setup_local_agents(self):
         """Setup local Ollama agents if available"""
@@ -1116,6 +1150,25 @@ Provide:
         Returns:
             Dict with success, output, error keys
         """
+        # Security validation before execution
+        security_result = validate_tool_call({
+            "tool": tool_name,
+            "operation": operation,
+            "params": kwargs
+        })
+
+        if not security_result.is_valid:
+            logger.warning(
+                f"SECURITY BLOCKED: {tool_name}.{operation} - "
+                f"Threat: {security_result.threat_level.name}, Issues: {security_result.issues}"
+            )
+            return {
+                "success": False,
+                "output": None,
+                "error": f"Security validation failed: {'; '.join(security_result.issues)}",
+                "threat_level": security_result.threat_level.name,
+            }
+
         if tool_name not in self._tools:
             return {
                 "success": False,
@@ -1324,9 +1377,10 @@ Continue with the task. Make more tool calls if needed, or provide your final an
         return "\n".join(lines)
 
     def _parse_tool_calls(self, content: str) -> List[Dict[str, Any]]:
-        """Parse tool calls from agent response"""
+        """Parse tool calls from agent response with security validation"""
         import re
         calls = []
+        security_validator = get_security_validator()
 
         # Pattern: TOOL_CALL: tool.operation(param=value, ...)
         pattern = r'TOOL_CALL:\s*(\w+)\.(\w+)\(([^)]*)\)'
@@ -1349,11 +1403,23 @@ Continue with the task. Make more tool calls if needed, or provide your final an
                         value = int(value)
                     params[key] = value
 
-            calls.append({
+            # Build the call dict
+            call = {
                 "tool": tool,
                 "operation": operation,
                 "params": params,
-            })
+            }
+
+            # Security validation at parse time
+            validation = security_validator.validate_tool_call(call)
+            if validation.is_valid:
+                calls.append(call)
+            else:
+                # Log blocked calls but don't include them
+                logger.warning(
+                    f"SECURITY: Blocked parsed tool call {tool}.{operation} - "
+                    f"Threat: {validation.threat_level.name}, Issues: {validation.issues}"
+                )
 
         return calls
 

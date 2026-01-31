@@ -107,6 +107,40 @@ from .preferences import DevConstraints, PreferenceStore, get_preference_store
 from .routing import RoutingDecision, AgentScore, DecisionLogger, get_decision_logger
 from .bootstrap import AppSpec, AppBootstrapper, BootstrapResult, bootstrap_app
 
+# Advanced Agent Framework
+from .framework import (
+    # Tools
+    Tool,
+    ToolRegistry,
+    ToolResult,
+    ToolParameter,
+    create_tool,
+    get_tool_registry,
+    # ReAct
+    ReActAgent,
+    ReActStep,
+    ReActTrace,
+    ThoughtType,
+    # Planner
+    TaskPlanner,
+    ExecutionPlan,
+    PlanStep,
+    PlanStatus,
+    # Chain of Thought
+    ChainOfThought,
+    ReasoningChain,
+    ReasoningStep,
+    ReasoningType,
+    reason_through,
+    # Context
+    ContextManager,
+    ContextWindow,
+    ConversationTracker,
+    Message,
+    MessagePriority,
+    MessageRole,
+)
+
 __all__ = [
     # Core
     "AIDevTeam",
@@ -227,4 +261,34 @@ __all__ = [
     "AppBootstrapper",
     "BootstrapResult",
     "bootstrap_app",
+    # Advanced Agent Framework - Tools
+    "Tool",
+    "ToolRegistry",
+    "ToolResult",
+    "ToolParameter",
+    "create_tool",
+    "get_tool_registry",
+    # Advanced Agent Framework - ReAct
+    "ReActAgent",
+    "ReActStep",
+    "ReActTrace",
+    "ThoughtType",
+    # Advanced Agent Framework - Planner
+    "TaskPlanner",
+    "ExecutionPlan",
+    "PlanStep",
+    "PlanStatus",
+    # Advanced Agent Framework - Chain of Thought
+    "ChainOfThought",
+    "ReasoningChain",
+    "ReasoningStep",
+    "ReasoningType",
+    "reason_through",
+    # Advanced Agent Framework - Context
+    "ContextManager",
+    "ContextWindow",
+    "ConversationTracker",
+    "Message",
+    "MessagePriority",
+    "MessageRole",
 ]

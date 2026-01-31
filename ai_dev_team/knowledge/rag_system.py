@@ -34,10 +34,102 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
+from threading import Lock
+from time import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 logger = logging.getLogger(__name__)
+
+
+class RAGCache:
+    """
+    Thread-safe LRU cache with TTL for RAG search results.
+
+    Features:
+    - Configurable max size and TTL
+    - Thread-safe operations
+    - Automatic cleanup of expired entries
+    - Hit/miss statistics
+    """
+
+    def __init__(self, max_size: int = 1000, ttl_seconds: int = 300):
+        self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
+        self._cache: Dict[str, Tuple[Any, float]] = {}  # key -> (value, timestamp)
+        self._access_order: List[str] = []  # LRU tracking
+        self._lock = Lock()
+        self._hits = 0
+        self._misses = 0
+
+    def _make_key(self, query: str, **kwargs) -> str:
+        """Create a cache key from query and parameters."""
+        key_parts = [query]
+        for k, v in sorted(kwargs.items()):
+            if v is not None:
+                key_parts.append(f"{k}={v}")
+        return hashlib.md5("|".join(key_parts).encode()).hexdigest()
+
+    def get(self, query: str, **kwargs) -> Optional[Any]:
+        """Get a cached result if valid."""
+        key = self._make_key(query, **kwargs)
+
+        with self._lock:
+            if key in self._cache:
+                value, timestamp = self._cache[key]
+                if time() - timestamp < self.ttl_seconds:
+                    # Move to end of access order (most recent)
+                    if key in self._access_order:
+                        self._access_order.remove(key)
+                    self._access_order.append(key)
+                    self._hits += 1
+                    return value
+                else:
+                    # Expired, remove it
+                    del self._cache[key]
+                    if key in self._access_order:
+                        self._access_order.remove(key)
+
+            self._misses += 1
+            return None
+
+    def set(self, query: str, value: Any, **kwargs):
+        """Cache a result."""
+        key = self._make_key(query, **kwargs)
+
+        with self._lock:
+            # Evict if at capacity
+            while len(self._cache) >= self.max_size and self._access_order:
+                oldest_key = self._access_order.pop(0)
+                if oldest_key in self._cache:
+                    del self._cache[oldest_key]
+
+            self._cache[key] = (value, time())
+            if key in self._access_order:
+                self._access_order.remove(key)
+            self._access_order.append(key)
+
+    def clear(self):
+        """Clear all cached results."""
+        with self._lock:
+            self._cache.clear()
+            self._access_order.clear()
+            self._hits = 0
+            self._misses = 0
+
+    def stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        with self._lock:
+            total = self._hits + self._misses
+            return {
+                "size": len(self._cache),
+                "max_size": self.max_size,
+                "hits": self._hits,
+                "misses": self._misses,
+                "hit_rate": self._hits / total if total > 0 else 0,
+                "ttl_seconds": self.ttl_seconds,
+            }
 
 
 @dataclass
@@ -210,12 +302,15 @@ class UniversalRAG:
     Indexes and searches across all knowledge sources for the AI team.
     """
 
-    def __init__(self, storage_dir: str = "~/.ai-dev-team/rag"):
+    def __init__(self, storage_dir: str = "~/.ai-dev-team/rag", cache_size: int = 1000, cache_ttl: int = 300):
         self.storage_dir = Path(os.path.expanduser(storage_dir))
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
         self._index = TFIDFIndex()
         self._source_stats: Dict[str, int] = defaultdict(int)
+
+        # Initialize search cache
+        self._cache = RAGCache(max_size=cache_size, ttl_seconds=cache_ttl)
 
         # Load existing index
         self._load_index()
@@ -517,8 +612,38 @@ class UniversalRAG:
         language: str = None,
         framework: str = None,
         min_score: float = 0.1,
+        use_cache: bool = True,
     ) -> List[SearchResult]:
-        """Search across all indexed knowledge."""
+        """
+        Search across all indexed knowledge.
+
+        Args:
+            query: Search query
+            limit: Maximum results to return
+            source_types: Filter by source types
+            language: Filter by language
+            framework: Filter by framework
+            min_score: Minimum relevance score
+            use_cache: Whether to use cached results
+
+        Returns:
+            List of SearchResults ordered by relevance
+        """
+        # Check cache first
+        cache_key_args = {
+            "limit": limit,
+            "source_types": tuple(source_types) if source_types else None,
+            "language": language,
+            "framework": framework,
+            "min_score": min_score,
+        }
+
+        if use_cache:
+            cached = self._cache.get(query, **cache_key_args)
+            if cached is not None:
+                logger.debug(f"Cache hit for query: {query[:50]}...")
+                return cached
+
         # Build filters
         filters = {}
         if language:
@@ -555,7 +680,19 @@ class UniversalRAG:
             if len(results) >= limit:
                 break
 
+        # Cache the results
+        if use_cache:
+            self._cache.set(query, results, **cache_key_args)
+
         return results
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Get RAG cache statistics."""
+        return self._cache.stats()
+
+    def clear_cache(self):
+        """Clear the search cache."""
+        self._cache.clear()
 
     def search_similar(self, content: str, limit: int = 5) -> List[SearchResult]:
         """Find documents similar to given content."""

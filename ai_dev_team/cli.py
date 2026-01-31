@@ -168,6 +168,12 @@ class AITeamCLI:
   {Colors.CYAN}/mode <mode>{Colors.RESET}       Set collaboration mode (parallel/sequential/consensus)
   {Colors.CYAN}/exit{Colors.RESET}              Exit the CLI
 
+{Colors.BOLD}Advanced Agent Framework:{Colors.RESET}
+
+  {Colors.CYAN}/react <task>{Colors.RESET}      ReAct agent - reasoning + tool use
+  {Colors.CYAN}/reason <problem>{Colors.RESET}  Chain-of-thought reasoning
+  {Colors.CYAN}/plan <goal>{Colors.RESET}       Create and execute a multi-step plan
+
 {Colors.BOLD}Usage:{Colors.RESET}
 
   Just type your request naturally:
@@ -177,10 +183,17 @@ class AITeamCLI:
   > Review this code for performance issues
   > Help me write tests for the payment module{Colors.RESET}
 
+{Colors.BOLD}Framework Examples:{Colors.RESET}
+
+  {Colors.DIM}/react Find all Python files with TODO comments
+  /reason What is the time complexity of quicksort?
+  /plan Set up a new Flask project with tests{Colors.RESET}
+
 {Colors.BOLD}Tips:{Colors.RESET}
 
   - Set a project with /project to give context
   - Use /index to add your codebase to the knowledge base
+  - Use /react for tasks requiring tool use
   - The AI team will collaborate to solve complex tasks
 """
         print(help_text)
@@ -224,6 +237,15 @@ class AITeamCLI:
 
         elif cmd == "/mode":
             self.set_mode(args)
+
+        elif cmd == "/react":
+            await self.run_react(args)
+
+        elif cmd == "/reason":
+            await self.run_reason(args)
+
+        elif cmd == "/plan":
+            await self.run_plan(args)
 
         else:
             print(f"{Colors.RED}Unknown command: {cmd}{Colors.RESET}")
@@ -458,6 +480,146 @@ class AITeamCLI:
 
         except Exception as e:
             print(f"{Colors.RED}Error validating: {e}{Colors.RESET}\n")
+
+    async def run_react(self, task: str):
+        """Run a task using the ReAct agent pattern."""
+        if not task:
+            print(f"{Colors.RED}Please provide a task for the ReAct agent{Colors.RESET}")
+            print(f"{Colors.DIM}Example: /react Find all Python files with TODO comments{Colors.RESET}\n")
+            return
+
+        if not self.orchestrator:
+            print(f"{Colors.RED}Orchestrator not available{Colors.RESET}")
+            return
+
+        print(f"\n{Colors.CYAN}Starting ReAct Agent...{Colors.RESET}")
+        print(f"{Colors.DIM}Task: {task}{Colors.RESET}\n")
+        print(f"{Colors.YELLOW}{'─' * 60}{Colors.RESET}")
+
+        try:
+            trace = await self.orchestrator.react(task, max_steps=10, verbose=False)
+
+            # Display each step
+            for step in trace.steps:
+                print(f"\n{Colors.BOLD}Step {step.step_number}:{Colors.RESET}")
+                print(f"  {Colors.CYAN}Thought:{Colors.RESET} {step.thought[:200]}{'...' if len(step.thought) > 200 else ''}")
+                if step.action:
+                    print(f"  {Colors.GREEN}Action:{Colors.RESET} {step.action}")
+                    if step.action_input:
+                        import json
+                        params = json.dumps(step.action_input, indent=4)
+                        # Indent the params
+                        params = '\n'.join('    ' + line for line in params.split('\n'))
+                        print(f"  {Colors.DIM}Input:{Colors.RESET}\n{params}")
+                if step.observation:
+                    obs = step.observation[:300] + '...' if len(step.observation) > 300 else step.observation
+                    print(f"  {Colors.YELLOW}Observation:{Colors.RESET} {obs}")
+
+            print(f"\n{Colors.YELLOW}{'─' * 60}{Colors.RESET}")
+            print(f"\n{Colors.GREEN}{'═' * 60}{Colors.RESET}")
+            status = f"{Colors.GREEN}✓ Completed{Colors.RESET}" if trace.success else f"{Colors.RED}✗ Failed{Colors.RESET}"
+            print(f"{status} in {trace.execution_time:.2f}s | Steps: {len(trace.steps)} | Tools: {', '.join(trace.tools_used) or 'None'}")
+            print(f"{Colors.DIM}{'─' * 60}{Colors.RESET}")
+            print(f"\n{Colors.BOLD}Final Answer:{Colors.RESET}")
+            print(trace.final_answer)
+            print(f"\n{Colors.GREEN}{'═' * 60}{Colors.RESET}\n")
+
+        except Exception as e:
+            print(f"{Colors.RED}ReAct error: {e}{Colors.RESET}")
+            import traceback
+            traceback.print_exc()
+
+    async def run_reason(self, problem: str):
+        """Run chain-of-thought reasoning on a problem."""
+        if not problem:
+            print(f"{Colors.RED}Please provide a problem to reason about{Colors.RESET}")
+            print(f"{Colors.DIM}Example: /reason What is the time complexity of merge sort?{Colors.RESET}\n")
+            return
+
+        if not self.orchestrator:
+            print(f"{Colors.RED}Orchestrator not available{Colors.RESET}")
+            return
+
+        print(f"\n{Colors.CYAN}Starting Chain-of-Thought Reasoning...{Colors.RESET}")
+        print(f"{Colors.DIM}Problem: {problem}{Colors.RESET}\n")
+        print(f"{Colors.YELLOW}{'─' * 60}{Colors.RESET}")
+
+        try:
+            chain = await self.orchestrator.reason(problem, method="zero_shot")
+
+            # Display reasoning steps
+            for step in chain.steps:
+                print(f"\n{Colors.BOLD}Step {step.step_number}:{Colors.RESET}")
+                print(f"  {step.content}")
+                if step.evidence:
+                    print(f"  {Colors.DIM}Evidence: {step.evidence}{Colors.RESET}")
+
+            print(f"\n{Colors.YELLOW}{'─' * 60}{Colors.RESET}")
+            print(f"\n{Colors.GREEN}{'═' * 60}{Colors.RESET}")
+            print(f"Completed in {chain.execution_time:.2f}s | Confidence: {chain.confidence:.0%}")
+            print(f"{Colors.DIM}{'─' * 60}{Colors.RESET}")
+            print(f"\n{Colors.BOLD}Conclusion:{Colors.RESET}")
+            print(chain.conclusion)
+            print(f"\n{Colors.GREEN}{'═' * 60}{Colors.RESET}\n")
+
+        except Exception as e:
+            print(f"{Colors.RED}Reasoning error: {e}{Colors.RESET}")
+            import traceback
+            traceback.print_exc()
+
+    async def run_plan(self, goal: str):
+        """Create and execute a multi-step plan."""
+        if not goal:
+            print(f"{Colors.RED}Please provide a goal for the planner{Colors.RESET}")
+            print(f"{Colors.DIM}Example: /plan Set up a new Flask project with tests{Colors.RESET}\n")
+            return
+
+        if not self.orchestrator:
+            print(f"{Colors.RED}Orchestrator not available{Colors.RESET}")
+            return
+
+        print(f"\n{Colors.CYAN}Starting Task Planner...{Colors.RESET}")
+        print(f"{Colors.DIM}Goal: {goal}{Colors.RESET}\n")
+        print(f"{Colors.YELLOW}{'─' * 60}{Colors.RESET}")
+
+        try:
+            plan = await self.orchestrator.plan_and_execute(goal)
+
+            # Display plan steps
+            print(f"\n{Colors.BOLD}Execution Plan:{Colors.RESET}")
+            for step in plan.steps:
+                status_emoji = {
+                    "pending": "⏳",
+                    "in_progress": "🔄",
+                    "completed": "✅",
+                    "failed": "❌",
+                    "skipped": "⏭️",
+                    "blocked": "🚫",
+                }.get(step.status.value, "❓")
+
+                print(f"  {status_emoji} {step.description}")
+                if step.error:
+                    print(f"     {Colors.RED}Error: {step.error}{Colors.RESET}")
+
+            # Show progress
+            progress = plan.get_progress()
+            print(f"\n{Colors.YELLOW}{'─' * 60}{Colors.RESET}")
+            print(f"\n{Colors.GREEN}{'═' * 60}{Colors.RESET}")
+            completed = progress['completed']
+            total = progress['total']
+            pct = progress['percent_complete']
+            print(f"Plan Status: {plan.status.value} | Progress: {completed}/{total} ({pct:.0f}%)")
+            print(f"{Colors.DIM}{'─' * 60}{Colors.RESET}")
+
+            # Show markdown summary
+            print(f"\n{Colors.BOLD}Summary:{Colors.RESET}")
+            print(plan.to_markdown())
+            print(f"\n{Colors.GREEN}{'═' * 60}{Colors.RESET}\n")
+
+        except Exception as e:
+            print(f"{Colors.RED}Planning error: {e}{Colors.RESET}")
+            import traceback
+            traceback.print_exc()
 
     async def process_request(self, user_input: str):
         """Process a user request through the AI team."""

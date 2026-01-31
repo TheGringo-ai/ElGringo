@@ -261,15 +261,23 @@ class AIDevTeam:
             return
 
         if models:
-            # Register Llama 3 as general purpose
+            # Register Llama 3.2 as general purpose
             if any("llama3" in m.lower() for m in models):
                 self.register_agent(create_local_agent("llama3"))
-                logger.info("Registered local agent: Llama 3 (General)")
+                logger.info("Registered local agent: Llama 3.2 (General)")
 
-            # Register Qwen Coder if available
-            if any("qwen" in m.lower() and "coder" in m.lower() for m in models):
+            # Register Qwen Coder (prefer custom fine-tuned version)
+            if any("qwen-coder-custom" in m.lower() for m in models):
                 self.register_agent(create_local_coder())
+                logger.info("Registered local agent: Qwen Coder Custom (Fine-tuned)")
+            elif any("qwen" in m.lower() and "coder" in m.lower() for m in models):
+                self.register_agent(create_local_agent("qwen-coder-7b"))
                 logger.info("Registered local agent: Qwen Coder (Code Specialist)")
+
+            # Register Llama Coder if available
+            if any("llama-coder-custom" in m.lower() for m in models):
+                self.register_agent(create_local_agent("llama-coder-custom"))
+                logger.info("Registered local agent: Llama Coder Custom (Fine-tuned)")
 
     def register_agent(self, agent: AIAgent):
         """Register an AI agent with the team"""

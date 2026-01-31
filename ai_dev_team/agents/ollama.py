@@ -40,8 +40,15 @@ def _get_knowledge_base():
 
 
 # Available local models with characteristics
-# Simplified to 3 models: general purpose, base coder, fine-tuned coder
 LOCAL_MODELS = {
+    # General purpose models
+    "llama3": {
+        "name": "llama3.2:3b",
+        "display": "Llama 3.2 (3B)",
+        "capabilities": ["general", "reasoning", "writing", "balanced"],
+        "speed": "fast",
+        "cost_tier": "budget"
+    },
     "llama3.2-3b": {
         "name": "llama3.2:3b",
         "display": "Llama 3.2 (3B)",
@@ -49,6 +56,7 @@ LOCAL_MODELS = {
         "speed": "fast",
         "cost_tier": "budget"
     },
+    # Coding models
     "qwen-coder-7b": {
         "name": "qwen2.5-coder:7b",
         "display": "Qwen Coder (7B)",
@@ -60,6 +68,14 @@ LOCAL_MODELS = {
         "name": "qwen-coder-custom:latest",
         "display": "Qwen Coder Fine-tuned (7B)",
         "capabilities": ["coding", "debugging", "code-review", "architecture", "python", "ai-team"],
+        "speed": "medium",
+        "cost_tier": "budget",
+        "fine_tuned": True
+    },
+    "llama-coder-custom": {
+        "name": "llama-coder-custom:latest",
+        "display": "Llama Coder Fine-tuned",
+        "capabilities": ["coding", "debugging", "code-review", "python"],
         "speed": "medium",
         "cost_tier": "budget",
         "fine_tuned": True

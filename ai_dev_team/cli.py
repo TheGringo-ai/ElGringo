@@ -555,7 +555,7 @@ class AITeamCLI:
         try:
             readline.read_history_file(histfile)
             readline.set_history_length(1000)
-        except FileNotFoundError:
+        except (FileNotFoundError, PermissionError, OSError):
             pass
 
         self.collaboration_mode = "parallel"
@@ -585,7 +585,7 @@ class AITeamCLI:
         # Save history
         try:
             readline.write_history_file(histfile)
-        except:
+        except (PermissionError, OSError):
             pass
 
 

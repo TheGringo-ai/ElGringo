@@ -18,7 +18,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +177,7 @@ class MLXInference:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         stream: bool = False,
-    ) -> Union[MLXResponse, asyncio.AsyncIterator[str]]:
+    ) -> Union[MLXResponse, AsyncIterator[str]]:
         """
         Generate text using the loaded MLX model.
 
@@ -257,7 +257,7 @@ class MLXInference:
         prompt: str,
         max_tokens: int,
         temperature: float,
-    ) -> asyncio.AsyncIterator[str]:
+    ) -> AsyncIterator[str]:
         """Stream tokens as they're generated."""
         try:
             from mlx_lm import generate_step

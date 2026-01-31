@@ -29,7 +29,6 @@ from .agents import (
     LlamaCloudAgent,
     create_llama_70b,
     create_llama_fast,
-    get_best_available_agent,
 )
 from .agents.ollama import create_local_agent, create_local_coder, LOCAL_MODELS
 from .routing import TaskRouter, CostOptimizer, get_performance_tracker, RoutingDecision, get_decision_logger
@@ -1801,6 +1800,31 @@ Provide a detailed analysis."""
     # Advanced Agent Framework
     # =================
 
+    def _get_best_agent(self) -> Optional[AIAgent]:
+        """Get the best available agent for framework tasks."""
+        if not self.agents:
+            return None
+
+        # Prefer Claude for reasoning tasks
+        for pattern in ["claude", "anthropic"]:
+            for name, agent in self.agents.items():
+                if pattern in name.lower():
+                    return agent
+
+        # Then try ChatGPT
+        for pattern in ["chatgpt", "openai", "gpt"]:
+            for name, agent in self.agents.items():
+                if pattern in name.lower():
+                    return agent
+
+        # Then any cloud agent
+        for name, agent in self.agents.items():
+            if "local" not in name.lower():
+                return agent
+
+        # Finally, any agent
+        return list(self.agents.values())[0]
+
     async def react(
         self,
         task: str,
@@ -1827,9 +1851,7 @@ Provide a detailed analysis."""
             print(trace.final_answer)
         """
         # Create LLM call function using best available agent
-        agent = get_best_available_agent(list(self.agents.values()))
-        if not agent:
-            agent = list(self.agents.values())[0] if self.agents else None
+        agent = self._get_best_agent()
 
         if not agent:
             return ReActTrace(
@@ -1855,9 +1877,11 @@ Provide a detailed analysis."""
 
         # Auto-learn from ReAct execution
         if self._auto_learner and trace.success:
+            # Ensure final_answer is a string for auto-learner
+            answer_str = trace.final_answer if isinstance(trace.final_answer, str) else str(trace.final_answer)
             await self._auto_learner.capture_interaction(
                 user_prompt=task,
-                ai_responses=[{"agent": "react", "content": trace.final_answer}],
+                ai_responses=[{"agent": "react", "content": answer_str}],
                 outcome="success",
                 task_type="react",
                 metadata={
@@ -1893,9 +1917,7 @@ Provide a detailed analysis."""
             print(plan.to_markdown())
         """
         # Create LLM call function
-        agent = get_best_available_agent(list(self.agents.values()))
-        if not agent:
-            agent = list(self.agents.values())[0] if self.agents else None
+        agent = self._get_best_agent()
 
         if not agent:
             return ExecutionPlan(
@@ -1976,9 +1998,7 @@ Provide a detailed analysis."""
         reasoning_type = method_map.get(method, ReasoningType.ZERO_SHOT)
 
         # Create LLM call function
-        agent = get_best_available_agent(list(self.agents.values()))
-        if not agent:
-            agent = list(self.agents.values())[0] if self.agents else None
+        agent = self._get_best_agent()
 
         if not agent:
             return ReasoningChain(

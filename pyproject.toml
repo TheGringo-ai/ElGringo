@@ -78,6 +78,7 @@ dev = [
 [project.scripts]
 ai-dev-team = "ai_dev_team.cli:main"
 ai-team = "ai_dev_team.cli:main"
+ai-chat = "chat_ui:main"
 
 [project.urls]
 Homepage = "https://github.com/fredtaylor/ai-team-platform"

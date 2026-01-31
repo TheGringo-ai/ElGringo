@@ -38,9 +38,10 @@ from .monitoring import get_health_monitor
 from .failover import get_failover_manager, get_circuit_breaker
 from .memory import MemorySystem, LearningEngine, MistakePrevention
 from .collaboration import WeightedConsensus
-from .knowledge import TeachingSystem, get_domain_context, AutoLearner, get_coding_hub
+from .knowledge import TeachingSystem, get_domain_context, AutoLearner, get_coding_hub, get_rag
 from .tools import FileSystemTools, BrowserTools, ShellTools, PermissionManager
 from .security import validate_tool_call, get_security_validator, ThreatLevel
+from .validation import get_validator
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,17 @@ class AIDevTeam:
 
         # Initialize coding knowledge hub
         self._coding_hub = get_coding_hub()
+
+        # Initialize Universal RAG system
+        self._rag = get_rag()
+        # Index coding hub into RAG on startup
+        try:
+            self._rag.index_coding_hub(self._coding_hub)
+        except Exception as e:
+            logger.debug(f"RAG indexing deferred: {e}")
+
+        # Initialize code validator
+        self._code_validator = get_validator()
 
         # Initialize auto-learning system (always learns from interactions)
         if enable_auto_learning:
@@ -546,6 +558,19 @@ class AIDevTeam:
                 enhanced_prompt = f"{coding_context}\n\n{enhanced_prompt}"
                 collaboration_log.append("Applied coding knowledge hub context")
 
+        # Add RAG context for comprehensive knowledge retrieval
+        try:
+            rag_context = self._rag.get_context_for_task(
+                task_description=prompt,
+                max_results=5,
+                max_tokens=1500,
+            )
+            if rag_context.results:
+                enhanced_prompt = f"{rag_context.context_text}\n\n{enhanced_prompt}"
+                collaboration_log.append(f"Applied RAG context ({len(rag_context.results)} sources)")
+        except Exception as e:
+            logger.debug(f"RAG context retrieval skipped: {e}")
+
         # Select active agents
         active_agents = [self.agents[name] for name in agents if name in self.agents]
 
@@ -670,6 +695,32 @@ class AIDevTeam:
                             task_description=prompt[:100],
                         )
                         collaboration_log.append(f"Learned code snippet to hub ({lang or 'python'})")
+
+            # Validate generated code and add warnings
+            if task_type in ["coding", "debugging", "testing"]:
+                validation_results = self._code_validator.validate_response(final_answer)
+                validation_warnings = []
+                for val_result in validation_results:
+                    if val_result.warnings:
+                        validation_warnings.extend([str(w) for w in val_result.warnings[:3]])
+                    if not val_result.valid:
+                        validation_warnings.extend([str(e) for e in val_result.errors[:3]])
+
+                if validation_warnings:
+                    result.metadata["validation_warnings"] = validation_warnings[:5]
+                    collaboration_log.append(f"Code validation: {len(validation_warnings)} issue(s) found")
+
+                    # Also index the conversation for RAG learning
+                    try:
+                        self._rag.index_conversation(
+                            prompt=prompt,
+                            response=final_answer,
+                            outcome="success" if result.success else "failure",
+                            task_type=task_type,
+                            tags=relevant_domains,
+                        )
+                    except Exception as e:
+                        logger.debug(f"RAG conversation indexing skipped: {e}")
 
             # Record performance outcomes for each agent
             if self._performance_tracker:

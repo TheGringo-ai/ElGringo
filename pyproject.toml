@@ -7,7 +7,8 @@ name = "ai-team-platform"
 version = "1.0.0"
 description = "AI Team Platform - Multi-Model AI Orchestration for Rapid Application Development"
 readme = "AI_DEV_TEAM_README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.9"
 authors = [
     {name = "Fred AI Team", email = "fred@example.com"}
@@ -22,11 +23,12 @@ keywords = [
     "orchestration",
     "collaboration",
     "platform",
+    "multi-model",
+    "llm",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -37,34 +39,45 @@ classifiers = [
 ]
 
 dependencies = [
-    "aiohttp>=3.8.0",
-    "fastapi>=0.104.0",
-    "uvicorn>=0.24.0",
-    "pydantic>=2.5.0",
-    "jinja2>=3.1.0",
+    "aiohttp>=3.9.0",
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "pydantic>=2.10.0",
+    "jinja2>=3.1.2",
     "python-dotenv>=1.0.0",
+    "python-multipart>=0.0.9",
+    "requests>=2.31.0",
+    "aiofiles>=23.2.1",
 ]
 
 [project.optional-dependencies]
-claude = ["anthropic>=0.18.0"]
-openai = ["openai>=1.10.0"]
+claude = ["anthropic>=0.40.0"]
+openai = ["openai>=1.50.0"]
 gemini = ["google-generativeai>=0.8.0"]
+grok = ["openai>=1.50.0"]  # Grok uses OpenAI-compatible API
 firestore = ["firebase-admin>=6.0.0"]
+github = ["PyGithub>=2.0.0"]
+flask = ["flask>=3.0.0", "flask-cors>=4.0.0"]
 all = [
-    "anthropic>=0.18.0",
-    "openai>=1.10.0",
+    "anthropic>=0.40.0",
+    "openai>=1.50.0",
     "google-generativeai>=0.8.0",
     "firebase-admin>=6.0.0",
+    "PyGithub>=2.0.0",
+    "flask>=3.0.0",
+    "flask-cors>=4.0.0",
 ]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "black>=23.0.0",
-    "ruff>=0.1.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "black>=24.0.0",
+    "ruff>=0.2.0",
 ]
 
 [project.scripts]
 ai-dev-team = "ai_dev_team.cli:main"
+ai-team = "ai_dev_team.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/fredtaylor/ai-team-platform"

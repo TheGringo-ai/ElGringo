@@ -1,5 +1,19 @@
+#!/usr/bin/env python3
 """
-Command Line Interface for AI Dev Team
+AI Team CLI Interface
+=====================
+
+Interactive command-line interface for the AI Team Platform.
+Start with: ai-team
+
+Commands:
+  /help     - Show available commands
+  /agents   - List available AI agents
+  /status   - Show system status
+  /index    - Index a project into RAG
+  /search   - Search the knowledge base
+  /clear    - Clear conversation history
+  /exit     - Exit the CLI
 """
 
 import argparse
@@ -7,27 +21,582 @@ import asyncio
 import json
 import os
 import sys
-from typing import Optional
+import readline
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, List
 
-from . import AIDevTeam
-from .utils.config import check_api_keys, load_config
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 
+class Colors:
+    """ANSI color codes for terminal output."""
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    BOLD = '\033[1m'
+    DIM = '\033[2m'
+    RESET = '\033[0m'
+
+
+class AITeamCLI:
+    """Interactive CLI for the AI Team Platform."""
+
+    BANNER = f"""
+{Colors.CYAN}{Colors.BOLD}
+    ╔═══════════════════════════════════════════════════════════════╗
+    ║                                                               ║
+    ║     █████╗ ██╗    ████████╗███████╗ █████╗ ███╗   ███╗       ║
+    ║    ██╔══██╗██║    ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║       ║
+    ║    ███████║██║       ██║   █████╗  ███████║██╔████╔██║       ║
+    ║    ██╔══██║██║       ██║   ██╔══╝  ██╔══██║██║╚██╔╝██║       ║
+    ║    ██║  ██║██║       ██║   ███████╗██║  ██║██║ ╚═╝ ██║       ║
+    ║    ╚═╝  ╚═╝╚═╝       ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝       ║
+    ║                                                               ║
+    ║            Fred's AI Development Team Platform                ║
+    ║                                                               ║
+    ╚═══════════════════════════════════════════════════════════════╝
+{Colors.RESET}
+    {Colors.DIM}Type your request or /help for commands{Colors.RESET}
+    """
+
+    def __init__(self, project_name: str = "default"):
+        self.orchestrator = None
+        self.rag = None
+        self.validator = None
+        self.conversation_history: List[dict] = []
+        self.current_project: Optional[str] = None
+        self.project_name = project_name
+        self.running = True
+
+    async def initialize(self):
+        """Initialize the AI Team components."""
+        print(f"\n{Colors.YELLOW}Initializing AI Team...{Colors.RESET}")
+
+        try:
+            # Import orchestrator
+            from ai_dev_team.orchestrator import AIDevTeam
+            self.orchestrator = AIDevTeam(project_name=self.project_name)
+            agent_count = len(self.orchestrator.agents) if self.orchestrator.agents else 0
+            print(f"  {Colors.GREEN}✓{Colors.RESET} Orchestrator ready ({agent_count} agents)")
+
+            # Import RAG
+            try:
+                from ai_dev_team.knowledge import get_rag
+                self.rag = get_rag()
+                doc_count = len(self.rag._documents) if hasattr(self.rag, '_documents') else 0
+                print(f"  {Colors.GREEN}✓{Colors.RESET} RAG system ready ({doc_count} documents)")
+            except Exception as e:
+                print(f"  {Colors.YELLOW}⚠{Colors.RESET} RAG system: {e}")
+
+            # Import validator
+            try:
+                from ai_dev_team.validation import get_validator
+                self.validator = get_validator()
+                print(f"  {Colors.GREEN}✓{Colors.RESET} Code validator ready")
+            except Exception as e:
+                print(f"  {Colors.YELLOW}⚠{Colors.RESET} Validator: {e}")
+
+            # Check available agents
+            agents = self._get_available_agents()
+            print(f"  {Colors.GREEN}✓{Colors.RESET} Available: {', '.join(agents)}")
+
+            print(f"\n{Colors.GREEN}AI Team ready!{Colors.RESET}\n")
+
+        except Exception as e:
+            print(f"\n{Colors.RED}Error initializing: {e}{Colors.RESET}")
+            import traceback
+            traceback.print_exc()
+            print(f"{Colors.YELLOW}Some features may be limited.{Colors.RESET}\n")
+
+    def _get_available_agents(self) -> List[str]:
+        """Get list of available AI agents based on API keys."""
+        agents = []
+
+        if os.getenv("ANTHROPIC_API_KEY"):
+            agents.append("Claude")
+        if os.getenv("OPENAI_API_KEY"):
+            agents.append("ChatGPT")
+        if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
+            agents.append("Gemini")
+        if os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY"):
+            agents.append("Grok")
+
+        # Check for local models
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["ollama", "list"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                if "qwen" in result.stdout.lower():
+                    agents.append("Qwen-Local")
+                if "llama" in result.stdout.lower():
+                    agents.append("Llama-Local")
+        except:
+            pass
+
+        return agents if agents else ["None configured"]
+
+    def print_banner(self):
+        """Print the welcome banner."""
+        print(self.BANNER)
+
+    def print_help(self):
+        """Print help information."""
+        help_text = f"""
+{Colors.BOLD}Available Commands:{Colors.RESET}
+
+  {Colors.CYAN}/help{Colors.RESET}              Show this help message
+  {Colors.CYAN}/agents{Colors.RESET}            List available AI agents
+  {Colors.CYAN}/status{Colors.RESET}            Show system status
+  {Colors.CYAN}/index <path>{Colors.RESET}      Index a project into RAG
+  {Colors.CYAN}/search <query>{Colors.RESET}    Search the knowledge base
+  {Colors.CYAN}/history{Colors.RESET}           Show conversation history
+  {Colors.CYAN}/clear{Colors.RESET}             Clear conversation history
+  {Colors.CYAN}/project <path>{Colors.RESET}    Set current project context
+  {Colors.CYAN}/validate <file>{Colors.RESET}   Validate a code file
+  {Colors.CYAN}/mode <mode>{Colors.RESET}       Set collaboration mode (parallel/sequential/consensus)
+  {Colors.CYAN}/exit{Colors.RESET}              Exit the CLI
+
+{Colors.BOLD}Usage:{Colors.RESET}
+
+  Just type your request naturally:
+
+  {Colors.DIM}> Create a FastAPI endpoint for user authentication
+  > Fix the bug in my Firebase security rules
+  > Review this code for performance issues
+  > Help me write tests for the payment module{Colors.RESET}
+
+{Colors.BOLD}Tips:{Colors.RESET}
+
+  - Set a project with /project to give context
+  - Use /index to add your codebase to the knowledge base
+  - The AI team will collaborate to solve complex tasks
+"""
+        print(help_text)
+
+    async def handle_command(self, command: str) -> bool:
+        """Handle a CLI command. Returns False if should exit."""
+        parts = command.split(maxsplit=1)
+        cmd = parts[0].lower()
+        args = parts[1] if len(parts) > 1 else ""
+
+        if cmd in ["/exit", "/quit", "/q"]:
+            print(f"\n{Colors.CYAN}Goodbye! The AI Team will be here when you need us.{Colors.RESET}\n")
+            return False
+
+        elif cmd == "/help":
+            self.print_help()
+
+        elif cmd == "/agents":
+            await self.show_agents()
+
+        elif cmd == "/status":
+            await self.show_status()
+
+        elif cmd == "/index":
+            await self.index_project(args)
+
+        elif cmd == "/search":
+            await self.search_knowledge(args)
+
+        elif cmd == "/history":
+            self.show_history()
+
+        elif cmd == "/clear":
+            self.clear_history()
+
+        elif cmd == "/project":
+            self.set_project(args)
+
+        elif cmd == "/validate":
+            await self.validate_file(args)
+
+        elif cmd == "/mode":
+            self.set_mode(args)
+
+        else:
+            print(f"{Colors.RED}Unknown command: {cmd}{Colors.RESET}")
+            print(f"Type {Colors.CYAN}/help{Colors.RESET} for available commands")
+
+        return True
+
+    async def show_agents(self):
+        """Show available AI agents."""
+        print(f"\n{Colors.BOLD}Available AI Agents:{Colors.RESET}\n")
+
+        agents_info = [
+            ("Claude", "ANTHROPIC_API_KEY", "Lead Architect - Analysis, planning, complex reasoning"),
+            ("ChatGPT", "OPENAI_API_KEY", "Senior Developer - Coding, debugging, optimization"),
+            ("Gemini", "GEMINI_API_KEY,GOOGLE_API_KEY", "Creative Innovator - UI/UX, creative solutions"),
+            ("Grok", "XAI_API_KEY,GROK_API_KEY", "Strategic Reasoner - Analysis, strategy"),
+            ("Local", None, "Fast Coder - Quick tasks, offline capability (Ollama)"),
+        ]
+
+        for name, env_vars, description in agents_info:
+            if env_vars:
+                available = any(os.getenv(v) for v in env_vars.split(","))
+            else:
+                available = any("Local" in a for a in self._get_available_agents())
+
+            status = f"{Colors.GREEN}●{Colors.RESET}" if available else f"{Colors.RED}○{Colors.RESET}"
+            print(f"  {status} {Colors.BOLD}{name:12}{Colors.RESET} - {description}")
+
+        # Show actual agent instances if orchestrator is available
+        if self.orchestrator and self.orchestrator.agents:
+            print(f"\n{Colors.BOLD}Active Agent Instances:{Colors.RESET}")
+            for name, agent in self.orchestrator.agents.items():
+                model = getattr(agent, 'model_type', 'unknown')
+                role = getattr(agent, 'role', 'agent')
+                print(f"  {Colors.GREEN}●{Colors.RESET} {name} ({model}) - {role}")
+
+        print()
+
+    async def show_status(self):
+        """Show system status."""
+        print(f"\n{Colors.BOLD}System Status:{Colors.RESET}\n")
+
+        # Orchestrator status
+        if self.orchestrator:
+            agent_count = len(self.orchestrator.agents) if self.orchestrator.agents else 0
+            print(f"  {Colors.GREEN}●{Colors.RESET} Orchestrator ({agent_count} agents)")
+        else:
+            print(f"  {Colors.RED}○{Colors.RESET} Orchestrator")
+
+        # RAG status
+        if self.rag:
+            doc_count = len(self.rag._documents) if hasattr(self.rag, '_documents') else 0
+            print(f"  {Colors.GREEN}●{Colors.RESET} RAG System ({doc_count} documents)")
+        else:
+            print(f"  {Colors.RED}○{Colors.RESET} RAG System")
+
+        # Validation status
+        if self.validator:
+            print(f"  {Colors.GREEN}●{Colors.RESET} Code Validator")
+        else:
+            print(f"  {Colors.RED}○{Colors.RESET} Code Validator")
+
+        # Current project
+        if self.current_project:
+            print(f"\n  {Colors.CYAN}Current Project:{Colors.RESET} {self.current_project}")
+
+        # Conversation history
+        print(f"  {Colors.CYAN}Conversation History:{Colors.RESET} {len(self.conversation_history)} messages")
+
+        # Available agents
+        agents = self._get_available_agents()
+        print(f"  {Colors.CYAN}Available Models:{Colors.RESET} {', '.join(agents)}")
+
+        print()
+
+    async def index_project(self, path: str):
+        """Index a project into RAG."""
+        if not path:
+            path = os.getcwd()
+            print(f"{Colors.YELLOW}No path specified, using current directory: {path}{Colors.RESET}")
+
+        path = os.path.expanduser(path)
+        if not os.path.exists(path):
+            print(f"{Colors.RED}Path does not exist: {path}{Colors.RESET}")
+            return
+
+        if not self.rag:
+            print(f"{Colors.RED}RAG system not available{Colors.RESET}")
+            return
+
+        print(f"\n{Colors.YELLOW}Indexing project: {path}{Colors.RESET}")
+        print(f"{Colors.DIM}This may take a moment...{Colors.RESET}\n")
+
+        try:
+            count = await asyncio.to_thread(self.rag.index_project_files, path)
+            print(f"{Colors.GREEN}✓ Indexed {count} documents from {path}{Colors.RESET}\n")
+        except Exception as e:
+            print(f"{Colors.RED}Error indexing: {e}{Colors.RESET}\n")
+
+    async def search_knowledge(self, query: str):
+        """Search the knowledge base."""
+        if not query:
+            print(f"{Colors.RED}Please provide a search query{Colors.RESET}")
+            return
+
+        if not self.rag:
+            print(f"{Colors.RED}RAG system not available{Colors.RESET}")
+            return
+
+        print(f"\n{Colors.CYAN}Searching for: {query}{Colors.RESET}\n")
+
+        try:
+            results = self.rag.search(query, limit=5)
+            if results:
+                for i, result in enumerate(results, 1):
+                    print(f"{Colors.BOLD}{i}. [{result.doc_type}]{Colors.RESET} {result.title}")
+                    print(f"   {Colors.DIM}Score: {result.score:.3f}{Colors.RESET}")
+                    preview = result.content[:150].replace('\n', ' ')
+                    print(f"   {preview}...")
+                    print()
+            else:
+                print(f"{Colors.YELLOW}No results found{Colors.RESET}")
+        except Exception as e:
+            print(f"{Colors.RED}Error searching: {e}{Colors.RESET}")
+
+    def show_history(self):
+        """Show conversation history."""
+        if not self.conversation_history:
+            print(f"\n{Colors.YELLOW}No conversation history{Colors.RESET}\n")
+            return
+
+        print(f"\n{Colors.BOLD}Conversation History:{Colors.RESET}\n")
+        for entry in self.conversation_history[-10:]:
+            role = entry.get("role", "unknown")
+            content = entry.get("content", "")[:100]
+            timestamp = entry.get("timestamp", "")
+
+            if role == "user":
+                print(f"  {Colors.GREEN}You:{Colors.RESET} {content}")
+            else:
+                print(f"  {Colors.CYAN}AI:{Colors.RESET} {content}...")
+            if timestamp:
+                print(f"      {Colors.DIM}{timestamp}{Colors.RESET}")
+        print()
+
+    def clear_history(self):
+        """Clear conversation history."""
+        self.conversation_history = []
+        print(f"\n{Colors.GREEN}Conversation history cleared{Colors.RESET}\n")
+
+    def set_project(self, path: str):
+        """Set the current project context."""
+        if not path:
+            if self.current_project:
+                print(f"\n{Colors.CYAN}Current project:{Colors.RESET} {self.current_project}\n")
+            else:
+                print(f"\n{Colors.YELLOW}No project set. Use /project <path> to set one.{Colors.RESET}\n")
+            return
+
+        path = os.path.expanduser(path)
+        if os.path.exists(path):
+            self.current_project = os.path.abspath(path)
+            print(f"\n{Colors.GREEN}Project set to: {self.current_project}{Colors.RESET}\n")
+        else:
+            print(f"\n{Colors.RED}Path does not exist: {path}{Colors.RESET}\n")
+
+    def set_mode(self, mode: str):
+        """Set collaboration mode."""
+        valid_modes = ["parallel", "sequential", "consensus"]
+        if mode.lower() in valid_modes:
+            self.collaboration_mode = mode.lower()
+            print(f"\n{Colors.GREEN}Collaboration mode set to: {mode}{Colors.RESET}\n")
+        else:
+            print(f"\n{Colors.RED}Invalid mode. Choose from: {', '.join(valid_modes)}{Colors.RESET}\n")
+
+    async def validate_file(self, filepath: str):
+        """Validate a code file."""
+        if not filepath:
+            print(f"{Colors.RED}Please provide a file path{Colors.RESET}")
+            return
+
+        filepath = os.path.expanduser(filepath)
+        if not os.path.exists(filepath):
+            print(f"{Colors.RED}File does not exist: {filepath}{Colors.RESET}")
+            return
+
+        if not self.validator:
+            print(f"{Colors.RED}Validator not available{Colors.RESET}")
+            return
+
+        try:
+            with open(filepath, 'r') as f:
+                code = f.read()
+
+            ext = Path(filepath).suffix.lower()
+            lang_map = {
+                '.py': 'python',
+                '.js': 'javascript',
+                '.ts': 'typescript',
+                '.tsx': 'typescript',
+                '.jsx': 'javascript',
+            }
+            language = lang_map.get(ext, 'python')
+
+            print(f"\n{Colors.YELLOW}Validating {filepath}...{Colors.RESET}\n")
+
+            result = self.validator.validate(code, language=language)
+
+            if result.valid:
+                print(f"{Colors.GREEN}✓ No errors found{Colors.RESET}")
+            else:
+                print(f"{Colors.RED}✗ Found {len(result.errors)} error(s){Colors.RESET}")
+
+            if result.errors:
+                print(f"\n{Colors.BOLD}Errors:{Colors.RESET}")
+                for err in result.errors[:5]:
+                    line_info = f" (line {err.line})" if err.line else ""
+                    print(f"  {Colors.RED}•{Colors.RESET} {err.message}{line_info}")
+
+            if result.warnings:
+                print(f"\n{Colors.BOLD}Warnings:{Colors.RESET}")
+                for warn in result.warnings[:5]:
+                    line_info = f" (line {warn.line})" if warn.line else ""
+                    print(f"  {Colors.YELLOW}•{Colors.RESET} {warn.message}{line_info}")
+
+            if result.suggestions:
+                print(f"\n{Colors.BOLD}Suggestions:{Colors.RESET}")
+                for sug in result.suggestions[:3]:
+                    print(f"  {Colors.CYAN}•{Colors.RESET} {sug}")
+
+            print()
+
+        except Exception as e:
+            print(f"{Colors.RED}Error validating: {e}{Colors.RESET}\n")
+
+    async def process_request(self, user_input: str):
+        """Process a user request through the AI team."""
+        if not self.orchestrator:
+            print(f"{Colors.RED}Orchestrator not available. Cannot process request.{Colors.RESET}")
+            return
+
+        # Add to history
+        self.conversation_history.append({
+            "role": "user",
+            "content": user_input,
+            "timestamp": datetime.now().isoformat()
+        })
+
+        # Build context
+        context = ""
+        if self.current_project:
+            context = f"Current project: {self.current_project}\n"
+
+        print(f"\n{Colors.CYAN}AI Team is working on your request...{Colors.RESET}\n")
+
+        try:
+            # Use the orchestrator to process the request
+            result = await self.orchestrator.collaborate(
+                prompt=user_input,
+                context=context if context else None,
+            )
+
+            # Extract the response content
+            if hasattr(result, 'final_answer'):
+                content = result.final_answer
+                success = result.success if hasattr(result, 'success') else True
+                time_taken = result.total_time if hasattr(result, 'total_time') else 0
+                agents = result.participating_agents if hasattr(result, 'participating_agents') else []
+                confidence = result.confidence_score if hasattr(result, 'confidence_score') else 0
+            elif hasattr(result, 'content'):
+                content = result.content
+                success = True
+                time_taken = 0
+                agents = []
+                confidence = 0
+            elif isinstance(result, dict):
+                content = result.get('content', result.get('response', result.get('final_answer', str(result))))
+                success = result.get('success', True)
+                time_taken = result.get('total_time', 0)
+                agents = result.get('participating_agents', [])
+                confidence = result.get('confidence_score', 0)
+            else:
+                content = str(result)
+                success = True
+                time_taken = 0
+                agents = []
+                confidence = 0
+
+            # Add to history
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": content,
+                "timestamp": datetime.now().isoformat()
+            })
+
+            # Print response header
+            print(f"{Colors.GREEN}{'═' * 60}{Colors.RESET}")
+            if success:
+                status_line = f"{Colors.GREEN}✓ Completed{Colors.RESET}"
+                if time_taken:
+                    status_line += f" in {time_taken:.2f}s"
+                if confidence:
+                    status_line += f" | Confidence: {confidence:.0%}"
+                if agents:
+                    status_line += f" | Agents: {', '.join(agents)}"
+                print(status_line)
+            else:
+                print(f"{Colors.RED}✗ Task had issues{Colors.RESET}")
+            print(f"{Colors.DIM}{'─' * 60}{Colors.RESET}")
+
+            # Print content
+            print(content)
+
+            print(f"{Colors.GREEN}{'═' * 60}{Colors.RESET}")
+            print()
+
+        except Exception as e:
+            print(f"{Colors.RED}Error processing request: {e}{Colors.RESET}")
+            import traceback
+            traceback.print_exc()
+
+    async def run(self):
+        """Main CLI loop."""
+        self.print_banner()
+        await self.initialize()
+
+        # Setup readline for history
+        histfile = os.path.expanduser("~/.ai_team_history")
+        try:
+            readline.read_history_file(histfile)
+            readline.set_history_length(1000)
+        except FileNotFoundError:
+            pass
+
+        self.collaboration_mode = "parallel"
+
+        while self.running:
+            try:
+                # Get user input
+                prompt_str = f"{Colors.BOLD}{Colors.GREEN}AI Team > {Colors.RESET}"
+                user_input = input(prompt_str).strip()
+
+                if not user_input:
+                    continue
+
+                # Check if it's a command
+                if user_input.startswith("/"):
+                    self.running = await self.handle_command(user_input)
+                else:
+                    # Process as AI request
+                    await self.process_request(user_input)
+
+            except KeyboardInterrupt:
+                print(f"\n\n{Colors.CYAN}Use /exit to quit{Colors.RESET}\n")
+            except EOFError:
+                print(f"\n{Colors.CYAN}Goodbye!{Colors.RESET}\n")
+                break
+
+        # Save history
+        try:
+            readline.write_history_file(histfile)
+        except:
+            pass
+
+
+# Legacy functions for backward compatibility with argparse mode
 def print_banner():
     """Print the AI Dev Team banner"""
-    banner = """
-╔══════════════════════════════════════════════════════════╗
-║                 🤖 AI DEVELOPMENT TEAM 🤖                 ║
-║         Multi-Model AI Orchestration Platform            ║
-╠══════════════════════════════════════════════════════════╣
-║  Models: Claude | ChatGPT | Gemini | Grok                ║
-║  Features: Collaboration | Memory | Learning | Routing   ║
-╚══════════════════════════════════════════════════════════╝
-"""
-    print(banner)
+    cli = AITeamCLI()
+    cli.print_banner()
 
 
-def print_status(team: AIDevTeam):
+def print_status(team):
     """Print team status"""
     status = team.get_team_status()
     print(f"\n📊 Team Status: {status['project']}")
@@ -42,53 +611,14 @@ def print_status(team: AIDevTeam):
     print()
 
 
-async def interactive_mode(team: AIDevTeam):
-    """Run interactive chat mode"""
-    print("\n🎮 Interactive Mode - Type 'exit' to quit, 'status' for team status\n")
-
-    while True:
-        try:
-            prompt = input("You: ").strip()
-
-            if not prompt:
-                continue
-
-            if prompt.lower() == 'exit':
-                print("Goodbye!")
-                break
-
-            if prompt.lower() == 'status':
-                print_status(team)
-                continue
-
-            if prompt.lower().startswith('mode '):
-                mode = prompt.split(' ', 1)[1]
-                print(f"Collaboration mode set to: {mode}")
-                continue
-
-            # Execute collaboration
-            print("\n🔄 AI Team is working...\n")
-            result = await team.collaborate(prompt)
-
-            print("═" * 60)
-            if result.success:
-                print(f"✅ Task completed in {result.total_time:.2f}s")
-                print(f"   Confidence: {result.confidence_score:.0%}")
-                print(f"   Agents: {', '.join(result.participating_agents)}")
-                print("─" * 60)
-                print(result.final_answer)
-            else:
-                print(f"❌ Task failed: {result.final_answer}")
-            print("═" * 60 + "\n")
-
-        except KeyboardInterrupt:
-            print("\n\nGoodbye!")
-            break
-        except Exception as e:
-            print(f"Error: {e}")
+async def interactive_mode(team):
+    """Run interactive chat mode - now uses the new CLI"""
+    cli = AITeamCLI()
+    cli.orchestrator = team
+    await cli.run()
 
 
-async def run_single_task(team: AIDevTeam, prompt: str, mode: str = "parallel"):
+async def run_single_task(team, prompt: str, mode: str = "parallel"):
     """Run a single task"""
     print(f"\n🔄 Running task with {len(team.agents)} agents ({mode} mode)...\n")
 
@@ -110,15 +640,15 @@ async def run_single_task(team: AIDevTeam, prompt: str, mode: str = "parallel"):
 def main():
     """Main CLI entry point"""
     parser = argparse.ArgumentParser(
-        description="AI Development Team - Multi-Model AI Orchestration",
+        description="AI Team - Multi-Model AI Development Platform",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ai-dev-team                     # Interactive mode
-  ai-dev-team "Build a REST API"  # Single task
-  ai-dev-team -m consensus "Design a database schema"
-  ai-dev-team --status            # Show team status
-  ai-dev-team --check-keys        # Check API key configuration
+  ai-team                         # Interactive mode
+  ai-team "Build a REST API"      # Single task
+  ai-team -m consensus "Design a database schema"
+  ai-team --status                # Show team status
+  ai-team --check-keys            # Check API key configuration
         """,
     )
 
@@ -169,39 +699,44 @@ Examples:
     # Check API keys
     if args.check_keys:
         print("\n🔑 API Key Status:\n")
-        keys = check_api_keys()
+        keys = {
+            "anthropic": bool(os.getenv("ANTHROPIC_API_KEY")),
+            "openai": bool(os.getenv("OPENAI_API_KEY")),
+            "gemini": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")),
+            "grok": bool(os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY")),
+        }
         for name, configured in keys.items():
             status = "✓ Configured" if configured else "✗ Not set"
             print(f"   {name.upper()}: {status}")
         print()
         sys.exit(0)
 
-    # Print banner
-    if not args.json:
-        print_banner()
+    # Import here to avoid circular imports
+    from ai_dev_team.orchestrator import AIDevTeam
 
-    # Create team
-    team = AIDevTeam(
-        project_name=args.project,
-        enable_memory=not args.no_memory,
-    )
-
-    if not team.agents:
-        print("❌ No AI agents available. Please set API keys:")
-        print("   export ANTHROPIC_API_KEY=your_key")
-        print("   export OPENAI_API_KEY=your_key")
-        print("   export GEMINI_API_KEY=your_key")
-        print("   export XAI_API_KEY=your_key")
-        sys.exit(1)
-
-    # Show status
+    # Show status only
     if args.status:
+        team = AIDevTeam(project_name=args.project, enable_memory=not args.no_memory)
+        if not args.json:
+            print_banner()
         print_status(team)
         sys.exit(0)
 
-    # Run task or interactive mode
+    # Single task mode
     if args.prompt:
-        # Single task mode
+        if not args.json:
+            print_banner()
+
+        team = AIDevTeam(project_name=args.project, enable_memory=not args.no_memory)
+
+        if not team.agents:
+            print("❌ No AI agents available. Please set API keys:")
+            print("   export ANTHROPIC_API_KEY=your_key")
+            print("   export OPENAI_API_KEY=your_key")
+            print("   export GEMINI_API_KEY=your_key")
+            print("   export XAI_API_KEY=your_key")
+            sys.exit(1)
+
         result = asyncio.run(run_single_task(team, args.prompt, args.mode))
 
         if args.json:
@@ -215,9 +750,10 @@ Examples:
             print(json.dumps(output, indent=2))
 
         sys.exit(0 if result.success else 1)
-    else:
-        # Interactive mode
-        asyncio.run(interactive_mode(team))
+
+    # Interactive mode (default)
+    cli = AITeamCLI(project_name=args.project)
+    asyncio.run(cli.run())
 
 
 if __name__ == "__main__":

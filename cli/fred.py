@@ -861,14 +861,22 @@ Be specific and actionable."""
 
 
 def _is_edit_request(text: str) -> bool:
-    """Detect if user wants to edit code."""
-    edit_keywords = [
+    """Detect if user wants to edit code based on specific keywords.
+
+    Args:
+        text: The user's input text to be analyzed.
+
+    Returns:
+        True if any keyword indicating an edit request is found, False otherwise.
+    """
+    # Use set for O(1) lookups (suggested by AI team review)
+    edit_keywords = {
         'change ', 'modify ', 'update ', 'fix ', 'edit ', 'add ', 'remove ',
         'delete ', 'rename ', 'refactor ', 'create file', 'new file',
         'write to', 'save to', 'replace ', 'insert ', 'append '
-    ]
+    }
     text_lower = text.lower()
-    return any(kw in text_lower for kw in edit_keywords)
+    return any(kw in text_lower for kw in edit_keywords) or text_lower.startswith('edit')
 
 
 def _extract_file_path(text: str, project_path: str) -> Optional[str]:

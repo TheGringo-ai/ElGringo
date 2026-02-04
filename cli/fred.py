@@ -38,6 +38,11 @@ Advanced:
     fred chat                     # Interactive chat with project context
     fred benchmark <prompt>       # Compare AI model responses
 
+Training & Feedback:
+    fred feedback                 # View feedback capture status
+    fred train                    # Fine-tune model with captured feedback
+    fred train --dry-run          # Export data without training
+
 Examples:
     fred "Create a task management app with Firebase auth"
     fred review ~/Projects/MyApp
@@ -337,6 +342,15 @@ def print_help():
   {Colors.CYAN}benchmark <prompt>{Colors.END}
     Compare responses from all available AI models.
     Shows speed and response quality side by side.
+
+  {Colors.BOLD}Training & Feedback:{Colors.END}
+
+  {Colors.CYAN}feedback{Colors.END}
+    View feedback capture status and training readiness.
+
+  {Colors.CYAN}train{Colors.END}
+    Fine-tune local model with captured feedback data.
+    Requires minimum 20 captured interactions.
 
   {Colors.BOLD}Other:{Colors.END}
 
@@ -1140,6 +1154,29 @@ Be surgical - only show the minimal change needed.""")
                 "assistant": response.content[:500]
             })
 
+            # Auto-capture feedback for successful interactions
+            try:
+                from ai_dev_team.feedback import capture_feedback
+                # Detect category from context
+                category = "general"
+                if project and project.technologies:
+                    if "Firebase" in project.technologies:
+                        category = "firebase"
+                    elif "Python" in project.technologies:
+                        category = "python"
+
+                # Capture the interaction (high rating for applied changes)
+                rating = 1.0 if (is_edit and new_content != current_content) else 0.9
+                capture_feedback(
+                    prompt=user_input,
+                    response=response.content,
+                    category=category,
+                    rating=rating,
+                    agent=response.agent_name if hasattr(response, 'agent_name') else 'unknown'
+                )
+            except Exception:
+                pass  # Don't fail on feedback capture errors
+
         except KeyboardInterrupt:
             print(f"\n{Colors.YELLOW}Chat ended.{Colors.END}")
             break
@@ -1239,6 +1276,101 @@ async def benchmark_models(prompt: str):
         print(f"  Fastest: {Colors.GREEN}{fastest['name']}{Colors.END} ({fastest['time']:.2f}s)")
         avg_time = sum(r["time"] for r in successful) / len(successful)
         print(f"  Average: {avg_time:.2f}s")
+
+
+async def show_feedback_status():
+    """Show feedback capture status and training readiness."""
+    from ai_dev_team.feedback import get_feedback_capture
+    from ai_dev_team.feedback.trainer import get_feedback_trainer
+
+    print(f"{Colors.CYAN}📊 Feedback & Training Status{Colors.END}")
+    print("=" * 60)
+
+    capture = get_feedback_capture()
+    trainer = get_feedback_trainer()
+
+    stats = capture.get_stats()
+    status = trainer.get_status()
+
+    print(f"\n{Colors.BOLD}Captured Feedback:{Colors.END}")
+    print(f"  Total interactions: {stats['total_captured']}")
+    print(f"  Pending for training: {Colors.GREEN}{stats['pending_for_training']}{Colors.END}")
+
+    if stats['by_category']:
+        print(f"\n{Colors.BOLD}By Category:{Colors.END}")
+        for cat, count in stats['by_category'].items():
+            print(f"  {cat}: {count}")
+
+    print(f"\n{Colors.BOLD}Training Status:{Colors.END}")
+    print(f"  Min entries needed: {status['min_entries']}")
+    ready = status['ready_to_train']
+    ready_color = Colors.GREEN if ready else Colors.YELLOW
+    print(f"  Ready to train: {ready_color}{ready}{Colors.END}")
+
+    if status['last_training']:
+        print(f"  Last training: {status['last_training']}")
+
+    if ready:
+        print(f"\n{Colors.GREEN}✓ Ready! Run 'fred train' to fine-tune the model.{Colors.END}")
+    else:
+        needed = status['min_entries'] - stats['pending_for_training']
+        print(f"\n{Colors.YELLOW}Need {needed} more interactions before training.{Colors.END}")
+
+
+async def run_training(iterations: int = 100, dry_run: bool = False):
+    """Run MLX fine-tuning with captured feedback."""
+    from ai_dev_team.feedback.trainer import get_feedback_trainer
+
+    print(f"{Colors.CYAN}🧠 MLX Fine-tuning{Colors.END}")
+    print("=" * 60)
+
+    trainer = get_feedback_trainer()
+    status = trainer.get_status()
+
+    if not status['ready_to_train'] and not dry_run:
+        print(f"{Colors.YELLOW}Not enough feedback data.{Colors.END}")
+        print(f"  Pending: {status['pending_entries']}")
+        print(f"  Needed: {status['min_entries']}")
+        print(f"\nContinue using Fred to capture more training data.")
+        return
+
+    if dry_run:
+        print(f"{Colors.YELLOW}Dry run - exporting data only{Colors.END}")
+    else:
+        print(f"Training with {status['pending_entries']} examples...")
+        print(f"Iterations: {iterations}")
+        print(f"\n{Colors.YELLOW}This may take a while on large datasets...{Colors.END}\n")
+
+    result = await trainer.train(iterations=iterations, dry_run=dry_run)
+
+    if result.success:
+        print(f"\n{Colors.GREEN}✓ Training complete!{Colors.END}")
+        print(f"  Entries trained: {result.entries_trained}")
+        print(f"  Duration: {result.duration_seconds:.1f}s")
+        if result.output_path:
+            print(f"  Output: {result.output_path}")
+
+        if not dry_run:
+            print(f"\n{Colors.CYAN}Model updated! Restart Ollama to use the new weights.{Colors.END}")
+    else:
+        print(f"\n{Colors.RED}✗ Training failed: {result.error}{Colors.END}")
+
+
+async def add_manual_feedback(prompt: str, response: str, category: str = "general"):
+    """Manually add a feedback entry."""
+    from ai_dev_team.feedback import capture_feedback
+
+    capture_feedback(
+        prompt=prompt,
+        response=response,
+        category=category,
+        rating=1.0,
+        agent="manual"
+    )
+
+    print(f"{Colors.GREEN}✓ Feedback captured!{Colors.END}")
+    print(f"  Category: {category}")
+    print(f"  Prompt: {prompt[:50]}...")
 
 
 async def create_app(
@@ -1479,6 +1611,11 @@ async def interactive_mode():
                     await benchmark_models(parts[1])
                 else:
                     print(f"{Colors.YELLOW}Usage: benchmark <prompt>{Colors.END}")
+            elif cmd == 'feedback':
+                await show_feedback_status()
+            elif cmd == 'train':
+                dry_run = '--dry-run' in user_input or '-n' in user_input
+                await run_training(dry_run=dry_run)
             elif cmd == 'cd':
                 if os.path.isdir(arg):
                     cwd = os.path.abspath(arg)
@@ -1539,6 +1676,10 @@ Advanced:
   fred debug <error>                    # Debug with AI + codebase
   fred chat                             # Chat with project context
   fred benchmark <prompt>               # Compare AI models
+
+Training & Feedback:
+  fred feedback                         # View feedback status
+  fred train                            # Fine-tune with feedback
 
 Server Management:
   fred start                            # Start API server (background)
@@ -1601,7 +1742,7 @@ Server Management:
         await create_app(description=description, name=args.create, template=args.template, deploy_target=args.target)
     elif args.interactive or args.chat or not args.command:
         await interactive_mode()
-    elif args.command in ['review', 'security', 'fix', 'commit', 'explain', 'test', 'todo', 'scan', 'learn', 'forget', 'projects', 'search', 'debug', 'chat', 'benchmark']:
+    elif args.command in ['review', 'security', 'fix', 'commit', 'explain', 'test', 'todo', 'scan', 'learn', 'forget', 'projects', 'search', 'debug', 'chat', 'benchmark', 'feedback', 'train']:
         # Handle subcommand-style usage
         if args.command == 'review':
             await quick_review(args.path)
@@ -1648,6 +1789,11 @@ Server Management:
                 await benchmark_models(args.path)
             else:
                 print(f"{Colors.YELLOW}Usage: fred benchmark \"<prompt>\"{Colors.END}")
+        elif args.command == 'feedback':
+            await show_feedback_status()
+        elif args.command == 'train':
+            dry_run = '--dry-run' in sys.argv or '-n' in sys.argv
+            await run_training(dry_run=dry_run)
     else:
         # Treat as natural language task
         task = args.command + (" " + args.path if args.path != os.getcwd() else "")

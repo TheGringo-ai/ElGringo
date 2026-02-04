@@ -43,6 +43,9 @@ Training & Feedback:
     fred train                    # Fine-tune model with captured feedback
     fred train --dry-run          # Export data without training
 
+Apple Optimization:
+    fred optimize                 # Show Apple Silicon optimization status
+
 Examples:
     fred "Create a task management app with Firebase auth"
     fred review ~/Projects/MyApp
@@ -1373,6 +1376,70 @@ async def add_manual_feedback(prompt: str, response: str, category: str = "gener
     print(f"  Prompt: {prompt[:50]}...")
 
 
+async def show_apple_optimization():
+    """Show Apple Silicon optimization status and smart routing info."""
+    from ai_dev_team.apple.smart_router import get_smart_router, TaskComplexity
+
+    print(f"{Colors.CYAN}🍎 Apple Silicon Optimization{Colors.END}")
+    print("=" * 60)
+
+    router = get_smart_router()
+    status = router.get_status()
+    hw = status['hardware']
+
+    # Hardware info
+    print(f"\n{Colors.BOLD}Hardware Detected:{Colors.END}")
+    print(f"  Chip: {Colors.GREEN}{hw['chip']}{Colors.END}")
+    print(f"  Unified Memory: {hw['memory_gb']} GB")
+    print(f"  Can run 7B models: {'✓' if hw['can_run_7b'] else '✗'}")
+
+    # Local models
+    print(f"\n{Colors.BOLD}Local Models (MLX/Ollama):{Colors.END}")
+    if status['local_models']:
+        for model in status['local_models']:
+            print(f"  {Colors.GREEN}✓{Colors.END} {model}")
+    else:
+        print(f"  {Colors.YELLOW}No local models found. Run 'ollama pull llama3.2:3b' to get started.{Colors.END}")
+
+    # Cloud models
+    print(f"\n{Colors.BOLD}Cloud Models (via API):{Colors.END}")
+    if status['cloud_models']:
+        for model in status['cloud_models']:
+            print(f"  {Colors.BLUE}☁{Colors.END} {model}")
+    else:
+        print(f"  {Colors.YELLOW}No API keys found. Set OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY.{Colors.END}")
+
+    # Routing strategy
+    print(f"\n{Colors.BOLD}Smart Routing Strategy:{Colors.END}")
+    print(f"  Prefer local: {Colors.GREEN if status['prefer_local'] else Colors.YELLOW}{status['prefer_local']}{Colors.END}")
+    print(f"  Cost sensitive: {status['cost_sensitive']}")
+
+    # Show routing examples
+    print(f"\n{Colors.BOLD}Task Routing Examples:{Colors.END}")
+    examples = [
+        ("code_completion", "Quick autocomplete"),
+        ("code_generation", "Writing functions"),
+        ("architecture", "System design"),
+        ("security_audit", "Security review"),
+    ]
+
+    for task, desc in examples:
+        decision = router.route(task)
+        tier_color = Colors.GREEN if "local" in decision.tier.value else Colors.BLUE
+        print(f"  {desc}: {tier_color}{decision.model_name}{Colors.END} ({decision.tier.value})")
+
+    # Performance tips
+    print(f"\n{Colors.BOLD}Performance Tips:{Colors.END}")
+    if hw['memory_gb'] >= 32:
+        print(f"  {Colors.GREEN}✓ Great! You can run 13B+ models locally.{Colors.END}")
+    elif hw['memory_gb'] >= 16:
+        print(f"  {Colors.GREEN}✓ Good setup for 7B models. Consider more RAM for larger models.{Colors.END}")
+    else:
+        print(f"  {Colors.YELLOW}Limited RAM. Stick to 3B models or use cloud APIs.{Colors.END}")
+
+    print(f"\n{Colors.CYAN}Fred automatically routes tasks to optimize speed and quality!{Colors.END}")
+
+
 async def create_app(
     description: str,
     name: Optional[str] = None,
@@ -1681,6 +1748,9 @@ Training & Feedback:
   fred feedback                         # View feedback status
   fred train                            # Fine-tune with feedback
 
+Apple Optimization:
+  fred optimize                         # Apple Silicon status
+
 Server Management:
   fred start                            # Start API server (background)
   fred stop                             # Stop API server
@@ -1742,7 +1812,7 @@ Server Management:
         await create_app(description=description, name=args.create, template=args.template, deploy_target=args.target)
     elif args.interactive or args.chat or not args.command:
         await interactive_mode()
-    elif args.command in ['review', 'security', 'fix', 'commit', 'explain', 'test', 'todo', 'scan', 'learn', 'forget', 'projects', 'search', 'debug', 'chat', 'benchmark', 'feedback', 'train']:
+    elif args.command in ['review', 'security', 'fix', 'commit', 'explain', 'test', 'todo', 'scan', 'learn', 'forget', 'projects', 'search', 'debug', 'chat', 'benchmark', 'feedback', 'train', 'optimize']:
         # Handle subcommand-style usage
         if args.command == 'review':
             await quick_review(args.path)
@@ -1794,6 +1864,8 @@ Server Management:
         elif args.command == 'train':
             dry_run = '--dry-run' in sys.argv or '-n' in sys.argv
             await run_training(dry_run=dry_run)
+        elif args.command == 'optimize':
+            await show_apple_optimization()
     else:
         # Treat as natural language task
         task = args.command + (" " + args.path if args.path != os.getcwd() else "")

@@ -51,6 +51,16 @@ from .framework import (
     ContextManager,
     get_tool_registry,
 )
+from .autonomous import (
+    SelfCorrector,
+    CorrectionResult,
+    TaskDecomposer,
+    ExecutionGraph,
+    GraphExecutor,
+    SessionLearner,
+    TaskOutcome,
+    TeamAdapter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,18 +101,30 @@ class AIDevTeam:
         enable_memory: bool = True,
         enable_learning: bool = True,
         enable_auto_learning: bool = True,
+        local_only: bool = False,
     ):
         self.project_name = project_name
         self.agents: Dict[str, AIAgent] = {}
         self.enable_memory = enable_memory
         self.enable_learning = enable_learning
         self.enable_auto_learning = enable_auto_learning
+        self.local_only = local_only  # Use only local Ollama models (no cloud APIs)
 
         # Initialize task router, cost optimizer, and performance tracker
         self._task_router = TaskRouter()
         self._cost_optimizer = CostOptimizer()
         self._weighted_consensus = WeightedConsensus()
         self._performance_tracker = get_performance_tracker()
+
+        # Initialize Apple Silicon smart router for local model optimization
+        self._apple_router = None
+        try:
+            from .apple.smart_router import get_smart_router
+            self._apple_router = get_smart_router(prefer_local=not local_only)
+            if self._apple_router.hardware:
+                logger.info(f"Apple Silicon detected: {self._apple_router.hardware.chip} {self._apple_router.hardware.variant} ({self._apple_router.hardware.memory_gb}GB)")
+        except Exception as e:
+            logger.debug(f"Apple router not available: {e}")
 
         # v2: Preference store and decision logger
         self._preference_store = get_preference_store()
@@ -157,11 +179,37 @@ class AIDevTeam:
 
         self._collaboration_engine = None
 
+        # Initialize autonomous capabilities
+        self._self_corrector = SelfCorrector(max_attempts=3, confidence_threshold=0.7)
+        self._task_decomposer = TaskDecomposer(ai_analyzer=self._decompose_analyze)
+        # Load persisted learning data or create new
+        self._session_learner = SessionLearner.load_or_create(
+            failure_threshold=3, learning_rate=0.1
+        )
+        self._team_adapter = TeamAdapter(self._session_learner)
+
+        # Enable autonomous features by default
+        self.enable_self_correction = True
+        self.enable_task_decomposition = True
+        self.enable_session_learning = True
+
         if auto_setup:
             self.setup_agents()
 
     def setup_agents(self):
         """Setup default AI team based on available API keys"""
+        if self.local_only:
+            # Local-only mode: skip all cloud APIs, use only Ollama
+            logger.info("Local-only mode: using Ollama models only (no cloud APIs)")
+            self._setup_local_agents()
+            if not self.agents:
+                logger.warning(
+                    "No local Ollama models available. "
+                    "Install Ollama and run: ollama pull llama3.2:3b"
+                )
+            return
+
+        # Cloud agents (requires API keys)
         # Claude - Lead Analyst
         if os.getenv("ANTHROPIC_API_KEY"):
             self.register_agent(ClaudeAgent())
@@ -192,7 +240,8 @@ class AIDevTeam:
         if not self.agents:
             logger.warning(
                 "No AI agents configured. Set API keys: "
-                "ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY"
+                "ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY "
+                "or use local_only=True with Ollama"
             )
 
     def _setup_llama_cloud_agents(self):
@@ -441,6 +490,29 @@ class AIDevTeam:
             f"(complexity: {classification.complexity}, confidence: {classification.confidence:.2f})"
         )
 
+        # Apple Silicon optimization: use smart router for local vs cloud decision
+        prefer_local_models = False
+        if self._apple_router and self._apple_router.hardware:
+            # Map task types to smart router task types
+            apple_task_type = {
+                "code_review": "code_review",
+                "code_generation": "code_generation",
+                "debugging": "debug_error",
+                "documentation": "docstring",
+                "testing": "write_test",
+                "architecture": "architecture",
+                "security": "security_audit",
+            }.get(classification.primary_type.value, "code_generation")
+
+            routing_decision = self._apple_router.route(
+                task_type=apple_task_type,
+                prompt_length=len(prompt) + len(context),
+            )
+            prefer_local_models = "local" in routing_decision.tier.value
+            collaboration_log.append(
+                f"Apple router: {routing_decision.tier.value} ({routing_decision.reason})"
+            )
+
         # Auto-select agents if not specified
         routing_start_time = time.time()
         if not agents:
@@ -453,6 +525,15 @@ class AIDevTeam:
                 if self._constraints.allow_cloud_fallback:
                     available = list(self.agents.keys())
                     collaboration_log.append("Constraints filtered all local agents, using cloud fallback")
+
+            # Apple Silicon optimization: prioritize local agents for simple/medium tasks
+            if prefer_local_models and available:
+                local_agents = [a for a in available if 'ollama' in a.lower() or 'local' in a.lower()]
+                if local_agents:
+                    # Put local agents first
+                    cloud_agents = [a for a in available if a not in local_agents]
+                    available = local_agents + cloud_agents
+                    collaboration_log.append(f"Apple optimization: prioritizing local agents {local_agents}")
 
             # Check for user-preferred agent for this task type
             task_type_str = classification.primary_type.value
@@ -608,7 +689,28 @@ class AIDevTeam:
         )
 
         try:
-            if mode == "parallel":
+            # Smart routing: use single agent for low complexity tasks
+            if mode == "auto" or mode == "smart":
+                if classification.complexity == "low":
+                    mode = "single"
+                    collaboration_log.append("Auto-routing: simple task → single agent")
+                else:
+                    mode = "parallel"
+                    collaboration_log.append(f"Auto-routing: {classification.complexity} task → parallel")
+
+            if mode == "single":
+                # Use only the best agent (first in sorted list)
+                best_agent = active_agents[0]
+                collaboration_log.append(f"Single-agent mode: using {best_agent.name}")
+                response = await best_agent.generate_response(enhanced_prompt, context)
+                agent_responses = [response]
+            elif mode == "fast":
+                # Fast mode: use only first agent, no synthesis
+                best_agent = active_agents[0]
+                collaboration_log.append(f"Fast mode: using {best_agent.name}")
+                response = await best_agent.generate_response(enhanced_prompt, context)
+                agent_responses = [response]
+            elif mode == "parallel":
                 agent_responses = await self._parallel_collaboration(
                     active_agents, enhanced_prompt, context, collaboration_log
                 )
@@ -752,6 +854,24 @@ class AIDevTeam:
                         task_id=task_id,
                     )
                 collaboration_log.append(f"Recorded performance for {len(successful_responses)} agents")
+
+            # Record session learning outcomes and persist
+            if self.enable_session_learning and self._session_learner:
+                for response in successful_responses:
+                    outcome = TaskOutcome(
+                        task_id=task_id,
+                        task_type=task_type,
+                        agent_id=response.agent_name,
+                        prompt=prompt,
+                        response=response.content[:1000] if response.content else "",
+                        success=response.success,
+                        confidence=response.confidence,
+                        execution_time=response.response_time,
+                    )
+                    self._session_learner.record_outcome(outcome)
+                # Auto-save learning data
+                self._session_learner.save()
+                collaboration_log.append(f"Session learning updated and saved")
 
             return result
 
@@ -1368,6 +1488,247 @@ Provide:
 4. Trade-offs and considerations"""
 
         return await self.collaborate(prompt, mode="consensus", max_iterations=2)
+
+    # ==========================
+    # Autonomous AI Capabilities
+    # ==========================
+
+    async def _decompose_analyze(self, prompt: str) -> str:
+        """Helper for task decomposition - uses quick agent for analysis."""
+        agent = self.get_agent("local-llama3") or self.get_agent("chatgpt")
+        if agent:
+            response = await agent.generate_response(prompt)
+            return response.content
+        return ""
+
+    async def auto_collaborate(
+        self,
+        goal: str,
+        context: Dict[str, Any] = None,
+        enable_correction: bool = True,
+        enable_decomposition: bool = True,
+        on_progress: callable = None
+    ) -> Dict[str, Any]:
+        """
+        Fully autonomous collaboration with self-correction and task decomposition.
+
+        This is the main entry point for autonomous coding assistance.
+
+        Args:
+            goal: High-level goal to accomplish
+            context: Additional context (code, project info, etc.)
+            enable_correction: Auto-correct failed responses
+            enable_decomposition: Break complex goals into subtasks
+            on_progress: Callback for progress updates
+
+        Returns:
+            Dict with results, including all subtask outputs
+        """
+        start_time = time.time()
+        context = context or {}
+
+        # Register agents with session learner
+        for agent_id in self.available_agents:
+            self._session_learner.register_agent(agent_id)
+
+        # Check if task is complex enough to decompose
+        is_complex = len(goal.split()) > 20 or any(
+            kw in goal.lower() for kw in ['build', 'create', 'implement', 'develop', 'full']
+        )
+
+        if enable_decomposition and is_complex:
+            # Decompose and execute
+            logger.info(f"Decomposing complex goal: {goal[:50]}...")
+            result = await self._execute_with_decomposition(goal, context, on_progress)
+        else:
+            # Direct execution with correction
+            result = await self._execute_with_correction(
+                goal, context, enable_correction
+            )
+
+        # Update session learner
+        outcome = TaskOutcome(
+            task_id=str(uuid.uuid4()),
+            task_type=self._task_router.classify(goal).primary_type.value,
+            agent_id=result.get('agent', 'unknown'),
+            prompt=goal,
+            response=result.get('response', ''),
+            success=result.get('success', False),
+            confidence=result.get('confidence', 0.5),
+            execution_time=time.time() - start_time,
+            corrections_needed=result.get('corrections', 0)
+        )
+        self._session_learner.record_outcome(outcome)
+        # Auto-save learning data after each outcome
+        self._session_learner.save()
+
+        return {
+            **result,
+            'total_time': time.time() - start_time,
+            'session_stats': self._session_learner.get_session_stats()
+        }
+
+    async def _execute_with_decomposition(
+        self,
+        goal: str,
+        context: Dict[str, Any],
+        on_progress: callable = None
+    ) -> Dict[str, Any]:
+        """Execute a complex goal with task decomposition."""
+        # Decompose the goal
+        graph = await self._task_decomposer.decompose(goal, context, use_ai=True)
+
+        # Create executor
+        async def execute_subtask(prompt: str, **kwargs) -> str:
+            result = await self._execute_with_correction(prompt, context, True)
+            return result.get('response', '')
+
+        executor = GraphExecutor(
+            execute_fn=execute_subtask,
+            max_parallel=3,
+            on_progress=on_progress
+        )
+
+        # Execute all subtasks
+        completed_graph = await executor.execute(graph, context)
+
+        return {
+            'success': completed_graph.is_complete(),
+            'response': completed_graph.final_result,
+            'subtasks': {
+                tid: {
+                    'title': t.title,
+                    'status': t.status.value,
+                    'result': t.result[:500] if t.result else None
+                }
+                for tid, t in completed_graph.subtasks.items()
+            },
+            'progress': completed_graph.get_progress(),
+            'corrections': 0,
+            'agent': 'team'
+        }
+
+    async def _execute_with_correction(
+        self,
+        prompt: str,
+        context: Dict[str, Any],
+        enable_correction: bool = True
+    ) -> Dict[str, Any]:
+        """Execute a task with self-correction if needed."""
+        # Get best agent from session learner
+        task_type = self._task_router.classify(prompt).primary_type.value
+        best_agent_id = self._session_learner.get_best_agent(task_type)
+
+        if not best_agent_id:
+            best_agent_id = self.available_agents[0] if self.available_agents else None
+
+        if not best_agent_id:
+            return {
+                'success': False,
+                'response': 'No agents available',
+                'agent': None,
+                'confidence': 0.0,
+                'corrections': 0
+            }
+
+        agent = self.get_agent(best_agent_id)
+        if not agent:
+            # Fallback to collaborate
+            result = await self.collaborate(prompt)
+            return {
+                'success': True,
+                'response': result.final_answer,
+                'agent': 'team',
+                'confidence': 0.7,
+                'corrections': 0
+            }
+
+        # Execute
+        response = await agent.generate_response(prompt)
+        original_response = response.content
+
+        if not enable_correction or not self.enable_self_correction:
+            return {
+                'success': True,
+                'response': original_response,
+                'agent': best_agent_id,
+                'confidence': 0.7,
+                'corrections': 0
+            }
+
+        # Self-correction
+        async def retry_execute(new_prompt: str, **kwargs) -> str:
+            agent_override = kwargs.get('agent_override')
+            mode = kwargs.get('mode')
+
+            if mode == 'consensus':
+                result = await self.collaborate(new_prompt, mode='consensus')
+                return result.final_answer
+            elif agent_override:
+                alt_agent = self.get_agent(agent_override)
+                if alt_agent:
+                    resp = await alt_agent.generate_response(new_prompt)
+                    return resp.content
+            return (await agent.generate_response(new_prompt)).content
+
+        correction_result = await self._self_corrector.correct(
+            original_prompt=prompt,
+            original_response=original_response,
+            execute_fn=retry_execute,
+            task_type=task_type,
+            available_agents=self.available_agents,
+            context={'current_agent': best_agent_id, 'task_type': task_type}
+        )
+
+        return {
+            'success': correction_result.success,
+            'response': correction_result.corrected_response or original_response,
+            'agent': best_agent_id,
+            'confidence': correction_result.confidence,
+            'corrections': correction_result.attempts,
+            'strategy_used': correction_result.strategy_used.value if correction_result.strategy_used else None
+        }
+
+    async def build(
+        self,
+        description: str,
+        context: Dict[str, Any] = None,
+        on_progress: callable = None
+    ) -> Dict[str, Any]:
+        """
+        High-level autonomous build command.
+
+        Example:
+            result = await team.build("Create a FastAPI REST API for user management")
+
+        Args:
+            description: What to build
+            context: Additional context (existing code, requirements, etc.)
+            on_progress: Progress callback
+
+        Returns:
+            Dict with complete build output
+        """
+        return await self.auto_collaborate(
+            goal=description,
+            context=context,
+            enable_correction=True,
+            enable_decomposition=True,
+            on_progress=on_progress
+        )
+
+    def get_autonomous_stats(self) -> Dict[str, Any]:
+        """Get statistics on autonomous features."""
+        return {
+            'self_correction': self._self_corrector.get_statistics(),
+            'session_learning': self._session_learner.get_session_stats(),
+            'team_adaptation': self._team_adapter.get_adaptation_stats(),
+            'recommendations': self._session_learner.get_recommendations()
+        }
+
+    def get_best_agent_for(self, task_type: str) -> Optional[str]:
+        """Get the best agent for a specific task type based on session learning."""
+        return self._session_learner.get_best_agent(task_type)
 
     # =================
     # Tool Access Methods

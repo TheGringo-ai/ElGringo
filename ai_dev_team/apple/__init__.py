@@ -19,6 +19,14 @@ from .system_integration import (
     WritingToolsProvider,
     SiriIntentHandler,
 )
+from .smart_router import (
+    SmartAppleRouter,
+    get_smart_router,
+    get_apple_hardware_info,
+    TaskComplexity,
+    ModelTier,
+    RoutingDecision,
+)
 
 __all__ = [
     # Core ML
@@ -36,4 +44,11 @@ __all__ = [
     "get_apple_hub",
     "WritingToolsProvider",
     "SiriIntentHandler",
+    # Smart Router
+    "SmartAppleRouter",
+    "get_smart_router",
+    "get_apple_hardware_info",
+    "TaskComplexity",
+    "ModelTier",
+    "RoutingDecision",
 ]

@@ -1020,17 +1020,39 @@ async def chat_mode(project_path: str = None):
             # If editing a file, include its content
             if current_file and current_content:
                 prompt_parts.append(f"\nCURRENT FILE: {current_file}")
-                # Truncate if too long
-                content_preview = current_content[:3000]
-                if len(current_content) > 3000:
-                    content_preview += f"\n... [{len(current_content) - 3000} more characters]"
-                prompt_parts.append(f"```\n{content_preview}\n```")
+                # For large files, show structure and relevant section
+                lines = current_content.splitlines()
+                if len(lines) > 100:
+                    # Show first 50 lines (usually imports and setup)
+                    preview = '\n'.join(lines[:50])
+                    preview += f"\n\n# ... [{len(lines) - 50} more lines] ..."
+                    prompt_parts.append(f"```\n{preview}\n```")
+                else:
+                    prompt_parts.append(f"```\n{current_content}\n```")
 
                 prompt_parts.append(f"\nUSER REQUEST: {user_input}")
                 prompt_parts.append("""
-TASK: Modify the code as requested. Return ONLY the complete modified file content.
-Do not include explanations - just the raw code that should replace the file.
-If you need to explain something, do it in code comments.""")
+IMPORTANT: Return ONLY the specific code change needed, not the entire file.
+Format your response as:
+
+FIND:
+```
+[exact code to find/replace]
+```
+
+REPLACE:
+```
+[new code to replace it with]
+```
+
+Or for new additions:
+
+ADD AFTER [description of location]:
+```
+[code to add]
+```
+
+Be surgical - only show the minimal change needed.""")
             else:
                 prompt_parts.append(f"\nUSER QUESTION: {user_input}")
                 if rag_context:
@@ -1045,30 +1067,55 @@ If you need to explain something, do it in code comments.""")
 
             # If we're editing, handle the response specially
             if current_file and current_content and is_edit:
-                # Extract code from response
-                response_text = response.content
-
-                # Try to extract code block if present
                 import re
-                code_match = re.search(r'```(?:\w+)?\n(.*?)```', response_text, re.DOTALL)
-                if code_match:
-                    new_content = code_match.group(1)
-                else:
-                    new_content = response_text
+                response_text = response.content
+                new_content = current_content
 
-                # Only show diff if content changed
-                if new_content.strip() != current_content.strip():
+                # Try to parse FIND/REPLACE format
+                find_match = re.search(r'FIND:\s*```(?:\w+)?\n(.*?)```', response_text, re.DOTALL | re.IGNORECASE)
+                replace_match = re.search(r'REPLACE:\s*```(?:\w+)?\n(.*?)```', response_text, re.DOTALL | re.IGNORECASE)
+
+                # Also try ADD AFTER format
+                add_match = re.search(r'ADD AFTER[^:]*:\s*```(?:\w+)?\n(.*?)```', response_text, re.DOTALL | re.IGNORECASE)
+
+                if find_match and replace_match:
+                    find_text = find_match.group(1).strip()
+                    replace_text = replace_match.group(1).strip()
+
+                    if find_text in current_content:
+                        new_content = current_content.replace(find_text, replace_text, 1)
+                        print(f"{Colors.GREEN}Found and replacing code block...{Colors.END}")
+                    else:
+                        # Try fuzzy match - find similar lines
+                        print(f"{Colors.YELLOW}Exact match not found. Showing AI suggestion:{Colors.END}")
+                        print(f"\n{Colors.CYAN}FIND:{Colors.END}\n{find_text[:300]}")
+                        print(f"\n{Colors.CYAN}REPLACE WITH:{Colors.END}\n{replace_text[:300]}")
+                        print(f"\n{Colors.YELLOW}Please manually apply or refine your request.{Colors.END}")
+                        new_content = current_content  # Don't change
+                elif add_match:
+                    add_text = add_match.group(1).strip()
+                    print(f"{Colors.CYAN}Code to add:{Colors.END}")
+                    print(f"```\n{add_text}\n```")
+                    location = input(f"{Colors.YELLOW}After which line number? (or 'skip'):{Colors.END} ").strip()
+                    if location.isdigit():
+                        lines = current_content.splitlines()
+                        line_num = int(location)
+                        lines.insert(line_num, add_text)
+                        new_content = '\n'.join(lines)
+                else:
+                    # Fallback: show the response as guidance
+                    print(response_text)
+                    new_content = current_content  # Don't auto-apply
+
+                # Only show diff and confirm if content changed
+                if new_content != current_content:
                     _show_diff(current_content, new_content, current_file)
 
-                    # Ask for confirmation
                     confirm = input(f"\n{Colors.YELLOW}Apply these changes? [y/N]:{Colors.END} ").strip().lower()
 
                     if confirm in ['y', 'yes']:
-                        # Backup original
                         backup_path = current_file + '.bak'
                         Path(backup_path).write_text(current_content)
-
-                        # Write new content
                         Path(current_file).write_text(new_content)
                         current_content = new_content
 
@@ -1076,9 +1123,6 @@ If you need to explain something, do it in code comments.""")
                         print(f"  Backup saved: {backup_path}")
                     else:
                         print(f"{Colors.YELLOW}Changes discarded.{Colors.END}")
-                else:
-                    print("No changes detected in the response.")
-                    print(response_text[:500])
             else:
                 print(response.content)
 

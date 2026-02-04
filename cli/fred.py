@@ -27,6 +27,12 @@ Agent Tasks:
     fred todo [path]              # Find TODOs/FIXMEs in project
     fred scan [path]              # Full project health scan
 
+Knowledge & Memory:
+    fred learn <path>             # Index a project into Fred's memory
+    fred forget <path>            # Remove a project from memory
+    fred projects                 # List all learned projects
+    fred search <query>           # Search across all knowledge
+
 Examples:
     fred "Create a task management app with Firebase auth"
     fred review ~/Projects/MyApp
@@ -298,6 +304,20 @@ def print_help():
 
   {Colors.CYAN}scan [path]{Colors.END}
     Full project health scan (review + security + todos).
+
+  {Colors.BOLD}Knowledge & Memory:{Colors.END}
+
+  {Colors.CYAN}learn <path>{Colors.END}
+    Index a project into Fred's memory for smarter assistance.
+
+  {Colors.CYAN}forget <path>{Colors.END}
+    Remove a project from Fred's memory.
+
+  {Colors.CYAN}projects{Colors.END}
+    List all projects Fred has learned.
+
+  {Colors.CYAN}search <query>{Colors.END}
+    Search across all learned knowledge.
 
   {Colors.BOLD}Other:{Colors.END}
 
@@ -623,6 +643,126 @@ async def full_scan(project_path: str):
     print(security_result.summary[:500] if security_result.summary else "No vulnerabilities found")
 
 
+async def learn_project(project_path: str, name: str = None):
+    """Index a project into Fred's memory for smarter assistance."""
+    from ai_dev_team.knowledge.project_memory import get_project_manager
+
+    project_path = os.path.abspath(os.path.expanduser(project_path))
+
+    if not os.path.isdir(project_path):
+        print(f"{Colors.RED}Not a directory: {project_path}{Colors.END}")
+        return
+
+    print(f"{Colors.CYAN}🧠 Learning project: {project_path}{Colors.END}")
+    print("-" * 50)
+
+    manager = get_project_manager()
+
+    # Check if already learned
+    existing = manager.get_project_by_path(project_path)
+    if existing:
+        print(f"{Colors.YELLOW}Project already learned. Re-indexing...{Colors.END}")
+        project = manager.reindex_project(existing.id)
+    else:
+        project = manager.add_project(project_path, name=name)
+
+    print(f"\n{Colors.GREEN}✓ Project learned!{Colors.END}")
+    print(f"  Name: {project.name}")
+    print(f"  Files indexed: {project.file_count}")
+    print(f"  Size: {project.total_size // 1024} KB")
+    print(f"  Technologies: {', '.join(project.technologies) or 'Unknown'}")
+    print(f"\n{Colors.CYAN}Fred now knows about this project and can give smarter answers.{Colors.END}")
+
+
+async def forget_project(project_path: str):
+    """Remove a project from Fred's memory."""
+    from ai_dev_team.knowledge.project_memory import get_project_manager
+
+    project_path = os.path.abspath(os.path.expanduser(project_path))
+    manager = get_project_manager()
+
+    project = manager.get_project_by_path(project_path)
+    if not project:
+        print(f"{Colors.YELLOW}Project not in memory: {project_path}{Colors.END}")
+        return
+
+    manager.delete_project(project.id, archive=True)
+    print(f"{Colors.GREEN}✓ Forgot project: {project.name}{Colors.END}")
+
+
+async def list_learned_projects():
+    """List all projects Fred has learned."""
+    from ai_dev_team.knowledge.project_memory import get_project_manager
+
+    manager = get_project_manager()
+    projects = manager.list_projects()
+
+    if not projects:
+        print(f"{Colors.YELLOW}No projects learned yet.{Colors.END}")
+        print(f"\nTeach Fred about a project: {Colors.CYAN}fred learn <path>{Colors.END}")
+        return
+
+    print(f"{Colors.CYAN}🧠 Learned Projects ({len(projects)}):{Colors.END}")
+    print("-" * 60)
+
+    for p in projects:
+        techs = ', '.join(p.technologies[:3]) if p.technologies else 'Unknown'
+        print(f"  {Colors.GREEN}●{Colors.END} {p.name}")
+        print(f"    Path: {p.path}")
+        print(f"    Files: {p.file_count} | Tech: {techs}")
+        print()
+
+    # Show stats
+    stats = manager.get_stats()
+    print("-" * 60)
+    print(f"Total: {stats['total_files']} files, {stats['total_size_mb']:.1f} MB indexed")
+
+
+async def search_knowledge(query: str):
+    """Search across all learned projects and knowledge."""
+    from ai_dev_team.knowledge.project_memory import get_project_manager
+    from ai_dev_team.knowledge.rag_system import get_rag
+
+    print(f"{Colors.CYAN}🔍 Searching: {query}{Colors.END}")
+    print("-" * 50)
+
+    rag = get_rag()
+    results = rag.search(query, limit=10)
+
+    if not results:
+        print(f"{Colors.YELLOW}No results found.{Colors.END}")
+        return
+
+    print(f"\n{Colors.GREEN}Found {len(results)} results:{Colors.END}\n")
+
+    for i, result in enumerate(results[:5], 1):
+        doc = result.document
+        score_bar = "█" * int(result.score * 10) + "░" * (10 - int(result.score * 10))
+        print(f"{Colors.BOLD}{i}. {doc.title or doc.source_type}{Colors.END}")
+        print(f"   Score: [{score_bar}] {result.score:.2f}")
+        print(f"   Type: {doc.source_type} | Lang: {doc.language or 'N/A'}")
+        if result.snippet:
+            snippet = result.snippet[:150].replace('\n', ' ')
+            print(f"   {snippet}...")
+        print()
+
+
+async def remember_solution(problem: str, solution: str):
+    """Store a solution for future reference."""
+    from ai_dev_team.memory import MemorySystem
+
+    memory = MemorySystem()
+    solution_id = await memory.capture_solution(
+        problem_pattern=problem,
+        solution_steps=[solution],
+        success_rate=1.0
+    )
+
+    print(f"{Colors.GREEN}✓ Solution remembered!{Colors.END}")
+    print(f"  Problem: {problem[:60]}...")
+    print(f"  Fred will recall this for similar issues.")
+
+
 async def create_app(
     description: str,
     name: Optional[str] = None,
@@ -823,6 +963,23 @@ async def interactive_mode():
             elif cmd == 'scan':
                 target = arg if arg != cwd or len(parts) > 1 else cwd
                 await full_scan(target)
+            elif cmd == 'learn':
+                if len(parts) > 1:
+                    await learn_project(parts[1])
+                else:
+                    await learn_project(cwd)
+            elif cmd == 'forget':
+                if len(parts) > 1:
+                    await forget_project(parts[1])
+                else:
+                    await forget_project(cwd)
+            elif cmd == 'projects':
+                await list_learned_projects()
+            elif cmd == 'search':
+                if len(parts) > 1:
+                    await search_knowledge(parts[1])
+                else:
+                    print(f"{Colors.YELLOW}Usage: search <query>{Colors.END}")
             elif cmd == 'cd':
                 if os.path.isdir(arg):
                     cwd = os.path.abspath(arg)
@@ -872,6 +1029,12 @@ Agent Tasks:
   fred test <file>                      # Generate tests
   fred todo                             # Find TODOs
   fred scan                             # Full project scan
+
+Knowledge & Memory:
+  fred learn <path>                     # Index project into memory
+  fred forget <path>                    # Remove from memory
+  fred projects                         # List learned projects
+  fred search <query>                   # Search all knowledge
 
 Server Management:
   fred start                            # Start API server (background)
@@ -934,7 +1097,7 @@ Server Management:
         await create_app(description=description, name=args.create, template=args.template, deploy_target=args.target)
     elif args.interactive or args.chat or not args.command:
         await interactive_mode()
-    elif args.command in ['review', 'security', 'fix', 'commit', 'explain', 'test', 'todo', 'scan']:
+    elif args.command in ['review', 'security', 'fix', 'commit', 'explain', 'test', 'todo', 'scan', 'learn', 'forget', 'projects', 'search']:
         # Handle subcommand-style usage
         if args.command == 'review':
             await quick_review(args.path)
@@ -958,6 +1121,17 @@ Server Management:
             await find_todos(args.path)
         elif args.command == 'scan':
             await full_scan(args.path)
+        elif args.command == 'learn':
+            await learn_project(args.path)
+        elif args.command == 'forget':
+            await forget_project(args.path)
+        elif args.command == 'projects':
+            await list_learned_projects()
+        elif args.command == 'search':
+            if args.path and args.path != os.getcwd():
+                await search_knowledge(args.path)
+            else:
+                print(f"{Colors.YELLOW}Usage: fred search <query>{Colors.END}")
     else:
         # Treat as natural language task
         task = args.command + (" " + args.path if args.path != os.getcwd() else "")

@@ -33,6 +33,11 @@ Knowledge & Memory:
     fred projects                 # List all learned projects
     fred search <query>           # Search across all knowledge
 
+Advanced:
+    fred debug <error>            # Debug an error with AI + codebase context
+    fred chat                     # Interactive chat with project context
+    fred benchmark <prompt>       # Compare AI model responses
+
 Examples:
     fred "Create a task management app with Firebase auth"
     fred review ~/Projects/MyApp
@@ -318,6 +323,20 @@ def print_help():
 
   {Colors.CYAN}search <query>{Colors.END}
     Search across all learned knowledge.
+
+  {Colors.BOLD}Advanced:{Colors.END}
+
+  {Colors.CYAN}debug <error>{Colors.END}
+    Debug an error using your codebase + memory + AI team.
+    Paste error text or provide a file path.
+
+  {Colors.CYAN}chat{Colors.END}
+    Interactive chat with project context.
+    Your codebase is automatically searched for relevant context.
+
+  {Colors.CYAN}benchmark <prompt>{Colors.END}
+    Compare responses from all available AI models.
+    Shows speed and response quality side by side.
 
   {Colors.BOLD}Other:{Colors.END}
 
@@ -763,6 +782,273 @@ async def remember_solution(problem: str, solution: str):
     print(f"  Fred will recall this for similar issues.")
 
 
+async def debug_error(error_input: str):
+    """Debug an error with context from your codebase and AI team."""
+    from ai_dev_team import AIDevTeam
+    from ai_dev_team.knowledge.rag_system import get_rag
+    from ai_dev_team.memory import MemorySystem
+
+    # Check if it's a file path or direct error text
+    error_text = error_input
+    if os.path.isfile(error_input):
+        error_text = Path(error_input).read_text()[:4000]
+
+    print(f"{Colors.CYAN}🐛 Debug Mode{Colors.END}")
+    print("=" * 60)
+    print(f"{Colors.RED}Error:{Colors.END}")
+    print(error_text[:500] + ("..." if len(error_text) > 500 else ""))
+    print("=" * 60)
+
+    # Step 1: Search RAG for similar errors
+    print(f"\n{Colors.BLUE}[1/3] Searching codebase for similar issues...{Colors.END}")
+    rag = get_rag()
+    rag_results = rag.search_by_error(error_text[:500])
+
+    if rag_results:
+        print(f"  Found {len(rag_results)} related code snippets")
+        for r in rag_results[:2]:
+            print(f"    • {r.document.title or r.document.source_path}")
+
+    # Step 2: Check memory for past solutions
+    print(f"\n{Colors.BLUE}[2/3] Checking memory for past solutions...{Colors.END}")
+    memory = MemorySystem()
+    similar_mistakes = await memory.find_similar_mistakes({"query": error_text[:300]})
+    solutions = await memory.find_solution_patterns(error_text[:300])
+
+    if solutions:
+        print(f"  Found {len(solutions)} relevant solutions from past experience")
+    if similar_mistakes:
+        print(f"  Found {len(similar_mistakes)} similar past mistakes")
+
+    # Step 3: Ask AI team with full context
+    print(f"\n{Colors.BLUE}[3/3] Consulting AI team...{Colors.END}")
+
+    team = AIDevTeam(project_name="debug")
+    if not team.agents:
+        print(f"{Colors.RED}❌ No API keys configured.{Colors.END}")
+        return
+
+    # Build context
+    context_parts = [f"ERROR TO DEBUG:\n```\n{error_text}\n```\n"]
+
+    if rag_results:
+        context_parts.append("\nRELATED CODE FROM CODEBASE:")
+        for r in rag_results[:3]:
+            context_parts.append(f"\n{r.document.title}:\n```\n{r.snippet[:400]}\n```")
+
+    if solutions:
+        context_parts.append("\nPAST SOLUTIONS THAT WORKED:")
+        for s in solutions[:2]:
+            context_parts.append(f"  • {s.problem_pattern}: {', '.join(s.solution_steps[:2])}")
+
+    prompt = f"""{chr(10).join(context_parts)}
+
+TASK: Debug this error and provide:
+1. ROOT CAUSE: What's causing this error
+2. FIX: Exact code or commands to fix it
+3. PREVENTION: How to prevent this in the future
+
+Be specific and actionable."""
+
+    result = await team.collaborate(prompt, mode="parallel")
+
+    print("\n" + "=" * 60)
+    print(f"{Colors.GREEN}🔧 SOLUTION{Colors.END}")
+    print("=" * 60)
+    print(result.final_answer)
+    print("\n" + "-" * 60)
+    print(f"Agents: {', '.join(result.participating_agents)} | Time: {result.total_time:.1f}s")
+
+
+async def chat_mode(project_path: str = None):
+    """Interactive chat with project context."""
+    from ai_dev_team import AIDevTeam
+    from ai_dev_team.knowledge.project_memory import get_project_manager
+    from ai_dev_team.knowledge.rag_system import get_rag
+
+    project_path = project_path or os.getcwd()
+    project_path = os.path.abspath(project_path)
+
+    print(f"{Colors.CYAN}💬 Chat Mode{Colors.END}")
+    print("=" * 60)
+
+    # Get project context if available
+    manager = get_project_manager()
+    project = manager.get_project_by_path(project_path)
+    rag = get_rag()
+
+    if project:
+        print(f"Project: {Colors.GREEN}{project.name}{Colors.END}")
+        print(f"Tech: {', '.join(project.technologies[:5])}")
+        print(f"Files: {project.file_count} indexed")
+    else:
+        print(f"Directory: {project_path}")
+        print(f"{Colors.YELLOW}Tip: Run 'fred learn .' to index this project{Colors.END}")
+
+    print("-" * 60)
+    print(f"Type your questions. Use {Colors.CYAN}'exit'{Colors.END} to quit.")
+    print(f"Context from your codebase is automatically included.\n")
+
+    team = AIDevTeam(project_name="chat")
+    if not team.agents:
+        print(f"{Colors.RED}❌ No API keys configured.{Colors.END}")
+        return
+
+    conversation_history = []
+
+    while True:
+        try:
+            user_input = input(f"{Colors.GREEN}You>{Colors.END} ").strip()
+
+            if not user_input:
+                continue
+            if user_input.lower() in ['exit', 'quit', 'q']:
+                print(f"{Colors.YELLOW}Chat ended.{Colors.END}")
+                break
+
+            # Search for relevant context
+            rag_context = ""
+            if rag:
+                results = rag.search(user_input, limit=3)
+                if results:
+                    rag_context = "\n\nRELEVANT CODE FROM YOUR PROJECTS:\n"
+                    for r in results[:2]:
+                        rag_context += f"\n{r.document.title}:\n```\n{r.snippet[:300]}\n```\n"
+
+            # Build prompt with context
+            prompt_parts = []
+
+            if project:
+                prompt_parts.append(f"PROJECT: {project.name} ({', '.join(project.technologies[:3])})")
+
+            if conversation_history:
+                prompt_parts.append("\nCONVERSATION HISTORY:")
+                for h in conversation_history[-4:]:  # Last 4 exchanges
+                    prompt_parts.append(f"User: {h['user'][:200]}")
+                    prompt_parts.append(f"Assistant: {h['assistant'][:300]}")
+
+            prompt_parts.append(f"\nUSER QUESTION: {user_input}")
+
+            if rag_context:
+                prompt_parts.append(rag_context)
+
+            prompt_parts.append("\nProvide a helpful, concise response.")
+
+            full_prompt = "\n".join(prompt_parts)
+
+            # Get response
+            print(f"{Colors.CYAN}Fred>{Colors.END} ", end="", flush=True)
+            response = await team.ask(full_prompt)
+
+            print(response.content)
+
+            # Store in history
+            conversation_history.append({
+                "user": user_input,
+                "assistant": response.content[:500]
+            })
+
+        except KeyboardInterrupt:
+            print(f"\n{Colors.YELLOW}Chat ended.{Colors.END}")
+            break
+        except Exception as e:
+            print(f"{Colors.RED}Error: {e}{Colors.END}")
+
+
+async def benchmark_models(prompt: str):
+    """Compare responses from different AI models."""
+    import time
+    from ai_dev_team.agents import (
+        ClaudeAgent, ChatGPTAgent, GeminiAgent, GrokAgent
+    )
+
+    print(f"{Colors.CYAN}⚡ Benchmark Mode{Colors.END}")
+    print("=" * 60)
+    print(f"Prompt: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
+    print("=" * 60)
+
+    # Collect available agents (use default config)
+    agents = []
+
+    if os.getenv("ANTHROPIC_API_KEY"):
+        agents.append(("Claude", ClaudeAgent()))
+    if os.getenv("OPENAI_API_KEY"):
+        agents.append(("ChatGPT", ChatGPTAgent()))
+    if os.getenv("GEMINI_API_KEY"):
+        agents.append(("Gemini", GeminiAgent()))
+    if os.getenv("XAI_API_KEY"):
+        agents.append(("Grok", GrokAgent()))
+
+    if not agents:
+        print(f"{Colors.RED}❌ No API keys configured.{Colors.END}")
+        return
+
+    print(f"\nTesting {len(agents)} models: {', '.join(a[0] for a in agents)}\n")
+
+    results = []
+
+    # Run each model
+    for name, agent in agents:
+        print(f"{Colors.BLUE}Running {name}...{Colors.END}", end=" ", flush=True)
+
+        start = time.time()
+        try:
+            response = await agent.generate_response(prompt)
+            elapsed = time.time() - start
+
+            results.append({
+                "name": name,
+                "time": elapsed,
+                "content": response.content if hasattr(response, 'content') else str(response),
+                "success": True,
+                "error": None
+            })
+            print(f"{Colors.GREEN}✓{Colors.END} ({elapsed:.1f}s)")
+
+        except Exception as e:
+            elapsed = time.time() - start
+            results.append({
+                "name": name,
+                "time": elapsed,
+                "content": "",
+                "success": False,
+                "error": str(e)
+            })
+            print(f"{Colors.RED}✗{Colors.END} ({str(e)[:30]})")
+
+    # Display results
+    print("\n" + "=" * 60)
+    print(f"{Colors.BOLD}RESULTS{Colors.END}")
+    print("=" * 60)
+
+    # Sort by speed
+    results.sort(key=lambda x: x["time"])
+
+    for i, r in enumerate(results):
+        medal = ["🥇", "🥈", "🥉", "  "][min(i, 3)]
+
+        if r["success"]:
+            print(f"\n{medal} {Colors.BOLD}{r['name']}{Colors.END} ({r['time']:.2f}s)")
+            print("-" * 40)
+            # Truncate long responses
+            content = r["content"][:600]
+            if len(r["content"]) > 600:
+                content += f"\n... [{len(r['content']) - 600} more chars]"
+            print(content)
+        else:
+            print(f"\n   {Colors.RED}{r['name']}{Colors.END} - Failed: {r['error']}")
+
+    # Summary
+    successful = [r for r in results if r["success"]]
+    if len(successful) > 1:
+        print("\n" + "=" * 60)
+        print(f"{Colors.BOLD}SUMMARY{Colors.END}")
+        fastest = min(successful, key=lambda x: x["time"])
+        print(f"  Fastest: {Colors.GREEN}{fastest['name']}{Colors.END} ({fastest['time']:.2f}s)")
+        avg_time = sum(r["time"] for r in successful) / len(successful)
+        print(f"  Average: {avg_time:.2f}s")
+
+
 async def create_app(
     description: str,
     name: Optional[str] = None,
@@ -980,6 +1266,27 @@ async def interactive_mode():
                     await search_knowledge(parts[1])
                 else:
                     print(f"{Colors.YELLOW}Usage: search <query>{Colors.END}")
+            elif cmd == 'debug':
+                if len(parts) > 1:
+                    await debug_error(parts[1])
+                else:
+                    print(f"{Colors.YELLOW}Paste your error below (Ctrl+D when done):{Colors.END}")
+                    import sys
+                    error_lines = []
+                    try:
+                        for line in sys.stdin:
+                            error_lines.append(line)
+                    except EOFError:
+                        pass
+                    if error_lines:
+                        await debug_error("".join(error_lines))
+            elif cmd == 'chat':
+                await chat_mode(cwd)
+            elif cmd == 'benchmark':
+                if len(parts) > 1:
+                    await benchmark_models(parts[1])
+                else:
+                    print(f"{Colors.YELLOW}Usage: benchmark <prompt>{Colors.END}")
             elif cmd == 'cd':
                 if os.path.isdir(arg):
                     cwd = os.path.abspath(arg)
@@ -1035,6 +1342,11 @@ Knowledge & Memory:
   fred forget <path>                    # Remove from memory
   fred projects                         # List learned projects
   fred search <query>                   # Search all knowledge
+
+Advanced:
+  fred debug <error>                    # Debug with AI + codebase
+  fred chat                             # Chat with project context
+  fred benchmark <prompt>               # Compare AI models
 
 Server Management:
   fred start                            # Start API server (background)
@@ -1097,7 +1409,7 @@ Server Management:
         await create_app(description=description, name=args.create, template=args.template, deploy_target=args.target)
     elif args.interactive or args.chat or not args.command:
         await interactive_mode()
-    elif args.command in ['review', 'security', 'fix', 'commit', 'explain', 'test', 'todo', 'scan', 'learn', 'forget', 'projects', 'search']:
+    elif args.command in ['review', 'security', 'fix', 'commit', 'explain', 'test', 'todo', 'scan', 'learn', 'forget', 'projects', 'search', 'debug', 'chat', 'benchmark']:
         # Handle subcommand-style usage
         if args.command == 'review':
             await quick_review(args.path)
@@ -1132,6 +1444,18 @@ Server Management:
                 await search_knowledge(args.path)
             else:
                 print(f"{Colors.YELLOW}Usage: fred search <query>{Colors.END}")
+        elif args.command == 'debug':
+            if args.path and args.path != os.getcwd():
+                await debug_error(args.path)
+            else:
+                print(f"{Colors.YELLOW}Usage: fred debug <error_message_or_file>{Colors.END}")
+        elif args.command == 'chat':
+            await chat_mode(args.path)
+        elif args.command == 'benchmark':
+            if args.path and args.path != os.getcwd():
+                await benchmark_models(args.path)
+            else:
+                print(f"{Colors.YELLOW}Usage: fred benchmark \"<prompt>\"{Colors.END}")
     else:
         # Treat as natural language task
         task = args.command + (" " + args.path if args.path != os.getcwd() else "")

@@ -860,8 +860,64 @@ Be specific and actionable."""
     print(f"Agents: {', '.join(result.participating_agents)} | Time: {result.total_time:.1f}s")
 
 
+def _is_edit_request(text: str) -> bool:
+    """Detect if user wants to edit code."""
+    edit_keywords = [
+        'change ', 'modify ', 'update ', 'fix ', 'edit ', 'add ', 'remove ',
+        'delete ', 'rename ', 'refactor ', 'create file', 'new file',
+        'write to', 'save to', 'replace ', 'insert ', 'append '
+    ]
+    text_lower = text.lower()
+    return any(kw in text_lower for kw in edit_keywords)
+
+
+def _extract_file_path(text: str, project_path: str) -> Optional[str]:
+    """Extract file path from user input."""
+    import re
+    # Look for file paths in the text
+    patterns = [
+        r'["\']([^"\']+\.[a-z]{1,4})["\']',  # "file.py" or 'file.py'
+        r'`([^`]+\.[a-z]{1,4})`',  # `file.py`
+        r'(\S+\.[a-z]{1,4})\b',  # file.py
+    ]
+    for pattern in patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        for match in matches:
+            # Check if file exists
+            full_path = os.path.join(project_path, match)
+            if os.path.isfile(full_path):
+                return full_path
+            if os.path.isfile(match):
+                return match
+    return None
+
+
+def _show_diff(original: str, modified: str, file_path: str):
+    """Show a colored diff between original and modified content."""
+    import difflib
+    diff = difflib.unified_diff(
+        original.splitlines(keepends=True),
+        modified.splitlines(keepends=True),
+        fromfile=f"a/{os.path.basename(file_path)}",
+        tofile=f"b/{os.path.basename(file_path)}",
+        lineterm=""
+    )
+    print(f"\n{Colors.CYAN}Proposed changes to {file_path}:{Colors.END}")
+    print("-" * 60)
+    for line in diff:
+        if line.startswith('+') and not line.startswith('+++'):
+            print(f"{Colors.GREEN}{line.rstrip()}{Colors.END}")
+        elif line.startswith('-') and not line.startswith('---'):
+            print(f"{Colors.RED}{line.rstrip()}{Colors.END}")
+        elif line.startswith('@@'):
+            print(f"{Colors.CYAN}{line.rstrip()}{Colors.END}")
+        else:
+            print(line.rstrip())
+    print("-" * 60)
+
+
 async def chat_mode(project_path: str = None):
-    """Interactive chat with project context."""
+    """Interactive chat with project context and code editing."""
     from ai_dev_team import AIDevTeam
     from ai_dev_team.knowledge.project_memory import get_project_manager
     from ai_dev_team.knowledge.rag_system import get_rag
@@ -869,7 +925,7 @@ async def chat_mode(project_path: str = None):
     project_path = project_path or os.getcwd()
     project_path = os.path.abspath(project_path)
 
-    print(f"{Colors.CYAN}💬 Chat Mode{Colors.END}")
+    print(f"{Colors.CYAN}💬 Chat Mode (with Code Editing){Colors.END}")
     print("=" * 60)
 
     # Get project context if available
@@ -886,8 +942,8 @@ async def chat_mode(project_path: str = None):
         print(f"{Colors.YELLOW}Tip: Run 'fred learn .' to index this project{Colors.END}")
 
     print("-" * 60)
-    print(f"Type your questions. Use {Colors.CYAN}'exit'{Colors.END} to quit.")
-    print(f"Context from your codebase is automatically included.\n")
+    print(f"Commands: {Colors.CYAN}'exit'{Colors.END} quit | {Colors.CYAN}'edit <file>'{Colors.END} open file for editing")
+    print(f"You can ask Fred to modify code - he'll show changes before applying.\n")
 
     team = AIDevTeam(project_name="chat")
     if not team.agents:
@@ -895,6 +951,8 @@ async def chat_mode(project_path: str = None):
         return
 
     conversation_history = []
+    current_file = None  # Track file being edited
+    current_content = None
 
     while True:
         try:
@@ -905,6 +963,38 @@ async def chat_mode(project_path: str = None):
             if user_input.lower() in ['exit', 'quit', 'q']:
                 print(f"{Colors.YELLOW}Chat ended.{Colors.END}")
                 break
+
+            # Handle explicit edit command
+            if user_input.lower().startswith('edit '):
+                file_arg = user_input[5:].strip()
+                file_path = os.path.join(project_path, file_arg) if not os.path.isabs(file_arg) else file_arg
+                if os.path.isfile(file_path):
+                    current_file = file_path
+                    current_content = Path(file_path).read_text()
+                    print(f"{Colors.GREEN}✓ Opened: {file_path}{Colors.END}")
+                    print(f"  Lines: {len(current_content.splitlines())} | Size: {len(current_content)} bytes")
+                    print(f"  Now describe what changes you want to make.")
+                else:
+                    print(f"{Colors.RED}File not found: {file_path}{Colors.END}")
+                continue
+
+            # Handle file listing
+            if user_input.lower() in ['files', 'ls']:
+                print(f"{Colors.CYAN}Files in {project_path}:{Colors.END}")
+                for f in sorted(Path(project_path).glob('*'))[:20]:
+                    print(f"  {f.name}{'/' if f.is_dir() else ''}")
+                continue
+
+            # Check if this looks like an edit request
+            is_edit = _is_edit_request(user_input) or current_file is not None
+
+            # Try to find file path if editing
+            if is_edit and not current_file:
+                found_file = _extract_file_path(user_input, project_path)
+                if found_file:
+                    current_file = found_file
+                    current_content = Path(found_file).read_text()
+                    print(f"{Colors.BLUE}Found file: {current_file}{Colors.END}")
 
             # Search for relevant context
             rag_context = ""
@@ -923,16 +1013,29 @@ async def chat_mode(project_path: str = None):
 
             if conversation_history:
                 prompt_parts.append("\nCONVERSATION HISTORY:")
-                for h in conversation_history[-4:]:  # Last 4 exchanges
+                for h in conversation_history[-4:]:
                     prompt_parts.append(f"User: {h['user'][:200]}")
                     prompt_parts.append(f"Assistant: {h['assistant'][:300]}")
 
-            prompt_parts.append(f"\nUSER QUESTION: {user_input}")
+            # If editing a file, include its content
+            if current_file and current_content:
+                prompt_parts.append(f"\nCURRENT FILE: {current_file}")
+                # Truncate if too long
+                content_preview = current_content[:3000]
+                if len(current_content) > 3000:
+                    content_preview += f"\n... [{len(current_content) - 3000} more characters]"
+                prompt_parts.append(f"```\n{content_preview}\n```")
 
-            if rag_context:
-                prompt_parts.append(rag_context)
-
-            prompt_parts.append("\nProvide a helpful, concise response.")
+                prompt_parts.append(f"\nUSER REQUEST: {user_input}")
+                prompt_parts.append("""
+TASK: Modify the code as requested. Return ONLY the complete modified file content.
+Do not include explanations - just the raw code that should replace the file.
+If you need to explain something, do it in code comments.""")
+            else:
+                prompt_parts.append(f"\nUSER QUESTION: {user_input}")
+                if rag_context:
+                    prompt_parts.append(rag_context)
+                prompt_parts.append("\nProvide a helpful, concise response.")
 
             full_prompt = "\n".join(prompt_parts)
 
@@ -940,7 +1043,44 @@ async def chat_mode(project_path: str = None):
             print(f"{Colors.CYAN}Fred>{Colors.END} ", end="", flush=True)
             response = await team.ask(full_prompt)
 
-            print(response.content)
+            # If we're editing, handle the response specially
+            if current_file and current_content and is_edit:
+                # Extract code from response
+                response_text = response.content
+
+                # Try to extract code block if present
+                import re
+                code_match = re.search(r'```(?:\w+)?\n(.*?)```', response_text, re.DOTALL)
+                if code_match:
+                    new_content = code_match.group(1)
+                else:
+                    new_content = response_text
+
+                # Only show diff if content changed
+                if new_content.strip() != current_content.strip():
+                    _show_diff(current_content, new_content, current_file)
+
+                    # Ask for confirmation
+                    confirm = input(f"\n{Colors.YELLOW}Apply these changes? [y/N]:{Colors.END} ").strip().lower()
+
+                    if confirm in ['y', 'yes']:
+                        # Backup original
+                        backup_path = current_file + '.bak'
+                        Path(backup_path).write_text(current_content)
+
+                        # Write new content
+                        Path(current_file).write_text(new_content)
+                        current_content = new_content
+
+                        print(f"{Colors.GREEN}✓ Changes applied!{Colors.END}")
+                        print(f"  Backup saved: {backup_path}")
+                    else:
+                        print(f"{Colors.YELLOW}Changes discarded.{Colors.END}")
+                else:
+                    print("No changes detected in the response.")
+                    print(response_text[:500])
+            else:
+                print(response.content)
 
             # Store in history
             conversation_history.append({

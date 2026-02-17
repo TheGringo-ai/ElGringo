@@ -1,0 +1,207 @@
+# AI Team Platform - Managed Projects Configuration
+# This file defines all projects the AI team can work on
+#
+# Status values:
+#   - active: Actively being developed, AI team should prioritize
+#   - dormant: Not actively developed, minimal AI assistance needed
+#   - archived: No longer maintained, kept for reference only
+#   - review: Needs assessment before determining status
+#
+# Priority values: high, medium, low
+
+projects:
+  chatterfix:
+    name: ChatterFix
+    path: projects/chatterfix
+    description: CMMS (Computerized Maintenance Management System) application
+    domain: maintenance_management
+    tech_stack:
+      - python
+      - firebase
+      - react
+    priority: high
+    status: active
+    ai_roles:
+      - architecture
+      - development
+      - code_review
+      - debugging
+
+  fixitfred:
+    name: Fix It Fred
+    path: projects/fixitfred
+    description: Autonomous bug detection and fixing system
+    domain: autonomous_fixing
+    tech_stack:
+      - python
+      - ai_agents
+    priority: high
+    status: active
+    ai_roles:
+      - development
+      - testing
+      - optimization
+
+  linesmart:
+    name: LineSmart
+    path: projects/linesmart
+    description: Training optimization and skill gap analysis platform
+    domain: training_optimization
+    tech_stack:
+      - python
+      - react
+      - firebase
+    priority: high
+    status: active
+    ai_roles:
+      - development
+      - content_generation
+      - analytics
+
+  safetyfix:
+    name: SafetyFix
+    path: projects/safetyfix
+    description: Safety compliance and incident management
+    domain: safety_management
+    tech_stack:
+      - python
+    priority: low
+    status: dormant
+    status_reason: Minimal development activity, no git history
+    ai_roles:
+      - development
+      - compliance_checking
+
+  parati:
+    name: Parati
+    path: projects/parati
+    description: Parati application
+    domain: general
+    tech_stack:
+      - python
+      - jinja2
+    priority: low
+    status: dormant
+    status_reason: No git history, no README, inactive
+    ai_roles:
+      - development
+      - ui_design
+
+  artproof:
+    name: ArtProof
+    path: projects/artproof
+    description: Art verification and authentication system
+    domain: verification
+    tech_stack:
+      - python
+      - ai_vision
+    priority: medium
+    status: active
+    ai_roles:
+      - development
+      - ai_integration
+
+  gringoai:
+    name: TheGringoAI
+    path: projects/gringoai
+    description: GringoOps - AI operations platform
+    domain: ai_operations
+    tech_stack:
+      - python
+    priority: medium
+    status: active
+    ai_roles:
+      - development
+      - strategy
+
+  freddy-mac-ide:
+    name: FreddyMac IDE
+    path: projects/freddy-ide
+    description: Web-based IDE with multi-AI integration - Frontend for AI Team Platform
+    domain: developer_tools
+    tech_stack:
+      - react
+      - typescript
+      - vite
+      - monaco-editor
+    priority: high
+    status: active
+    ai_roles:
+      - development
+      - ui_design
+      - ai_integration
+      - code_review
+    features:
+      - multi_ai_providers: [openai, anthropic, google, xai, ollama]
+      - ai_team_collaboration: true
+      - semantic_search: true
+      - code_editor: monaco
+    integration:
+      backend: AITeamPlatform
+      api_endpoints:
+        - /api/ai/collaborate
+        - /api/ai/review
+        - /api/ai/fix
+        - /api/team/status
+
+  dan:
+    name: Dan
+    path: projects/dan
+    description: Dan project (placeholder)
+    domain: general
+    tech_stack:
+      - unknown
+    priority: low
+    status: archived
+    status_reason: Single file only, no git history, appears to be placeholder
+    ai_roles:
+      - analysis
+      - documentation
+
+  work:
+    name: Work
+    path: projects/work
+    description: General work directory (utility)
+    domain: miscellaneous
+    tech_stack:
+      - various
+    priority: low
+    status: dormant
+    status_reason: Generic utility directory, single file, no active development
+    ai_roles:
+      - assistance
+
+# Cross-project settings
+cross_project:
+  shared_patterns:
+    - authentication
+    - firebase_integration
+    - error_handling
+    - logging
+
+  common_dependencies:
+    - python >= 3.9
+    - firebase-admin
+    - fastapi
+    - pydantic
+
+  code_style:
+    python: black + isort
+    javascript: prettier
+    documentation: markdown
+
+# AI Team preferences
+ai_team:
+  default_mode: parallel
+  code_review_required: true
+  auto_documentation: false
+  memory_enabled: true
+  learning_enabled: true
+
+  # Model assignments by task type
+  task_routing:
+    architecture: claude
+    coding: chatgpt
+    creative: gemini
+    analysis: grok
+    local_dev: ollama

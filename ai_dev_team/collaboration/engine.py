@@ -6,9 +6,10 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..agents import AIAgent, AgentResponse
+from .weighted_consensus import WeightedConsensus, ConsensusResult
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,8 @@ class CollaborationMode(Enum):
     DEVILS_ADVOCATE = "devils_advocate"  # One agent challenges others
     PEER_REVIEW = "peer_review"     # Agents review each other's work
     BRAINSTORMING = "brainstorming" # Creative ideation mode
+    DEBATE = "debate"               # Structured debate for complex decisions
+    EXPERT_PANEL = "expert_panel"   # Each agent contributes from their expertise
 
 
 @dataclass
@@ -56,6 +59,7 @@ class CollaborationEngine:
     def __init__(self):
         self.rounds: List[CollaborationRound] = []
         self._consensus_builder = ConsensusBuilder()
+        self._weighted_consensus = WeightedConsensus()
         self._challenge_generator = ChallengeGenerator()
 
     async def execute(
@@ -96,6 +100,14 @@ class CollaborationEngine:
 
         elif collaboration_context.mode == CollaborationMode.BRAINSTORMING:
             return await self._execute_brainstorming(agents, prompt, context)
+
+        elif collaboration_context.mode == CollaborationMode.DEBATE:
+            return await self._execute_debate(
+                agents, prompt, context, collaboration_context
+            )
+
+        elif collaboration_context.mode == CollaborationMode.EXPERT_PANEL:
+            return await self._execute_expert_panel(agents, prompt, context)
 
         else:
             return await self._execute_parallel(agents, prompt, context)
@@ -199,6 +211,71 @@ class CollaborationEngine:
                 break
 
         return all_responses
+
+    async def _execute_weighted_consensus(
+        self,
+        agents: List[AIAgent],
+        prompt: str,
+        context: str,
+        task_type: str,
+        config: CollaborationContext,
+    ) -> Tuple[List[AgentResponse], ConsensusResult]:
+        """Execute collaboration with weighted voting"""
+        all_responses = []
+
+        for round_num in range(1, config.max_rounds + 1):
+            # Build round context
+            if all_responses:
+                prev_round = "\n\n".join(
+                    f"[{r.agent_name}]: {r.content[:300]}..."
+                    for r in all_responses[-len(agents):] if r.success
+                )
+                round_context = f"{context}\n\nPrevious round:\n{prev_round}"
+                round_prompt = f"Review and refine based on team feedback:\n{prompt}"
+            else:
+                round_context = context
+                round_prompt = prompt
+
+            # Get responses
+            tasks = [agent.generate_response(round_prompt, round_context) for agent in agents]
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+            round_responses = [r for r in responses if isinstance(r, AgentResponse)]
+            all_responses.extend(round_responses)
+
+            # Calculate weighted consensus
+            consensus_result = self._weighted_consensus.calculate_weighted_vote(
+                round_responses, task_type
+            )
+
+            self.rounds.append(CollaborationRound(
+                round_number=round_num,
+                prompt=round_prompt,
+                responses=round_responses,
+                consensus_level=consensus_result.consensus_level,
+                conflicts=consensus_result.disagreements,
+            ))
+
+            if consensus_result.consensus_reached:
+                logger.info(f"Weighted consensus reached at round {round_num}")
+                return all_responses, consensus_result
+
+            # Initiate debate if disagreements exist
+            if consensus_result.disagreements and round_num < config.max_rounds:
+                debate_rounds = await self._weighted_consensus.initiate_debate(
+                    consensus_result.disagreements,
+                    agents,
+                    prompt,
+                    context,
+                )
+                if debate_rounds:
+                    self.rounds[-1].insights.append(f"Debate held on {len(debate_rounds)} topics")
+
+        # Final consensus calculation
+        final_consensus = self._weighted_consensus.calculate_weighted_vote(
+            all_responses[-len(agents):], task_type
+        )
+        return all_responses, final_consensus
 
     async def _execute_devils_advocate(
         self,
@@ -323,6 +400,218 @@ class CollaborationEngine:
         ))
 
         return responses
+
+    async def _execute_debate(
+        self,
+        agents: List[AIAgent],
+        prompt: str,
+        context: str,
+        config: CollaborationContext,
+    ) -> List[AgentResponse]:
+        """
+        Structured debate mode for complex decisions.
+
+        Phase 1: Initial positions from all agents
+        Phase 2: Cross-examination (each agent responds to others)
+        Phase 3: Final synthesis with weighted voting
+        """
+        if len(agents) < 2:
+            return await self._execute_parallel(agents, prompt, context)
+
+        all_responses = []
+
+        # Phase 1: Initial positions
+        logger.info("Debate Phase 1: Initial positions")
+        position_prompt = f"""DEBATE - STATE YOUR POSITION
+
+Topic: {prompt}
+
+You are participating in a structured debate. State your position clearly:
+1. Your main argument (1-2 sentences)
+2. Key supporting points (2-3 bullet points)
+3. Potential counterarguments you anticipate
+
+Be direct and substantive."""
+
+        tasks = [agent.generate_response(position_prompt, context) for agent in agents]
+        initial_responses = await asyncio.gather(*tasks, return_exceptions=True)
+        initial_responses = [r for r in initial_responses if isinstance(r, AgentResponse)]
+        all_responses.extend(initial_responses)
+
+        self.rounds.append(CollaborationRound(
+            round_number=1,
+            prompt=position_prompt,
+            responses=initial_responses,
+            consensus_level=self._calculate_consensus(initial_responses),
+            insights=["Initial positions stated"],
+        ))
+
+        # Phase 2: Cross-examination
+        logger.info("Debate Phase 2: Cross-examination")
+        positions_summary = "\n\n".join(
+            f"[{r.agent_name}]: {r.content[:400]}..."
+            for r in initial_responses if r.success
+        )
+
+        cross_exam_prompt = f"""DEBATE - CROSS-EXAMINATION
+
+Original Topic: {prompt}
+
+Other Participants' Positions:
+{positions_summary}
+
+Respond to the other positions:
+1. What are the strongest points in opposing views?
+2. What are the weaknesses or gaps in their arguments?
+3. How does your position address these concerns?
+4. Have you updated your position based on what you've heard?
+
+Be respectful but critical. Focus on the ideas, not the participants."""
+
+        tasks = [agent.generate_response(cross_exam_prompt, context) for agent in agents]
+        exam_responses = await asyncio.gather(*tasks, return_exceptions=True)
+        exam_responses = [r for r in exam_responses if isinstance(r, AgentResponse)]
+        all_responses.extend(exam_responses)
+
+        self.rounds.append(CollaborationRound(
+            round_number=2,
+            prompt="Cross-examination",
+            responses=exam_responses,
+            consensus_level=self._calculate_consensus(exam_responses),
+            insights=["Cross-examination complete"],
+            conflicts=self._identify_conflicts(initial_responses, exam_responses),
+        ))
+
+        # Phase 3: Final synthesis (optional third round if no consensus)
+        current_consensus = self._calculate_consensus(exam_responses)
+        if current_consensus < config.consensus_threshold and len(agents) > 0:
+            logger.info("Debate Phase 3: Final synthesis")
+
+            all_positions = "\n\n".join(
+                f"[{r.agent_name}]: {r.content[:300]}..."
+                for r in all_responses[-len(agents)*2:] if r.success
+            )
+
+            synthesis_prompt = f"""DEBATE - FINAL SYNTHESIS
+
+The debate is concluding. Based on all arguments:
+
+{all_positions}
+
+Provide your final position:
+1. The strongest conclusion supported by the debate
+2. Key areas where consensus was reached
+3. Remaining disagreements that may need further discussion
+4. Your final recommendation"""
+
+            # Use one agent to synthesize
+            synthesis_agent = agents[0]
+            synthesis_response = await synthesis_agent.generate_response(synthesis_prompt, context)
+            if synthesis_response.success:
+                all_responses.append(synthesis_response)
+                self.rounds.append(CollaborationRound(
+                    round_number=3,
+                    prompt="Final synthesis",
+                    responses=[synthesis_response],
+                    consensus_level=current_consensus,
+                    insights=["Debate concluded with synthesis"],
+                ))
+
+        return all_responses
+
+    async def _execute_expert_panel(
+        self,
+        agents: List[AIAgent],
+        prompt: str,
+        context: str,
+    ) -> List[AgentResponse]:
+        """
+        Expert panel mode - each agent contributes from their area of expertise.
+
+        Agents are assigned specific angles based on their strengths:
+        - Claude: Analysis, Architecture
+        - ChatGPT: Implementation, Best Practices
+        - Gemini: Creative Solutions, UX
+        - Grok: Strategic Reasoning, Performance
+        """
+        if not agents:
+            return []
+
+        # Define expert perspectives for different agent types
+        expert_perspectives = {
+            "claude": "architectural analysis, research synthesis, and comprehensive evaluation",
+            "chatgpt": "implementation details, coding best practices, and practical solutions",
+            "gemini": "creative approaches, user experience, and innovative alternatives",
+            "grok": "strategic reasoning, performance optimization, and edge case analysis",
+            "llama": "general analysis and alternative perspectives",
+            "qwen": "code implementation and technical details",
+        }
+
+        # Create specialized prompts for each agent
+        tasks = []
+        for agent in agents:
+            # Determine agent type from name
+            agent_type = "general"
+            for key in expert_perspectives:
+                if key in agent.name.lower():
+                    agent_type = key
+                    break
+
+            expertise = expert_perspectives.get(agent_type, "general analysis and your unique perspective")
+
+            expert_prompt = f"""EXPERT PANEL CONTRIBUTION
+
+Topic: {prompt}
+
+Your Role: Provide insights based on your expertise in {expertise}.
+
+Please contribute:
+1. Your expert analysis from your specific perspective
+2. Key considerations others might miss
+3. Recommendations based on your expertise area
+4. Any concerns or risks from your perspective
+
+Be thorough but focused on your area of expertise."""
+
+            tasks.append(agent.generate_response(expert_prompt, context))
+
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+        valid_responses = [r for r in responses if isinstance(r, AgentResponse)]
+
+        self.rounds.append(CollaborationRound(
+            round_number=1,
+            prompt="Expert panel contributions",
+            responses=valid_responses,
+            consensus_level=self._calculate_consensus(valid_responses),
+            insights=["Expert panel contributions collected"],
+        ))
+
+        return valid_responses
+
+    def _identify_conflicts(
+        self,
+        initial: List[AgentResponse],
+        followup: List[AgentResponse]
+    ) -> List[str]:
+        """Identify conflicts between debate rounds"""
+        conflicts = []
+
+        # Simple conflict detection based on response changes
+        initial_by_agent = {r.agent_name: r for r in initial if r.success}
+        followup_by_agent = {r.agent_name: r for r in followup if r.success}
+
+        for agent_name, initial_resp in initial_by_agent.items():
+            if agent_name in followup_by_agent:
+                followup_resp = followup_by_agent[agent_name]
+                # If confidence changed significantly, note it
+                if abs(initial_resp.confidence - followup_resp.confidence) > 0.2:
+                    direction = "increased" if followup_resp.confidence > initial_resp.confidence else "decreased"
+                    conflicts.append(
+                        f"{agent_name}'s confidence {direction} from "
+                        f"{initial_resp.confidence:.2f} to {followup_resp.confidence:.2f}"
+                    )
+
+        return conflicts
 
     def _calculate_consensus(self, responses: List[AgentResponse]) -> float:
         """Calculate consensus level from responses"""

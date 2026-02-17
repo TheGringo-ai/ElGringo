@@ -1,0 +1,82 @@
+#!/bin/bash
+#
+# 🚀 FRED - AI Team Platform Launcher
+# ====================================
+#
+# Usage:
+#   fred              Start AI Team Platform
+#   fred stop         Stop all services
+#   fred status       Check service status
+#   fred vibe         Start + VIBE CLI
+#   fred logs         Show live logs
+#   fred help         Show this help
+#
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+PURPLE='\033[0;35m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+# Get script directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$SCRIPT_DIR"
+
+# Help
+show_help() {
+    echo -e "${PURPLE}${BOLD}"
+    echo "╔═══════════════════════════════════════════════════════════════╗"
+    echo "║   🚀 FRED - AI TEAM PLATFORM LAUNCHER 🚀                      ║"
+    echo "║                                                               ║"
+    echo "║   Claude • ChatGPT • Gemini • Grok - Working Together!        ║"
+    echo "╚═══════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+    echo -e "${CYAN}Commands:${NC}"
+    echo ""
+    echo -e "  ${GREEN}fred${NC}              Start AI Team Platform"
+    echo -e "  ${GREEN}fred stop${NC}         Stop all services"
+    echo -e "  ${GREEN}fred status${NC}       Check service status"
+    echo -e "  ${GREEN}fred vibe${NC}         Start + VIBE interactive CLI"
+    echo -e "  ${GREEN}fred logs${NC}         Show live logs"
+    echo -e "  ${GREEN}fred help${NC}         Show this help"
+    echo ""
+    echo -e "${CYAN}Services:${NC}"
+    echo ""
+    echo -e "  • AI Team API        → http://localhost:5050"
+    echo -e "  • AI Team Web        → http://localhost:8080"
+    echo ""
+    echo -e "${CYAN}Add to your shell:${NC}"
+    echo ""
+    echo -e "  ${YELLOW}alias fred='$SCRIPT_DIR/fred'${NC}"
+    echo ""
+}
+
+# Main
+case "${1:-start}" in
+    start|"")
+        python3 start_all.py
+        ;;
+    stop)
+        python3 start_all.py --stop
+        ;;
+    status)
+        python3 start_all.py --status
+        ;;
+    vibe)
+        python3 start_all.py --vibe
+        ;;
+    logs)
+        python3 start_all.py --logs
+        ;;
+    help|--help|-h)
+        show_help
+        ;;
+    *)
+        echo -e "${RED}Unknown command: $1${NC}"
+        show_help
+        exit 1
+        ;;
+esac

@@ -1,0 +1,30 @@
+# MLX LoRA Fine-tuning Configuration for Apple Silicon
+# Optimized for M3 Pro with 18GB RAM
+
+# Model settings
+model: "Qwen/Qwen2.5-Coder-7B-Instruct"
+
+# LoRA settings (memory efficient)
+lora_layers: 16          # Number of layers to fine-tune
+lora_rank: 8             # Lower = less memory, 8 is good balance
+lora_alpha: 16           # Scaling factor
+lora_dropout: 0.05       # Regularization
+
+# Training settings (conservative for 18GB RAM)
+batch_size: 1            # Keep at 1 for 7B model on 18GB
+iters: 1000              # Training iterations
+learning_rate: 1e-5      # Conservative LR for fine-tuning
+warmup_steps: 100        # Warmup iterations
+grad_checkpoint: true    # Enable gradient checkpointing (saves memory)
+
+# Data settings
+data: "./data"
+train_file: "train.jsonl"
+valid_file: "valid.jsonl"
+
+# Output
+adapter_path: "./models/qwen-coder-finetuned"
+save_every: 100          # Save checkpoint every N steps
+
+# Memory optimization
+quantize: true           # 4-bit quantization during training

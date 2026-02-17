@@ -1,0 +1,6 @@
+{
+  "enabledMcpjsonServers": [
+    "ai-team-platform"
+  ],
+  "enableAllProjectMcpServers": true
+}

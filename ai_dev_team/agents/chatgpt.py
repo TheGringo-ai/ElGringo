@@ -5,7 +5,7 @@ ChatGPT Agent - OpenAI GPT Integration
 import logging
 import os
 import time
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 from .base import AIAgent, AgentConfig, AgentResponse, ModelType
 
@@ -127,3 +127,47 @@ class ChatGPTAgent(AIAgent):
                 response_time=response_time,
                 error=str(e)
             )
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        context: str = "",
+        system_override: Optional[str] = None
+    ) -> AsyncIterator[str]:
+        """Stream response tokens as they arrive"""
+        try:
+            client = await self._get_client()
+            if not client:
+                return
+
+            # Build messages
+            system_prompt = system_override or self.config.system_prompt or (
+                f"You are {self.name}, a {self.role}. "
+                f"Your capabilities include: {', '.join(self.config.capabilities)}. "
+                "Provide practical, well-structured solutions."
+            )
+
+            user_content = prompt
+            if context:
+                user_content = f"Context:\n{context}\n\nTask:\n{prompt}"
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ]
+
+            # Stream the response
+            stream = await client.chat.completions.create(
+                model=self.config.model_name or self.DEFAULT_MODEL,
+                max_tokens=self.config.max_tokens,
+                temperature=self.config.temperature,
+                messages=messages,
+                stream=True,
+            )
+
+            async for chunk in stream:
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+
+        except Exception as e:
+            logger.error(f"ChatGPT streaming error: {e}")

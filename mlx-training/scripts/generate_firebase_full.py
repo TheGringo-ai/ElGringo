@@ -4458,7 +4458,4971 @@ const userDoc = await pool.getDocument('users', 'user123');
 const writeDb = pool.getWriteDb();
 await setDoc(doc(writeDb, 'users', 'user123'), { updated: true });'''
     },
+    # =========================================================================
+    # CLOUD STORAGE OPERATIONS
+    # =========================================================================
+    {
+        "instruction": "Write Python code to upload a file to Firebase Cloud Storage",
+        "output": '''from firebase_admin import storage
+from pathlib import Path
+
+def upload_file(local_path: str, storage_path: str, content_type: str = None) -> str:
+    """Upload a file to Firebase Cloud Storage."""
+    bucket = storage.bucket()
+    blob = bucket.blob(storage_path)
+
+    # Set content type if provided
+    if content_type:
+        blob.content_type = content_type
+
+    # Upload from local file
+    blob.upload_from_filename(local_path)
+
+    # Make publicly accessible (optional)
+    blob.make_public()
+
+    return blob.public_url
+
+# Usage
+url = upload_file("./photo.jpg", "uploads/users/user123/profile.jpg", "image/jpeg")
+print(f"File uploaded: {url}")'''
+    },
+    {
+        "instruction": "Write Python code to download a file from Firebase Cloud Storage",
+        "output": '''from firebase_admin import storage
+
+def download_file(storage_path: str, local_path: str) -> bool:
+    """Download a file from Firebase Cloud Storage."""
+    bucket = storage.bucket()
+    blob = bucket.blob(storage_path)
+
+    if not blob.exists():
+        raise FileNotFoundError(f"File not found: {storage_path}")
+
+    blob.download_to_filename(local_path)
+    return True
+
+# Usage
+download_file("uploads/users/user123/profile.jpg", "./downloaded_profile.jpg")
+print("File downloaded successfully")'''
+    },
+    {
+        "instruction": "Write Python code to generate a signed URL for Firebase Storage file",
+        "output": '''from firebase_admin import storage
+from datetime import timedelta
+
+def generate_signed_url(storage_path: str, expiration_minutes: int = 60) -> str:
+    """Generate a signed URL for temporary file access."""
+    bucket = storage.bucket()
+    blob = bucket.blob(storage_path)
+
+    url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=expiration_minutes),
+        method="GET"
+    )
+
+    return url
+
+# Usage
+url = generate_signed_url("private/documents/report.pdf", expiration_minutes=30)
+print(f"Signed URL (expires in 30 min): {url}")'''
+    },
+    {
+        "instruction": "Write Python code to list files in a Firebase Storage folder",
+        "output": '''from firebase_admin import storage
+from typing import List, Dict
+
+def list_files(folder_path: str) -> List[Dict]:
+    """List all files in a Storage folder."""
+    bucket = storage.bucket()
+    blobs = bucket.list_blobs(prefix=folder_path)
+
+    files = []
+    for blob in blobs:
+        files.append({
+            'name': blob.name,
+            'size': blob.size,
+            'content_type': blob.content_type,
+            'updated': blob.updated,
+            'public_url': blob.public_url if blob.public_url else None
+        })
+
+    return files
+
+# Usage
+files = list_files("uploads/users/user123/")
+for f in files:
+    print(f"{f['name']} - {f['size']} bytes")'''
+    },
+    {
+        "instruction": "Write Python code to delete a file from Firebase Storage",
+        "output": '''from firebase_admin import storage
+
+def delete_file(storage_path: str) -> bool:
+    """Delete a file from Firebase Cloud Storage."""
+    bucket = storage.bucket()
+    blob = bucket.blob(storage_path)
+
+    if blob.exists():
+        blob.delete()
+        return True
+    return False
+
+def delete_folder(folder_path: str) -> int:
+    """Delete all files in a folder."""
+    bucket = storage.bucket()
+    blobs = bucket.list_blobs(prefix=folder_path)
+
+    count = 0
+    for blob in blobs:
+        blob.delete()
+        count += 1
+
+    return count
+
+# Usage
+delete_file("uploads/temp/file.txt")
+deleted_count = delete_folder("uploads/users/deleted_user/")
+print(f"Deleted {deleted_count} files")'''
+    },
+    {
+        "instruction": "Write Python code to copy a file in Firebase Storage",
+        "output": '''from firebase_admin import storage
+
+def copy_file(source_path: str, dest_path: str) -> str:
+    """Copy a file within Firebase Cloud Storage."""
+    bucket = storage.bucket()
+    source_blob = bucket.blob(source_path)
+
+    if not source_blob.exists():
+        raise FileNotFoundError(f"Source file not found: {source_path}")
+
+    # Copy to new location
+    new_blob = bucket.copy_blob(source_blob, bucket, dest_path)
+
+    return new_blob.public_url
+
+# Usage
+new_url = copy_file(
+    "uploads/templates/default_avatar.png",
+    "uploads/users/user123/avatar.png"
+)
+print(f"File copied to: {new_url}")'''
+    },
+    {
+        "instruction": "Write Python code to set metadata on a Firebase Storage file",
+        "output": '''from firebase_admin import storage
+
+def set_file_metadata(storage_path: str, metadata: dict) -> dict:
+    """Set custom metadata on a Storage file."""
+    bucket = storage.bucket()
+    blob = bucket.blob(storage_path)
+
+    # Reload to get current state
+    blob.reload()
+
+    # Update metadata
+    blob.metadata = metadata
+    blob.patch()
+
+    return blob.metadata
+
+# Usage
+metadata = set_file_metadata(
+    "uploads/documents/report.pdf",
+    {
+        "uploaded_by": "user123",
+        "document_type": "monthly_report",
+        "department": "sales",
+        "version": "1.2"
+    }
+)
+print(f"Metadata set: {metadata}")'''
+    },
+    {
+        "instruction": "Write TypeScript code to upload a file from browser to Firebase Storage",
+        "output": '''import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+
+interface UploadProgress {
+  progress: number;
+  state: string;
+}
+
+async function uploadFileWithProgress(
+  file: File,
+  path: string,
+  onProgress?: (progress: UploadProgress) => void
+): Promise<string> {
+  const storage = getStorage();
+  const storageRef = ref(storage, path);
+
+  const uploadTask = uploadBytesResumable(storageRef, file, {
+    contentType: file.type,
+    customMetadata: {
+      originalName: file.name,
+      uploadedAt: new Date().toISOString()
+    }
+  });
+
+  return new Promise((resolve, reject) => {
+    uploadTask.on(
+      'state_changed',
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        onProgress?.({ progress, state: snapshot.state });
+      },
+      (error) => reject(error),
+      async () => {
+        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+        resolve(downloadURL);
+      }
+    );
+  });
+}
+
+// Usage
+const fileInput = document.getElementById('fileInput') as HTMLInputElement;
+const file = fileInput.files?.[0];
+
+if (file) {
+  const url = await uploadFileWithProgress(
+    file,
+    `uploads/users/${userId}/${file.name}`,
+    (progress) => console.log(`Upload: ${progress.progress}%`)
+  );
+  console.log('Download URL:', url);
+}'''
+    },
+    {
+        "instruction": "Write Python code to upload file content directly to Firebase Storage",
+        "output": '''from firebase_admin import storage
+import io
+
+def upload_content(content: bytes, storage_path: str, content_type: str) -> str:
+    """Upload content directly to Storage without a local file."""
+    bucket = storage.bucket()
+    blob = bucket.blob(storage_path)
+    blob.content_type = content_type
+
+    # Upload from bytes
+    blob.upload_from_string(content, content_type=content_type)
+
+    # Make public and return URL
+    blob.make_public()
+    return blob.public_url
+
+def upload_json(data: dict, storage_path: str) -> str:
+    """Upload JSON data to Storage."""
+    import json
+    content = json.dumps(data, indent=2).encode('utf-8')
+    return upload_content(content, storage_path, 'application/json')
+
+# Usage
+report_data = {"sales": 10000, "month": "January"}
+url = upload_json(report_data, "reports/2024/january.json")
+print(f"Report uploaded: {url}")'''
+    },
+    {
+        "instruction": "Write Python code to resize image before uploading to Firebase Storage",
+        "output": '''from firebase_admin import storage
+from PIL import Image
+import io
+
+def upload_resized_image(
+    image_path: str,
+    storage_path: str,
+    max_size: tuple = (800, 800),
+    quality: int = 85
+) -> str:
+    """Resize image and upload to Firebase Storage."""
+    # Open and resize image
+    with Image.open(image_path) as img:
+        # Convert to RGB if necessary
+        if img.mode in ('RGBA', 'P'):
+            img = img.convert('RGB')
+
+        # Resize maintaining aspect ratio
+        img.thumbnail(max_size, Image.Resampling.LANCZOS)
+
+        # Save to bytes buffer
+        buffer = io.BytesIO()
+        img.save(buffer, format='JPEG', quality=quality, optimize=True)
+        buffer.seek(0)
+
+    # Upload to Storage
+    bucket = storage.bucket()
+    blob = bucket.blob(storage_path)
+    blob.content_type = 'image/jpeg'
+    blob.upload_from_file(buffer)
+    blob.make_public()
+
+    return blob.public_url
+
+# Usage
+url = upload_resized_image(
+    "./large_photo.png",
+    "thumbnails/user123/profile_thumb.jpg",
+    max_size=(200, 200)
+)
+print(f"Thumbnail uploaded: {url}")'''
+    },
+    # =========================================================================
+    # FIREBASE AUTH ADVANCED FLOWS
+    # =========================================================================
+    {
+        "instruction": "Write Python code to implement email verification flow",
+        "output": '''from firebase_admin import auth
+
+def send_verification_email(uid: str) -> str:
+    """Generate email verification link."""
+    user = auth.get_user(uid)
+
+    if user.email_verified:
+        return None  # Already verified
+
+    # Generate verification link
+    link = auth.generate_email_verification_link(
+        user.email,
+        action_code_settings=auth.ActionCodeSettings(
+            url='https://yourapp.com/verify-complete',
+            handle_code_in_app=True
+        )
+    )
+
+    return link
+
+def verify_email_action(action_code: str) -> dict:
+    """Process email verification action code."""
+    try:
+        # Verify the action code
+        info = auth.check_action_code(action_code)
+
+        # Apply the verification
+        auth.apply_action_code(action_code)
+
+        return {
+            'success': True,
+            'email': info.email,
+            'operation': info.action
+        }
+    except auth.InvalidIdTokenError:
+        return {'success': False, 'error': 'Invalid or expired code'}'''
+    },
+    {
+        "instruction": "Write Python code to implement password reset flow",
+        "output": '''from firebase_admin import auth
+
+def send_password_reset(email: str) -> str:
+    """Generate password reset link for a user."""
+    try:
+        # Verify user exists
+        user = auth.get_user_by_email(email)
+
+        # Generate reset link
+        link = auth.generate_password_reset_link(
+            email,
+            action_code_settings=auth.ActionCodeSettings(
+                url='https://yourapp.com/reset-complete',
+                handle_code_in_app=True
+            )
+        )
+
+        return link
+    except auth.UserNotFoundError:
+        # Don't reveal if user exists
+        return None
+
+def reset_password(action_code: str, new_password: str) -> dict:
+    """Reset password using action code."""
+    try:
+        # Verify action code
+        info = auth.check_action_code(action_code)
+        email = info.email
+
+        # Get user and update password
+        user = auth.get_user_by_email(email)
+        auth.update_user(user.uid, password=new_password)
+
+        # Apply the action code
+        auth.apply_action_code(action_code)
+
+        return {'success': True, 'email': email}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}'''
+    },
+    {
+        "instruction": "Write Python code to implement multi-factor authentication setup",
+        "output": '''from firebase_admin import auth
+
+def enroll_mfa_phone(uid: str, phone_number: str) -> dict:
+    """Enroll a phone number for MFA."""
+    try:
+        # Update user with MFA enrollment
+        auth.update_user(
+            uid,
+            mfa_info=[
+                auth.PhoneMultiFactorInfo(
+                    phone_number=phone_number,
+                    display_name='Primary Phone'
+                )
+            ]
+        )
+
+        return {'success': True, 'message': 'MFA enrolled'}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+def list_mfa_factors(uid: str) -> list:
+    """List all MFA factors for a user."""
+    user = auth.get_user(uid)
+
+    factors = []
+    if user.mfa_info:
+        for factor in user.mfa_info:
+            factors.append({
+                'uid': factor.uid,
+                'display_name': factor.display_name,
+                'factor_type': factor.factor_id,
+                'enrolled_at': factor.enrollment_time
+            })
+
+    return factors
+
+def unenroll_mfa(uid: str, mfa_uid: str) -> bool:
+    """Remove an MFA factor."""
+    user = auth.get_user(uid)
+
+    # Filter out the factor to remove
+    remaining = [f for f in user.mfa_info if f.uid != mfa_uid]
+
+    auth.update_user(uid, mfa_info=remaining)
+    return True'''
+    },
+    {
+        "instruction": "Write Python code to implement user session management",
+        "output": '''from firebase_admin import auth
+from datetime import datetime, timezone
+
+def revoke_user_sessions(uid: str) -> dict:
+    """Revoke all refresh tokens for a user."""
+    auth.revoke_refresh_tokens(uid)
+
+    user = auth.get_user(uid)
+    revocation_time = user.tokens_valid_after_timestamp
+
+    return {
+        'success': True,
+        'uid': uid,
+        'tokens_revoked_at': revocation_time
+    }
+
+def verify_session_token(id_token: str, check_revoked: bool = True) -> dict:
+    """Verify ID token and check if session is still valid."""
+    try:
+        decoded = auth.verify_id_token(id_token, check_revoked=check_revoked)
+
+        return {
+            'valid': True,
+            'uid': decoded['uid'],
+            'auth_time': datetime.fromtimestamp(decoded['auth_time'], tz=timezone.utc),
+            'exp': datetime.fromtimestamp(decoded['exp'], tz=timezone.utc)
+        }
+    except auth.RevokedIdTokenError:
+        return {'valid': False, 'error': 'Token has been revoked'}
+    except auth.ExpiredIdTokenError:
+        return {'valid': False, 'error': 'Token has expired'}
+    except Exception as e:
+        return {'valid': False, 'error': str(e)}
+
+def get_active_sessions(uid: str) -> dict:
+    """Get session info for a user."""
+    user = auth.get_user(uid)
+
+    return {
+        'uid': uid,
+        'last_sign_in': user.user_metadata.last_sign_in_timestamp,
+        'creation_time': user.user_metadata.creation_timestamp,
+        'tokens_valid_after': user.tokens_valid_after_timestamp
+    }'''
+    },
+    {
+        "instruction": "Write Python code to bulk import users to Firebase Auth",
+        "output": '''from firebase_admin import auth
+from typing import List, Dict
+import hashlib
+
+def import_users_from_list(users_data: List[Dict]) -> Dict:
+    """Bulk import users to Firebase Auth."""
+    users_to_import = []
+
+    for user_data in users_data:
+        user = auth.ImportUserRecord(
+            uid=user_data.get('uid'),
+            email=user_data.get('email'),
+            display_name=user_data.get('display_name'),
+            email_verified=user_data.get('email_verified', False),
+            disabled=user_data.get('disabled', False),
+            custom_claims=user_data.get('custom_claims', {}),
+        )
+
+        # Set password hash if migrating from another system
+        if 'password_hash' in user_data:
+            user = auth.ImportUserRecord(
+                uid=user_data.get('uid'),
+                email=user_data.get('email'),
+                password_hash=user_data['password_hash'].encode(),
+                password_salt=user_data.get('password_salt', '').encode(),
+            )
+
+        users_to_import.append(user)
+
+    # Import in batches of 1000
+    results = {'success': 0, 'failed': 0, 'errors': []}
+    batch_size = 1000
+
+    for i in range(0, len(users_to_import), batch_size):
+        batch = users_to_import[i:i + batch_size]
+
+        try:
+            result = auth.import_users(
+                batch,
+                hash_alg=auth.UserImportHash.scrypt(
+                    key=b'your-signing-key',
+                    salt_separator=b'',
+                    rounds=8,
+                    memory_cost=14
+                )
+            )
+
+            results['success'] += result.success_count
+            results['failed'] += result.failure_count
+            results['errors'].extend([e.reason for e in result.errors])
+        except Exception as e:
+            results['errors'].append(str(e))
+
+    return results
+
+# Usage
+users = [
+    {'uid': 'user1', 'email': 'user1@example.com', 'display_name': 'User One'},
+    {'uid': 'user2', 'email': 'user2@example.com', 'display_name': 'User Two'},
 ]
+result = import_users_from_list(users)
+print(f"Imported {result['success']} users, {result['failed']} failed")'''
+    },
+    {
+        "instruction": "Write Python code to implement account linking between providers",
+        "output": '''from firebase_admin import auth
+
+def get_user_providers(uid: str) -> List[Dict]:
+    """Get all linked providers for a user."""
+    user = auth.get_user(uid)
+
+    providers = []
+    for provider in user.provider_data:
+        providers.append({
+            'provider_id': provider.provider_id,
+            'uid': provider.uid,
+            'email': provider.email,
+            'display_name': provider.display_name,
+            'photo_url': provider.photo_url
+        })
+
+    return providers
+
+def link_email_password(uid: str, email: str, password: str) -> Dict:
+    """Link email/password to existing account."""
+    try:
+        user = auth.update_user(
+            uid,
+            email=email,
+            password=password
+        )
+
+        return {
+            'success': True,
+            'providers': [p.provider_id for p in user.provider_data]
+        }
+    except auth.EmailAlreadyExistsError:
+        return {'success': False, 'error': 'Email already in use'}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+def unlink_provider(uid: str, provider_id: str) -> Dict:
+    """Unlink a provider from user account."""
+    user = auth.get_user(uid)
+
+    # Ensure user has more than one provider
+    if len(user.provider_data) <= 1:
+        return {'success': False, 'error': 'Cannot unlink last provider'}
+
+    # Firebase Admin SDK doesn't directly support unlinking
+    # This would need to be done client-side
+    return {'success': False, 'error': 'Unlink must be done client-side'}'''
+    },
+    {
+        "instruction": "Write Python code to implement user impersonation for admin",
+        "output": '''from firebase_admin import auth
+import time
+
+def create_impersonation_token(
+    admin_uid: str,
+    target_uid: str,
+    duration_minutes: int = 60
+) -> str:
+    """Create a custom token for admin to impersonate a user."""
+    # Verify admin has permission
+    admin_user = auth.get_user(admin_uid)
+    admin_claims = admin_user.custom_claims or {}
+
+    if not admin_claims.get('super_admin'):
+        raise PermissionError("Only super admins can impersonate")
+
+    # Create custom token with impersonation claims
+    additional_claims = {
+        'impersonated_by': admin_uid,
+        'impersonation_expires': int(time.time()) + (duration_minutes * 60),
+        'is_impersonation': True
+    }
+
+    custom_token = auth.create_custom_token(target_uid, additional_claims)
+
+    # Log impersonation for audit
+    log_impersonation(admin_uid, target_uid, duration_minutes)
+
+    return custom_token.decode('utf-8')
+
+def log_impersonation(admin_uid: str, target_uid: str, duration: int):
+    """Log impersonation event for audit trail."""
+    from firebase_admin import firestore
+    db = firestore.client()
+
+    db.collection('audit_logs').add({
+        'event': 'user_impersonation',
+        'admin_uid': admin_uid,
+        'target_uid': target_uid,
+        'duration_minutes': duration,
+        'timestamp': firestore.SERVER_TIMESTAMP
+    })
+
+def verify_impersonation_token(id_token: str) -> Dict:
+    """Verify if token is an impersonation session."""
+    decoded = auth.verify_id_token(id_token)
+
+    is_impersonation = decoded.get('is_impersonation', False)
+
+    if is_impersonation:
+        expires = decoded.get('impersonation_expires', 0)
+        if time.time() > expires:
+            raise auth.InvalidIdTokenError("Impersonation session expired")
+
+    return {
+        'uid': decoded['uid'],
+        'is_impersonation': is_impersonation,
+        'impersonated_by': decoded.get('impersonated_by')
+    }'''
+    },
+    # =========================================================================
+    # FIRESTORE SUBCOLLECTIONS
+    # =========================================================================
+    {
+        "instruction": "Write Python code to work with Firestore subcollections",
+        "output": '''from firebase_admin import firestore
+from typing import List, Dict
+
+db = firestore.client()
+
+def add_comment_to_post(post_id: str, comment_data: Dict) -> str:
+    """Add a comment to a post's subcollection."""
+    comment_ref = db.collection('posts').document(post_id).collection('comments').add({
+        'text': comment_data['text'],
+        'author_id': comment_data['author_id'],
+        'author_name': comment_data['author_name'],
+        'created_at': firestore.SERVER_TIMESTAMP,
+        'likes': 0
+    })
+
+    # Update comment count on parent
+    db.collection('posts').document(post_id).update({
+        'comment_count': firestore.Increment(1)
+    })
+
+    return comment_ref[1].id
+
+def get_post_comments(post_id: str, limit: int = 20) -> List[Dict]:
+    """Get comments for a post with pagination."""
+    comments_ref = (db.collection('posts').document(post_id)
+                   .collection('comments')
+                   .order_by('created_at', direction=firestore.Query.DESCENDING)
+                   .limit(limit))
+
+    comments = []
+    for doc in comments_ref.stream():
+        comment = doc.to_dict()
+        comment['id'] = doc.id
+        comments.append(comment)
+
+    return comments
+
+def delete_comment(post_id: str, comment_id: str) -> bool:
+    """Delete a comment and update count."""
+    db.collection('posts').document(post_id).collection('comments').document(comment_id).delete()
+
+    db.collection('posts').document(post_id).update({
+        'comment_count': firestore.Increment(-1)
+    })
+
+    return True'''
+    },
+    {
+        "instruction": "Write Python code to manage nested subcollections in Firestore",
+        "output": '''from firebase_admin import firestore
+from typing import List, Dict
+
+db = firestore.client()
+
+def create_thread_reply(
+    forum_id: str,
+    thread_id: str,
+    reply_data: Dict
+) -> str:
+    """Add a reply to a forum thread (nested subcollection)."""
+    reply_ref = (db.collection('forums')
+                .document(forum_id)
+                .collection('threads')
+                .document(thread_id)
+                .collection('replies')
+                .add({
+                    'content': reply_data['content'],
+                    'author_id': reply_data['author_id'],
+                    'created_at': firestore.SERVER_TIMESTAMP,
+                    'edited': False
+                }))
+
+    # Update reply count on thread
+    (db.collection('forums')
+     .document(forum_id)
+     .collection('threads')
+     .document(thread_id)
+     .update({
+         'reply_count': firestore.Increment(1),
+         'last_activity': firestore.SERVER_TIMESTAMP
+     }))
+
+    return reply_ref[1].id
+
+def get_thread_with_replies(forum_id: str, thread_id: str) -> Dict:
+    """Get a thread with its replies."""
+    thread_ref = (db.collection('forums')
+                 .document(forum_id)
+                 .collection('threads')
+                 .document(thread_id))
+
+    thread_doc = thread_ref.get()
+    if not thread_doc.exists:
+        return None
+
+    thread = thread_doc.to_dict()
+    thread['id'] = thread_id
+
+    # Get replies
+    replies_ref = thread_ref.collection('replies').order_by('created_at').stream()
+    thread['replies'] = [{'id': r.id, **r.to_dict()} for r in replies_ref]
+
+    return thread
+
+def delete_thread_cascade(forum_id: str, thread_id: str) -> int:
+    """Delete thread and all its replies."""
+    thread_ref = (db.collection('forums')
+                 .document(forum_id)
+                 .collection('threads')
+                 .document(thread_id))
+
+    # Delete all replies first
+    replies = thread_ref.collection('replies').stream()
+    deleted = 0
+    for reply in replies:
+        reply.reference.delete()
+        deleted += 1
+
+    # Delete the thread
+    thread_ref.delete()
+
+    return deleted'''
+    },
+    {
+        "instruction": "Write Python code to copy subcollection data in Firestore",
+        "output": '''from firebase_admin import firestore
+from typing import Dict
+
+db = firestore.client()
+
+def copy_subcollection(
+    source_path: str,
+    dest_path: str,
+    subcollection_name: str
+) -> int:
+    """Copy a subcollection from one document to another."""
+    source_ref = db.document(source_path).collection(subcollection_name)
+    dest_ref = db.document(dest_path).collection(subcollection_name)
+
+    batch = db.batch()
+    count = 0
+
+    for doc in source_ref.stream():
+        new_ref = dest_ref.document(doc.id)
+        batch.set(new_ref, doc.to_dict())
+        count += 1
+
+        # Commit in batches of 500
+        if count % 500 == 0:
+            batch.commit()
+            batch = db.batch()
+
+    if count % 500 != 0:
+        batch.commit()
+
+    return count
+
+def clone_document_with_subcollections(
+    source_doc_path: str,
+    dest_doc_path: str,
+    subcollections: list
+) -> Dict:
+    """Clone a document and specified subcollections."""
+    # Copy main document
+    source_doc = db.document(source_doc_path).get()
+    if not source_doc.exists:
+        raise ValueError("Source document not found")
+
+    data = source_doc.to_dict()
+    data['cloned_from'] = source_doc_path
+    data['cloned_at'] = firestore.SERVER_TIMESTAMP
+
+    db.document(dest_doc_path).set(data)
+
+    # Copy each subcollection
+    results = {'document': True, 'subcollections': {}}
+    for subcol in subcollections:
+        count = copy_subcollection(source_doc_path, dest_doc_path, subcol)
+        results['subcollections'][subcol] = count
+
+    return results
+
+# Usage
+result = clone_document_with_subcollections(
+    "templates/project_template",
+    "projects/new_project",
+    ["tasks", "members", "settings"]
+)
+print(f"Cloned: {result}")'''
+    },
+    # =========================================================================
+    # CLOUD FUNCTIONS V2
+    # =========================================================================
+    {
+        "instruction": "Write Python Cloud Function v2 triggered by Firestore document creation",
+        "output": '''from firebase_functions import firestore_fn, https_fn
+from firebase_admin import initialize_app, firestore
+import google.cloud.firestore
+
+initialize_app()
+
+@firestore_fn.on_document_created(document="users/{userId}")
+def on_user_created(event: firestore_fn.Event[firestore_fn.DocumentSnapshot]) -> None:
+    """Triggered when a new user document is created."""
+    user_id = event.params["userId"]
+    user_data = event.data.to_dict()
+
+    db = firestore.client()
+
+    # Create user profile
+    db.collection("profiles").document(user_id).set({
+        "display_name": user_data.get("name", "Anonymous"),
+        "bio": "",
+        "avatar_url": None,
+        "created_at": firestore.SERVER_TIMESTAMP,
+        "settings": {
+            "notifications": True,
+            "theme": "light"
+        }
+    })
+
+    # Send welcome notification
+    db.collection("notifications").add({
+        "user_id": user_id,
+        "type": "welcome",
+        "title": "Welcome to the platform!",
+        "read": False,
+        "created_at": firestore.SERVER_TIMESTAMP
+    })
+
+    print(f"Created profile for user: {user_id}")'''
+    },
+    {
+        "instruction": "Write Python Cloud Function v2 with HTTP trigger and CORS",
+        "output": '''from firebase_functions import https_fn, options
+from firebase_admin import initialize_app, firestore
+import json
+
+initialize_app()
+
+@https_fn.on_request(
+    cors=options.CorsOptions(
+        cors_origins=["https://yourapp.com", "http://localhost:3000"],
+        cors_methods=["GET", "POST", "OPTIONS"]
+    ),
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=60
+)
+def api_endpoint(req: https_fn.Request) -> https_fn.Response:
+    """HTTP API endpoint with CORS support."""
+    # Handle preflight
+    if req.method == "OPTIONS":
+        return https_fn.Response("", status=204)
+
+    # Verify authentication
+    auth_header = req.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return https_fn.Response(
+            json.dumps({"error": "Unauthorized"}),
+            status=401,
+            mimetype="application/json"
+        )
+
+    # Handle GET request
+    if req.method == "GET":
+        db = firestore.client()
+        items = []
+        for doc in db.collection("items").limit(100).stream():
+            items.append({"id": doc.id, **doc.to_dict()})
+
+        return https_fn.Response(
+            json.dumps({"items": items}),
+            status=200,
+            mimetype="application/json"
+        )
+
+    # Handle POST request
+    if req.method == "POST":
+        data = req.get_json()
+        if not data:
+            return https_fn.Response(
+                json.dumps({"error": "Invalid JSON"}),
+                status=400,
+                mimetype="application/json"
+            )
+
+        db = firestore.client()
+        doc_ref = db.collection("items").add(data)
+
+        return https_fn.Response(
+            json.dumps({"id": doc_ref[1].id}),
+            status=201,
+            mimetype="application/json"
+        )
+
+    return https_fn.Response(
+        json.dumps({"error": "Method not allowed"}),
+        status=405,
+        mimetype="application/json"
+    )'''
+    },
+    {
+        "instruction": "Write Python Cloud Function v2 for scheduled background job",
+        "output": '''from firebase_functions import scheduler_fn, options
+from firebase_admin import initialize_app, firestore
+from datetime import datetime, timedelta, timezone
+
+initialize_app()
+
+@scheduler_fn.on_schedule(
+    schedule="0 2 * * *",  # Run at 2 AM daily
+    timezone=scheduler_fn.Timezone("America/New_York"),
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=540
+)
+def daily_cleanup(event: scheduler_fn.ScheduledEvent) -> None:
+    """Daily cleanup job for expired data."""
+    db = firestore.client()
+    now = datetime.now(timezone.utc)
+
+    # Clean up expired sessions
+    expired_sessions = (db.collection("sessions")
+                       .where("expires_at", "<", now)
+                       .stream())
+
+    session_count = 0
+    batch = db.batch()
+    for doc in expired_sessions:
+        batch.delete(doc.reference)
+        session_count += 1
+        if session_count % 500 == 0:
+            batch.commit()
+            batch = db.batch()
+
+    if session_count % 500 != 0:
+        batch.commit()
+
+    # Archive old notifications (older than 30 days)
+    cutoff = now - timedelta(days=30)
+    old_notifications = (db.collection("notifications")
+                        .where("created_at", "<", cutoff)
+                        .where("read", "==", True)
+                        .stream())
+
+    notification_count = 0
+    batch = db.batch()
+    for doc in old_notifications:
+        # Move to archive
+        archive_ref = db.collection("notifications_archive").document(doc.id)
+        batch.set(archive_ref, doc.to_dict())
+        batch.delete(doc.reference)
+        notification_count += 1
+        if notification_count % 250 == 0:
+            batch.commit()
+            batch = db.batch()
+
+    batch.commit()
+
+    # Log results
+    db.collection("job_logs").add({
+        "job": "daily_cleanup",
+        "sessions_deleted": session_count,
+        "notifications_archived": notification_count,
+        "completed_at": firestore.SERVER_TIMESTAMP
+    })
+
+    print(f"Cleanup complete: {session_count} sessions, {notification_count} notifications")'''
+    },
+    {
+        "instruction": "Write Python Cloud Function v2 for Pub/Sub message processing",
+        "output": '''from firebase_functions import pubsub_fn, options
+from firebase_admin import initialize_app, firestore
+import json
+import base64
+
+initialize_app()
+
+@pubsub_fn.on_message_published(
+    topic="order-events",
+    memory=options.MemoryOption.MB_512,
+    timeout_sec=120
+)
+def process_order_event(event: pubsub_fn.CloudEvent[pubsub_fn.MessagePublishedData]) -> None:
+    """Process order events from Pub/Sub."""
+    # Decode message
+    message_data = base64.b64decode(event.data.message.data).decode("utf-8")
+    order_event = json.loads(message_data)
+
+    db = firestore.client()
+    order_id = order_event.get("order_id")
+    event_type = order_event.get("type")
+
+    if event_type == "order_created":
+        # Update inventory
+        for item in order_event.get("items", []):
+            db.collection("inventory").document(item["product_id"]).update({
+                "reserved": firestore.Increment(item["quantity"])
+            })
+
+        # Notify warehouse
+        db.collection("warehouse_tasks").add({
+            "order_id": order_id,
+            "type": "pick_and_pack",
+            "status": "pending",
+            "items": order_event["items"],
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+
+    elif event_type == "order_shipped":
+        # Update order status
+        db.collection("orders").document(order_id).update({
+            "status": "shipped",
+            "shipped_at": firestore.SERVER_TIMESTAMP,
+            "tracking_number": order_event.get("tracking_number")
+        })
+
+        # Notify customer
+        db.collection("notifications").add({
+            "user_id": order_event["customer_id"],
+            "type": "order_shipped",
+            "order_id": order_id,
+            "message": f"Your order {order_id} has shipped!",
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+
+    elif event_type == "order_cancelled":
+        # Release inventory
+        for item in order_event.get("items", []):
+            db.collection("inventory").document(item["product_id"]).update({
+                "reserved": firestore.Increment(-item["quantity"])
+            })
+
+        # Process refund
+        db.collection("refund_queue").add({
+            "order_id": order_id,
+            "amount": order_event.get("total"),
+            "reason": order_event.get("cancellation_reason"),
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+
+    print(f"Processed {event_type} for order {order_id}")'''
+    },
+    {
+        "instruction": "Write Python Cloud Function v2 for image processing on Storage upload",
+        "output": '''from firebase_functions import storage_fn, options
+from firebase_admin import initialize_app, storage, firestore
+from PIL import Image
+import io
+
+initialize_app()
+
+@storage_fn.on_object_finalized(
+    bucket="your-bucket.appspot.com",
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=300
+)
+def process_uploaded_image(event: storage_fn.CloudEvent[storage_fn.StorageObjectData]) -> None:
+    """Process uploaded images: resize and create thumbnails."""
+    file_path = event.data.name
+    content_type = event.data.content_type
+
+    # Only process images in uploads folder
+    if not file_path.startswith("uploads/") or not content_type.startswith("image/"):
+        return
+
+    bucket = storage.bucket()
+    blob = bucket.blob(file_path)
+
+    # Download image
+    image_data = blob.download_as_bytes()
+    image = Image.open(io.BytesIO(image_data))
+
+    # Convert to RGB if necessary
+    if image.mode in ("RGBA", "P"):
+        image = image.convert("RGB")
+
+    # Create thumbnails
+    sizes = {
+        "thumb": (150, 150),
+        "medium": (400, 400),
+        "large": (800, 800)
+    }
+
+    db = firestore.client()
+    urls = {}
+
+    for size_name, dimensions in sizes.items():
+        # Resize
+        resized = image.copy()
+        resized.thumbnail(dimensions, Image.Resampling.LANCZOS)
+
+        # Save to buffer
+        buffer = io.BytesIO()
+        resized.save(buffer, format="JPEG", quality=85)
+        buffer.seek(0)
+
+        # Upload
+        thumb_path = file_path.replace("uploads/", f"thumbnails/{size_name}/")
+        thumb_blob = bucket.blob(thumb_path)
+        thumb_blob.upload_from_file(buffer, content_type="image/jpeg")
+        thumb_blob.make_public()
+
+        urls[size_name] = thumb_blob.public_url
+
+    # Store metadata in Firestore
+    db.collection("image_metadata").add({
+        "original_path": file_path,
+        "thumbnails": urls,
+        "original_size": {"width": image.width, "height": image.height},
+        "processed_at": firestore.SERVER_TIMESTAMP
+    })
+
+    print(f"Processed image: {file_path}, created {len(sizes)} thumbnails")'''
+    },
+    # =========================================================================
+    # REAL-TIME LISTENERS
+    # =========================================================================
+    {
+        "instruction": "Write TypeScript code to listen for real-time Firestore document changes",
+        "output": '''import {
+  doc,
+  onSnapshot,
+  Unsubscribe,
+  DocumentSnapshot,
+  FirestoreError
+} from 'firebase/firestore';
+import { db } from './firebase-config';
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  status: 'online' | 'offline';
+  lastSeen: Date;
+}
+
+function subscribeToUser(
+  userId: string,
+  onUpdate: (user: User | null) => void,
+  onError?: (error: FirestoreError) => void
+): Unsubscribe {
+  const userRef = doc(db, 'users', userId);
+
+  return onSnapshot(
+    userRef,
+    (snapshot: DocumentSnapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        onUpdate({
+          id: snapshot.id,
+          name: data.name,
+          email: data.email,
+          status: data.status,
+          lastSeen: data.lastSeen?.toDate()
+        });
+      } else {
+        onUpdate(null);
+      }
+    },
+    (error: FirestoreError) => {
+      console.error('Snapshot error:', error);
+      onError?.(error);
+    }
+  );
+}
+
+// React hook example
+function useUser(userId: string) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+
+    const unsubscribe = subscribeToUser(
+      userId,
+      (userData) => {
+        setUser(userData);
+        setLoading(false);
+      },
+      (err) => {
+        setError(err);
+        setLoading(false);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [userId]);
+
+  return { user, loading, error };
+}'''
+    },
+    {
+        "instruction": "Write TypeScript code to listen for real-time Firestore collection changes",
+        "output": '''import {
+  collection,
+  query,
+  where,
+  orderBy,
+  limit,
+  onSnapshot,
+  QuerySnapshot,
+  DocumentChange
+} from 'firebase/firestore';
+import { db } from './firebase-config';
+
+interface Message {
+  id: string;
+  text: string;
+  senderId: string;
+  createdAt: Date;
+}
+
+interface ChatSubscription {
+  unsubscribe: () => void;
+}
+
+function subscribeToChat(
+  chatId: string,
+  callbacks: {
+    onAdded?: (message: Message) => void;
+    onModified?: (message: Message) => void;
+    onRemoved?: (messageId: string) => void;
+    onError?: (error: Error) => void;
+  }
+): ChatSubscription {
+  const messagesRef = collection(db, 'chats', chatId, 'messages');
+  const q = query(
+    messagesRef,
+    orderBy('createdAt', 'desc'),
+    limit(50)
+  );
+
+  const unsubscribe = onSnapshot(
+    q,
+    (snapshot: QuerySnapshot) => {
+      snapshot.docChanges().forEach((change: DocumentChange) => {
+        const data = change.doc.data();
+        const message: Message = {
+          id: change.doc.id,
+          text: data.text,
+          senderId: data.senderId,
+          createdAt: data.createdAt?.toDate()
+        };
+
+        switch (change.type) {
+          case 'added':
+            callbacks.onAdded?.(message);
+            break;
+          case 'modified':
+            callbacks.onModified?.(message);
+            break;
+          case 'removed':
+            callbacks.onRemoved?.(change.doc.id);
+            break;
+        }
+      });
+    },
+    (error) => {
+      console.error('Chat subscription error:', error);
+      callbacks.onError?.(error);
+    }
+  );
+
+  return { unsubscribe };
+}
+
+// Usage
+const chatSub = subscribeToChat('chat123', {
+  onAdded: (msg) => console.log('New message:', msg.text),
+  onModified: (msg) => console.log('Message edited:', msg.text),
+  onRemoved: (id) => console.log('Message deleted:', id)
+});
+
+// Cleanup when done
+chatSub.unsubscribe();'''
+    },
+    {
+        "instruction": "Write Python code to listen for Firestore changes with exponential backoff",
+        "output": '''from firebase_admin import firestore
+import time
+import threading
+from typing import Callable, Dict, Any, Optional
+
+class FirestoreListener:
+    """Resilient Firestore listener with exponential backoff."""
+
+    def __init__(
+        self,
+        collection_path: str,
+        callback: Callable[[list], None],
+        query_filters: Optional[list] = None,
+        max_retries: int = 5,
+        base_delay: float = 1.0
+    ):
+        self.collection_path = collection_path
+        self.callback = callback
+        self.query_filters = query_filters or []
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+
+        self._unsubscribe = None
+        self._retry_count = 0
+        self._running = False
+        self._db = firestore.client()
+
+    def start(self):
+        """Start listening for changes."""
+        self._running = True
+        self._subscribe()
+
+    def stop(self):
+        """Stop listening."""
+        self._running = False
+        if self._unsubscribe:
+            self._unsubscribe.unsubscribe()
+            self._unsubscribe = None
+
+    def _subscribe(self):
+        """Create subscription with error handling."""
+        if not self._running:
+            return
+
+        try:
+            query = self._db.collection(self.collection_path)
+            for filter_args in self.query_filters:
+                query = query.where(*filter_args)
+
+            self._unsubscribe = query.on_snapshot(self._on_snapshot)
+            self._retry_count = 0  # Reset on successful connection
+
+        except Exception as e:
+            print(f"Subscription error: {e}")
+            self._handle_error()
+
+    def _on_snapshot(self, docs, changes, read_time):
+        """Handle snapshot updates."""
+        try:
+            results = []
+            for change in changes:
+                results.append({
+                    'type': change.type.name,
+                    'id': change.document.id,
+                    'data': change.document.to_dict()
+                })
+
+            self.callback(results)
+
+        except Exception as e:
+            print(f"Callback error: {e}")
+
+    def _handle_error(self):
+        """Handle errors with exponential backoff."""
+        if not self._running or self._retry_count >= self.max_retries:
+            print("Max retries reached, stopping listener")
+            self._running = False
+            return
+
+        delay = self.base_delay * (2 ** self._retry_count)
+        self._retry_count += 1
+
+        print(f"Retrying in {delay}s (attempt {self._retry_count})")
+
+        def retry():
+            time.sleep(delay)
+            if self._running:
+                self._subscribe()
+
+        thread = threading.Thread(target=retry, daemon=True)
+        thread.start()
+
+# Usage
+def handle_changes(changes):
+    for change in changes:
+        print(f"{change['type']}: {change['id']}")
+
+listener = FirestoreListener(
+    'orders',
+    handle_changes,
+    query_filters=[('status', '==', 'pending')]
+)
+listener.start()
+
+# Later: listener.stop()'''
+    },
+    # =========================================================================
+    # TESTING PATTERNS
+    # =========================================================================
+    {
+        "instruction": "Write Python code to test Firestore with the emulator",
+        "output": '''import os
+import pytest
+from firebase_admin import credentials, firestore, initialize_app, delete_app, get_app
+import requests
+
+# Configure emulator
+os.environ["FIRESTORE_EMULATOR_HOST"] = "localhost:8080"
+
+@pytest.fixture(scope="session")
+def firebase_app():
+    """Initialize Firebase app for testing."""
+    try:
+        app = get_app()
+    except ValueError:
+        # Use a dummy credential for emulator
+        app = initialize_app(options={
+            "projectId": "test-project"
+        })
+    yield app
+    # Cleanup after all tests
+    delete_app(app)
+
+@pytest.fixture
+def db(firebase_app):
+    """Get Firestore client."""
+    return firestore.client()
+
+@pytest.fixture(autouse=True)
+def clear_firestore():
+    """Clear Firestore data before each test."""
+    # Clear all data using emulator REST API
+    requests.delete(
+        "http://localhost:8080/emulator/v1/projects/test-project/databases/(default)/documents"
+    )
+    yield
+
+class TestUserOperations:
+    """Test user CRUD operations."""
+
+    def test_create_user(self, db):
+        """Test creating a new user."""
+        user_data = {
+            "name": "Test User",
+            "email": "test@example.com",
+            "age": 25
+        }
+
+        doc_ref = db.collection("users").add(user_data)
+        user_id = doc_ref[1].id
+
+        # Verify user was created
+        user_doc = db.collection("users").document(user_id).get()
+        assert user_doc.exists
+        assert user_doc.to_dict()["name"] == "Test User"
+
+    def test_update_user(self, db):
+        """Test updating a user."""
+        # Create user first
+        user_ref = db.collection("users").document("test_user")
+        user_ref.set({"name": "Original", "age": 25})
+
+        # Update user
+        user_ref.update({"name": "Updated"})
+
+        # Verify update
+        user_doc = user_ref.get()
+        assert user_doc.to_dict()["name"] == "Updated"
+        assert user_doc.to_dict()["age"] == 25  # Unchanged
+
+    def test_query_users(self, db):
+        """Test querying users."""
+        # Create test data
+        db.collection("users").add({"name": "Alice", "age": 30})
+        db.collection("users").add({"name": "Bob", "age": 25})
+        db.collection("users").add({"name": "Charlie", "age": 35})
+
+        # Query users over 28
+        query = db.collection("users").where("age", ">", 28)
+        results = list(query.stream())
+
+        assert len(results) == 2
+        names = [doc.to_dict()["name"] for doc in results]
+        assert "Alice" in names
+        assert "Charlie" in names'''
+    },
+    {
+        "instruction": "Write Python code for mocking Firestore in unit tests",
+        "output": '''import pytest
+from unittest.mock import Mock, MagicMock, patch
+from dataclasses import dataclass
+from typing import Dict, Any, List
+
+# Mock classes for Firestore
+@dataclass
+class MockDocumentSnapshot:
+    """Mock Firestore document snapshot."""
+    id: str
+    _data: Dict[str, Any]
+    _exists: bool = True
+
+    @property
+    def exists(self):
+        return self._exists
+
+    def to_dict(self):
+        return self._data.copy()
+
+    def get(self, field):
+        return self._data.get(field)
+
+class MockCollectionReference:
+    """Mock Firestore collection reference."""
+
+    def __init__(self, data: Dict[str, Dict] = None):
+        self._data = data or {}
+
+    def document(self, doc_id: str):
+        return MockDocumentReference(doc_id, self._data.get(doc_id, {}))
+
+    def add(self, data: Dict):
+        import uuid
+        doc_id = str(uuid.uuid4())[:8]
+        self._data[doc_id] = data
+        return (None, MockDocumentReference(doc_id, data))
+
+    def where(self, field, op, value):
+        # Simple filter implementation
+        filtered = {}
+        for doc_id, data in self._data.items():
+            if op == "==" and data.get(field) == value:
+                filtered[doc_id] = data
+            elif op == ">" and data.get(field, 0) > value:
+                filtered[doc_id] = data
+        return MockQuery(filtered)
+
+    def stream(self):
+        for doc_id, data in self._data.items():
+            yield MockDocumentSnapshot(doc_id, data)
+
+class MockDocumentReference:
+    """Mock Firestore document reference."""
+
+    def __init__(self, doc_id: str, data: Dict = None):
+        self.id = doc_id
+        self._data = data or {}
+
+    def get(self):
+        return MockDocumentSnapshot(self.id, self._data, bool(self._data))
+
+    def set(self, data: Dict):
+        self._data = data
+
+    def update(self, data: Dict):
+        self._data.update(data)
+
+    def delete(self):
+        self._data = {}
+
+class MockQuery:
+    """Mock Firestore query."""
+
+    def __init__(self, data: Dict[str, Dict]):
+        self._data = data
+
+    def stream(self):
+        for doc_id, data in self._data.items():
+            yield MockDocumentSnapshot(doc_id, data)
+
+# Test using mocks
+class TestUserService:
+    """Test user service with mocked Firestore."""
+
+    @pytest.fixture
+    def mock_db(self):
+        """Create mock database with test data."""
+        users = {
+            "user1": {"name": "Alice", "age": 30},
+            "user2": {"name": "Bob", "age": 25}
+        }
+
+        mock = Mock()
+        mock.collection.return_value = MockCollectionReference(users)
+        return mock
+
+    def test_get_user(self, mock_db):
+        """Test getting a user."""
+        # Import your service (mocked import)
+        with patch("your_module.firestore.client", return_value=mock_db):
+            from your_module import get_user
+
+            user = get_user("user1")
+            assert user["name"] == "Alice"
+
+    def test_user_not_found(self, mock_db):
+        """Test handling missing user."""
+        mock_db.collection.return_value = MockCollectionReference({})
+
+        with patch("your_module.firestore.client", return_value=mock_db):
+            from your_module import get_user
+
+            user = get_user("nonexistent")
+            assert user is None'''
+    },
+    {
+        "instruction": "Write Python code for integration testing Firebase Security Rules",
+        "output": '''import pytest
+import requests
+import json
+from typing import Dict, Any
+
+class SecurityRulesTestClient:
+    """Client for testing Firebase Security Rules."""
+
+    def __init__(self, project_id: str, emulator_host: str = "localhost:8080"):
+        self.project_id = project_id
+        self.base_url = f"http://{emulator_host}/v1/projects/{project_id}/databases/(default)/documents"
+
+    def as_user(self, uid: str, claims: Dict[str, Any] = None):
+        """Create a request context as a specific user."""
+        return AuthenticatedClient(self, uid, claims or {})
+
+    def as_anonymous(self):
+        """Create an anonymous request context."""
+        return AuthenticatedClient(self, None, {})
+
+class AuthenticatedClient:
+    """Client with authentication context."""
+
+    def __init__(self, parent: SecurityRulesTestClient, uid: str, claims: Dict):
+        self.parent = parent
+        self.uid = uid
+        self.claims = claims
+
+    def _get_headers(self):
+        if self.uid:
+            auth = {"uid": self.uid, **self.claims}
+            return {
+                "Authorization": f"Bearer {json.dumps(auth)}",
+                "Content-Type": "application/json"
+            }
+        return {"Content-Type": "application/json"}
+
+    def read(self, path: str) -> Dict:
+        """Attempt to read a document."""
+        url = f"{self.parent.base_url}/{path}"
+        response = requests.get(url, headers=self._get_headers())
+        return {"allowed": response.status_code == 200, "status": response.status_code}
+
+    def write(self, path: str, data: Dict) -> Dict:
+        """Attempt to write a document."""
+        url = f"{self.parent.base_url}/{path}"
+        response = requests.patch(url, json={"fields": data}, headers=self._get_headers())
+        return {"allowed": response.status_code in [200, 201], "status": response.status_code}
+
+    def delete(self, path: str) -> Dict:
+        """Attempt to delete a document."""
+        url = f"{self.parent.base_url}/{path}"
+        response = requests.delete(url, headers=self._get_headers())
+        return {"allowed": response.status_code == 200, "status": response.status_code}
+
+
+class TestSecurityRules:
+    """Test Firebase Security Rules."""
+
+    @pytest.fixture
+    def client(self):
+        return SecurityRulesTestClient("test-project")
+
+    def test_user_can_read_own_profile(self, client):
+        """Users should be able to read their own profile."""
+        result = client.as_user("user123").read("users/user123")
+        assert result["allowed"], "User should read own profile"
+
+    def test_user_cannot_read_other_profile(self, client):
+        """Users should not read other user profiles."""
+        result = client.as_user("user123").read("users/other_user")
+        assert not result["allowed"], "User should not read other profiles"
+
+    def test_admin_can_read_any_profile(self, client):
+        """Admins should read any profile."""
+        result = client.as_user("admin1", {"admin": True}).read("users/any_user")
+        assert result["allowed"], "Admin should read any profile"
+
+    def test_anonymous_cannot_write(self, client):
+        """Anonymous users should not write."""
+        result = client.as_anonymous().write("users/test", {"name": "Test"})
+        assert not result["allowed"], "Anonymous should not write"
+
+    def test_user_can_write_own_data(self, client):
+        """Users can write their own data."""
+        result = client.as_user("user123").write(
+            "users/user123",
+            {"name": "Updated Name"}
+        )
+        assert result["allowed"], "User should write own data"'''
+    },
+    # =========================================================================
+    # MIGRATION PATTERNS
+    # =========================================================================
+    {
+        "instruction": "Write Python code to migrate data between Firestore collections",
+        "output": '''from firebase_admin import firestore
+from typing import Callable, Dict, Any, Optional
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class FirestoreMigration:
+    """Migrate data between Firestore collections."""
+
+    def __init__(self):
+        self.db = firestore.client()
+        self.batch_size = 500
+
+    def migrate_collection(
+        self,
+        source_collection: str,
+        dest_collection: str,
+        transform: Optional[Callable[[Dict], Dict]] = None,
+        filter_fn: Optional[Callable[[Dict], bool]] = None
+    ) -> Dict[str, int]:
+        """
+        Migrate documents from one collection to another.
+
+        Args:
+            source_collection: Source collection path
+            dest_collection: Destination collection path
+            transform: Optional function to transform documents
+            filter_fn: Optional function to filter which docs to migrate
+        """
+        source_ref = self.db.collection(source_collection)
+        dest_ref = self.db.collection(dest_collection)
+
+        stats = {"migrated": 0, "skipped": 0, "errors": 0}
+        batch = self.db.batch()
+        batch_count = 0
+
+        for doc in source_ref.stream():
+            try:
+                data = doc.to_dict()
+
+                # Apply filter
+                if filter_fn and not filter_fn(data):
+                    stats["skipped"] += 1
+                    continue
+
+                # Apply transform
+                if transform:
+                    data = transform(data)
+
+                # Add to batch
+                new_ref = dest_ref.document(doc.id)
+                batch.set(new_ref, data)
+                batch_count += 1
+
+                # Commit batch when full
+                if batch_count >= self.batch_size:
+                    batch.commit()
+                    stats["migrated"] += batch_count
+                    logger.info(f"Migrated {stats['migrated']} documents")
+                    batch = self.db.batch()
+                    batch_count = 0
+
+            except Exception as e:
+                logger.error(f"Error migrating {doc.id}: {e}")
+                stats["errors"] += 1
+
+        # Commit remaining
+        if batch_count > 0:
+            batch.commit()
+            stats["migrated"] += batch_count
+
+        return stats
+
+# Usage example
+migration = FirestoreMigration()
+
+# Transform function to update schema
+def transform_user_v2(data: Dict) -> Dict:
+    """Transform user document to v2 schema."""
+    return {
+        "profile": {
+            "displayName": data.get("name", ""),
+            "email": data.get("email", ""),
+            "avatar": data.get("avatar_url")
+        },
+        "settings": {
+            "notifications": data.get("notifications_enabled", True),
+            "theme": "light"
+        },
+        "metadata": {
+            "createdAt": data.get("created_at"),
+            "schemaVersion": 2
+        }
+    }
+
+# Run migration
+stats = migration.migrate_collection(
+    "users",
+    "users_v2",
+    transform=transform_user_v2,
+    filter_fn=lambda d: d.get("status") != "deleted"
+)
+print(f"Migration complete: {stats}")'''
+    },
+    {
+        "instruction": "Write Python code for zero-downtime Firestore schema migration",
+        "output": '''from firebase_admin import firestore
+from typing import Dict, Any, Callable
+from dataclasses import dataclass
+from enum import Enum
+import logging
+
+logger = logging.getLogger(__name__)
+
+class MigrationPhase(Enum):
+    DUAL_WRITE = "dual_write"      # Write to both old and new
+    BACKFILL = "backfill"          # Copy old data to new
+    DUAL_READ = "dual_read"        # Read from new, fallback to old
+    NEW_ONLY = "new_only"          # Only use new schema
+
+@dataclass
+class SchemaVersion:
+    version: int
+    transformer: Callable[[Dict], Dict]
+
+class ZeroDowntimeMigration:
+    """
+    Zero-downtime schema migration for Firestore.
+
+    Strategy:
+    1. DUAL_WRITE: All writes go to both schemas
+    2. BACKFILL: Migrate existing data
+    3. DUAL_READ: Read from new, fallback to old
+    4. NEW_ONLY: Remove old schema support
+    """
+
+    def __init__(self, collection: str, current_version: int):
+        self.db = firestore.client()
+        self.collection = collection
+        self.current_version = current_version
+        self.phase = MigrationPhase.DUAL_WRITE
+        self.versions: Dict[int, SchemaVersion] = {}
+
+    def register_version(self, version: int, transformer: Callable[[Dict], Dict]):
+        """Register a schema version with its transformer."""
+        self.versions[version] = SchemaVersion(version, transformer)
+
+    def write(self, doc_id: str, data: Dict) -> None:
+        """Write document respecting current migration phase."""
+        doc_ref = self.db.collection(self.collection).document(doc_id)
+
+        if self.phase == MigrationPhase.DUAL_WRITE:
+            # Write current version
+            current_data = data.copy()
+            current_data["_schemaVersion"] = self.current_version
+
+            # Also write next version if transformer exists
+            next_version = self.current_version + 1
+            if next_version in self.versions:
+                next_data = self.versions[next_version].transformer(data)
+                next_data["_schemaVersion"] = next_version
+                current_data["_nextSchema"] = next_data
+
+            doc_ref.set(current_data)
+
+        elif self.phase in [MigrationPhase.DUAL_READ, MigrationPhase.NEW_ONLY]:
+            # Write only new version
+            data["_schemaVersion"] = self.current_version + 1
+            doc_ref.set(data)
+
+    def read(self, doc_id: str) -> Dict:
+        """Read document respecting current migration phase."""
+        doc_ref = self.db.collection(self.collection).document(doc_id)
+        doc = doc_ref.get()
+
+        if not doc.exists:
+            return None
+
+        data = doc.to_dict()
+        schema_version = data.get("_schemaVersion", 1)
+
+        # If new schema available, use it
+        if "_nextSchema" in data and self.phase in [MigrationPhase.DUAL_READ, MigrationPhase.NEW_ONLY]:
+            return data["_nextSchema"]
+
+        # Transform to latest if needed
+        while schema_version < self.current_version:
+            next_v = schema_version + 1
+            if next_v in self.versions:
+                data = self.versions[next_v].transformer(data)
+                schema_version = next_v
+
+        return data
+
+    def backfill(self, batch_size: int = 500) -> Dict[str, int]:
+        """Backfill all documents to new schema."""
+        stats = {"updated": 0, "skipped": 0}
+
+        collection_ref = self.db.collection(self.collection)
+        batch = self.db.batch()
+        count = 0
+
+        for doc in collection_ref.stream():
+            data = doc.to_dict()
+
+            if "_nextSchema" in data:
+                stats["skipped"] += 1
+                continue
+
+            # Transform to new schema
+            next_version = self.current_version + 1
+            if next_version in self.versions:
+                new_data = self.versions[next_version].transformer(data)
+                new_data["_schemaVersion"] = next_version
+                data["_nextSchema"] = new_data
+
+                batch.set(doc.reference, data)
+                count += 1
+
+                if count >= batch_size:
+                    batch.commit()
+                    stats["updated"] += count
+                    batch = self.db.batch()
+                    count = 0
+
+        if count > 0:
+            batch.commit()
+            stats["updated"] += count
+
+        return stats
+
+# Usage
+migration = ZeroDowntimeMigration("users", current_version=1)
+
+# Register transformer for v2
+migration.register_version(2, lambda data: {
+    "profile": {"name": data.get("name"), "email": data.get("email")},
+    "createdAt": data.get("created_at")
+})
+
+# Start dual-write phase
+migration.phase = MigrationPhase.DUAL_WRITE
+
+# Backfill existing data
+stats = migration.backfill()
+print(f"Backfill: {stats}")
+
+# Switch to dual-read
+migration.phase = MigrationPhase.DUAL_READ'''
+    },
+    # =========================================================================
+    # PERFORMANCE OPTIMIZATION
+    # =========================================================================
+    {
+        "instruction": "Write Python code to implement Firestore query caching",
+        "output": '''from firebase_admin import firestore
+from typing import Dict, Any, Optional, List, Tuple
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import hashlib
+import json
+import threading
+
+@dataclass
+class CacheEntry:
+    data: Any
+    expires_at: datetime
+    query_hash: str
+
+class FirestoreCache:
+    """In-memory cache for Firestore queries."""
+
+    def __init__(self, default_ttl_seconds: int = 300):
+        self.cache: Dict[str, CacheEntry] = {}
+        self.default_ttl = timedelta(seconds=default_ttl_seconds)
+        self.lock = threading.RLock()
+        self.db = firestore.client()
+
+    def _hash_query(self, collection: str, filters: List[Tuple], order: str = None) -> str:
+        """Create a hash for the query parameters."""
+        query_str = json.dumps({
+            "collection": collection,
+            "filters": filters,
+            "order": order
+        }, sort_keys=True)
+        return hashlib.md5(query_str.encode()).hexdigest()
+
+    def get_cached(self, query_hash: str) -> Optional[Any]:
+        """Get cached result if not expired."""
+        with self.lock:
+            entry = self.cache.get(query_hash)
+            if entry and entry.expires_at > datetime.now():
+                return entry.data
+            elif entry:
+                del self.cache[query_hash]
+            return None
+
+    def set_cached(self, query_hash: str, data: Any, ttl: timedelta = None):
+        """Cache query result."""
+        with self.lock:
+            self.cache[query_hash] = CacheEntry(
+                data=data,
+                expires_at=datetime.now() + (ttl or self.default_ttl),
+                query_hash=query_hash
+            )
+
+    def query(
+        self,
+        collection: str,
+        filters: List[Tuple] = None,
+        order_by: str = None,
+        limit: int = None,
+        ttl_seconds: int = None
+    ) -> List[Dict]:
+        """Execute query with caching."""
+        filters = filters or []
+        query_hash = self._hash_query(collection, filters, order_by)
+
+        # Check cache first
+        cached = self.get_cached(query_hash)
+        if cached is not None:
+            return cached
+
+        # Execute query
+        query = self.db.collection(collection)
+        for field, op, value in filters:
+            query = query.where(field, op, value)
+
+        if order_by:
+            query = query.order_by(order_by)
+
+        if limit:
+            query = query.limit(limit)
+
+        results = [{"id": doc.id, **doc.to_dict()} for doc in query.stream()]
+
+        # Cache results
+        ttl = timedelta(seconds=ttl_seconds) if ttl_seconds else None
+        self.set_cached(query_hash, results, ttl)
+
+        return results
+
+    def invalidate(self, pattern: str = None):
+        """Invalidate cache entries."""
+        with self.lock:
+            if pattern is None:
+                self.cache.clear()
+            else:
+                to_delete = [k for k in self.cache if pattern in k]
+                for key in to_delete:
+                    del self.cache[key]
+
+    def get_document(self, collection: str, doc_id: str, ttl_seconds: int = None) -> Optional[Dict]:
+        """Get single document with caching."""
+        cache_key = f"{collection}/{doc_id}"
+
+        cached = self.get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        doc = self.db.collection(collection).document(doc_id).get()
+        if not doc.exists:
+            return None
+
+        data = {"id": doc.id, **doc.to_dict()}
+        ttl = timedelta(seconds=ttl_seconds) if ttl_seconds else None
+        self.set_cached(cache_key, data, ttl)
+
+        return data
+
+# Usage
+cache = FirestoreCache(default_ttl_seconds=300)
+
+# Cached query
+users = cache.query(
+    "users",
+    filters=[("status", "==", "active")],
+    order_by="created_at",
+    limit=100
+)
+
+# Cached document
+user = cache.get_document("users", "user123")
+
+# Invalidate when data changes
+cache.invalidate("users")'''
+    },
+    {
+        "instruction": "Write Python code for optimized Firestore batch reading",
+        "output": '''from firebase_admin import firestore
+from typing import List, Dict, Any
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+class OptimizedReader:
+    """Optimized batch reading for Firestore."""
+
+    def __init__(self, max_workers: int = 10):
+        self.db = firestore.client()
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+
+    def get_multiple_documents(
+        self,
+        collection: str,
+        doc_ids: List[str]
+    ) -> Dict[str, Dict]:
+        """
+        Get multiple documents efficiently using get_all().
+
+        Much faster than individual get() calls.
+        """
+        if not doc_ids:
+            return {}
+
+        # Create document references
+        refs = [self.db.collection(collection).document(doc_id) for doc_id in doc_ids]
+
+        # Get all documents in one call
+        docs = self.db.get_all(refs)
+
+        results = {}
+        for doc in docs:
+            if doc.exists:
+                results[doc.id] = doc.to_dict()
+
+        return results
+
+    def get_documents_from_multiple_collections(
+        self,
+        requests: List[Dict[str, str]]
+    ) -> Dict[str, Dict]:
+        """
+        Get documents from multiple collections in parallel.
+
+        Args:
+            requests: List of {"collection": "...", "doc_id": "..."}
+        """
+        refs = [
+            self.db.collection(req["collection"]).document(req["doc_id"])
+            for req in requests
+        ]
+
+        docs = self.db.get_all(refs)
+
+        results = {}
+        for doc in docs:
+            if doc.exists:
+                key = f"{doc.reference.parent.id}/{doc.id}"
+                results[key] = doc.to_dict()
+
+        return results
+
+    def parallel_queries(
+        self,
+        queries: List[Dict[str, Any]]
+    ) -> List[List[Dict]]:
+        """
+        Execute multiple queries in parallel.
+
+        Args:
+            queries: List of query configs:
+                {
+                    "collection": "users",
+                    "filters": [("status", "==", "active")],
+                    "limit": 100
+                }
+        """
+        def execute_query(query_config: Dict) -> List[Dict]:
+            query = self.db.collection(query_config["collection"])
+
+            for field, op, value in query_config.get("filters", []):
+                query = query.where(field, op, value)
+
+            if "order_by" in query_config:
+                query = query.order_by(query_config["order_by"])
+
+            if "limit" in query_config:
+                query = query.limit(query_config["limit"])
+
+            return [{"id": doc.id, **doc.to_dict()} for doc in query.stream()]
+
+        # Execute all queries in parallel
+        futures = [
+            self.executor.submit(execute_query, q)
+            for q in queries
+        ]
+
+        return [f.result() for f in futures]
+
+    def stream_large_collection(
+        self,
+        collection: str,
+        batch_size: int = 1000,
+        order_field: str = "__name__"
+    ):
+        """
+        Stream a large collection efficiently using pagination.
+
+        Yields documents in batches to avoid memory issues.
+        """
+        query = (self.db.collection(collection)
+                .order_by(order_field)
+                .limit(batch_size))
+
+        last_doc = None
+
+        while True:
+            if last_doc:
+                query = (self.db.collection(collection)
+                        .order_by(order_field)
+                        .start_after(last_doc)
+                        .limit(batch_size))
+
+            docs = list(query.stream())
+
+            if not docs:
+                break
+
+            yield [{"id": doc.id, **doc.to_dict()} for doc in docs]
+            last_doc = docs[-1]
+
+# Usage
+reader = OptimizedReader()
+
+# Get multiple documents efficiently
+users = reader.get_multiple_documents(
+    "users",
+    ["user1", "user2", "user3", "user4", "user5"]
+)
+
+# Parallel queries
+results = reader.parallel_queries([
+    {"collection": "users", "filters": [("role", "==", "admin")], "limit": 50},
+    {"collection": "posts", "filters": [("published", "==", True)], "limit": 100},
+    {"collection": "orders", "filters": [("status", "==", "pending")], "limit": 50},
+])
+
+# Stream large collection
+for batch in reader.stream_large_collection("events"):
+    process_batch(batch)'''
+    },
+    {
+        "instruction": "Write Python code for Firestore connection pooling",
+        "output": '''from firebase_admin import firestore, credentials, initialize_app
+from typing import Optional
+import threading
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+
+@dataclass
+class PooledClient:
+    client: firestore.Client
+    created_at: datetime
+    last_used: datetime
+    in_use: bool = False
+
+class FirestoreConnectionPool:
+    """
+    Connection pool for Firestore clients.
+
+    Useful for high-throughput applications where creating
+    new clients is expensive.
+    """
+
+    def __init__(
+        self,
+        min_connections: int = 2,
+        max_connections: int = 10,
+        max_idle_time_seconds: int = 300
+    ):
+        self.min_connections = min_connections
+        self.max_connections = max_connections
+        self.max_idle_time = timedelta(seconds=max_idle_time_seconds)
+
+        self.pool: list[PooledClient] = []
+        self.lock = threading.RLock()
+
+        # Initialize minimum connections
+        for _ in range(min_connections):
+            self._create_client()
+
+    def _create_client(self) -> PooledClient:
+        """Create a new Firestore client."""
+        client = firestore.client()
+        pooled = PooledClient(
+            client=client,
+            created_at=datetime.now(),
+            last_used=datetime.now()
+        )
+        self.pool.append(pooled)
+        return pooled
+
+    def acquire(self) -> firestore.Client:
+        """Acquire a client from the pool."""
+        with self.lock:
+            # Find an available client
+            for pooled in self.pool:
+                if not pooled.in_use:
+                    pooled.in_use = True
+                    pooled.last_used = datetime.now()
+                    return pooled.client
+
+            # Create new client if under max
+            if len(self.pool) < self.max_connections:
+                pooled = self._create_client()
+                pooled.in_use = True
+                return pooled.client
+
+            # Wait and retry (simple blocking)
+            raise RuntimeError("Connection pool exhausted")
+
+    def release(self, client: firestore.Client):
+        """Release a client back to the pool."""
+        with self.lock:
+            for pooled in self.pool:
+                if pooled.client is client:
+                    pooled.in_use = False
+                    pooled.last_used = datetime.now()
+                    return
+
+    def cleanup_idle(self):
+        """Remove idle connections above minimum."""
+        with self.lock:
+            now = datetime.now()
+            to_remove = []
+
+            for pooled in self.pool:
+                if (not pooled.in_use and
+                    len(self.pool) > self.min_connections and
+                    now - pooled.last_used > self.max_idle_time):
+                    to_remove.append(pooled)
+
+            for pooled in to_remove:
+                self.pool.remove(pooled)
+
+class PooledFirestoreContext:
+    """Context manager for pooled Firestore client."""
+
+    def __init__(self, pool: FirestoreConnectionPool):
+        self.pool = pool
+        self.client = None
+
+    def __enter__(self) -> firestore.Client:
+        self.client = self.pool.acquire()
+        return self.client
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.client:
+            self.pool.release(self.client)
+
+# Global pool instance
+_pool: Optional[FirestoreConnectionPool] = None
+
+def get_pool() -> FirestoreConnectionPool:
+    global _pool
+    if _pool is None:
+        _pool = FirestoreConnectionPool()
+    return _pool
+
+def with_firestore():
+    """Get a pooled Firestore context."""
+    return PooledFirestoreContext(get_pool())
+
+# Usage
+def high_throughput_operation():
+    with with_firestore() as db:
+        # Use db for operations
+        docs = db.collection("users").limit(100).stream()
+        for doc in docs:
+            process(doc)
+    # Client automatically returned to pool'''
+    },
+    # =========================================================================
+    # DATA MODELING PATTERNS
+    # =========================================================================
+    {
+        "instruction": "Write Python code for denormalized data pattern in Firestore",
+        "output": '''from firebase_admin import firestore
+from typing import Dict, List
+from dataclasses import dataclass
+
+@dataclass
+class DenormalizedData:
+    """Manage denormalized data across Firestore documents."""
+
+    db = firestore.client()
+
+    @classmethod
+    def update_user_profile(cls, user_id: str, updates: Dict) -> None:
+        """
+        Update user profile and propagate to denormalized locations.
+
+        When user data changes, update:
+        - users/{userId}
+        - posts/{postId}.author (embedded author info)
+        - comments/{commentId}.author
+        - team_members/{teamId}/members/{userId}
+        """
+        batch = cls.db.batch()
+
+        # Update main user document
+        user_ref = cls.db.collection("users").document(user_id)
+        batch.update(user_ref, updates)
+
+        # Prepare denormalized updates
+        denorm_updates = {}
+        if "display_name" in updates:
+            denorm_updates["author.display_name"] = updates["display_name"]
+        if "avatar_url" in updates:
+            denorm_updates["author.avatar_url"] = updates["avatar_url"]
+
+        if denorm_updates:
+            # Update posts by this user
+            posts = cls.db.collection("posts").where("author.uid", "==", user_id).stream()
+            for post in posts:
+                batch.update(post.reference, denorm_updates)
+
+            # Update comments by this user
+            comments = cls.db.collection_group("comments").where("author.uid", "==", user_id).stream()
+            for comment in comments:
+                batch.update(comment.reference, denorm_updates)
+
+        batch.commit()
+
+    @classmethod
+    def create_post(cls, user_id: str, post_data: Dict) -> str:
+        """
+        Create a post with denormalized author data.
+        """
+        # Get author data
+        user_doc = cls.db.collection("users").document(user_id).get()
+        user_data = user_doc.to_dict()
+
+        # Embed author info in post
+        post = {
+            **post_data,
+            "author": {
+                "uid": user_id,
+                "display_name": user_data.get("display_name"),
+                "avatar_url": user_data.get("avatar_url"),
+            },
+            "created_at": firestore.SERVER_TIMESTAMP,
+            "comment_count": 0,
+            "like_count": 0,
+        }
+
+        doc_ref = cls.db.collection("posts").add(post)
+        return doc_ref[1].id
+
+    @classmethod
+    def add_comment(cls, post_id: str, user_id: str, comment_text: str) -> str:
+        """
+        Add a comment with denormalized data and update counters.
+        """
+        # Get author data
+        user_doc = cls.db.collection("users").document(user_id).get()
+        user_data = user_doc.to_dict()
+
+        batch = cls.db.batch()
+
+        # Create comment with embedded author
+        comment_ref = cls.db.collection("posts").document(post_id).collection("comments").document()
+        batch.set(comment_ref, {
+            "text": comment_text,
+            "author": {
+                "uid": user_id,
+                "display_name": user_data.get("display_name"),
+                "avatar_url": user_data.get("avatar_url"),
+            },
+            "created_at": firestore.SERVER_TIMESTAMP,
+            "like_count": 0,
+        })
+
+        # Update post comment count
+        post_ref = cls.db.collection("posts").document(post_id)
+        batch.update(post_ref, {
+            "comment_count": firestore.Increment(1),
+            "last_comment_at": firestore.SERVER_TIMESTAMP,
+        })
+
+        batch.commit()
+        return comment_ref.id
+
+# Usage
+DenormalizedData.update_user_profile("user123", {
+    "display_name": "New Name",
+    "avatar_url": "https://example.com/new-avatar.jpg"
+})
+
+post_id = DenormalizedData.create_post("user123", {
+    "title": "My Post",
+    "content": "Hello world!"
+})'''
+    },
+    {
+        "instruction": "Write Python code for aggregation pattern in Firestore",
+        "output": '''from firebase_admin import firestore
+from typing import Dict, Optional
+from datetime import datetime, timezone
+
+class AggregationManager:
+    """
+    Manage aggregations in Firestore using counters and summaries.
+
+    Patterns:
+    - Distributed counters for high-write scenarios
+    - Pre-computed aggregations for read performance
+    - Time-based aggregations for analytics
+    """
+
+    def __init__(self):
+        self.db = firestore.client()
+        self.num_shards = 10
+
+    # Distributed Counter Pattern
+    def increment_counter(self, counter_path: str, amount: int = 1) -> None:
+        """Increment a distributed counter."""
+        import random
+
+        shard_id = random.randint(0, self.num_shards - 1)
+        shard_ref = self.db.collection(f"{counter_path}_shards").document(str(shard_id))
+
+        shard_ref.set({
+            "count": firestore.Increment(amount)
+        }, merge=True)
+
+    def get_counter_value(self, counter_path: str) -> int:
+        """Get total value of distributed counter."""
+        shards = self.db.collection(f"{counter_path}_shards").stream()
+
+        total = 0
+        for shard in shards:
+            total += shard.to_dict().get("count", 0)
+
+        return total
+
+    # Pre-computed Aggregation Pattern
+    def update_user_stats(self, user_id: str, event_type: str) -> None:
+        """Update pre-computed user statistics."""
+        stats_ref = self.db.collection("user_stats").document(user_id)
+
+        updates = {
+            f"counts.{event_type}": firestore.Increment(1),
+            f"last_{event_type}": firestore.SERVER_TIMESTAMP,
+        }
+
+        stats_ref.set(updates, merge=True)
+
+    def get_user_stats(self, user_id: str) -> Dict:
+        """Get pre-computed user statistics."""
+        stats = self.db.collection("user_stats").document(user_id).get()
+        return stats.to_dict() if stats.exists else {}
+
+    # Time-based Aggregation Pattern
+    def record_daily_metric(self, metric_name: str, value: float, date: datetime = None) -> None:
+        """Record a metric for daily aggregation."""
+        date = date or datetime.now(timezone.utc)
+        date_str = date.strftime("%Y-%m-%d")
+
+        metric_ref = self.db.collection("daily_metrics").document(f"{metric_name}_{date_str}")
+
+        metric_ref.set({
+            "metric": metric_name,
+            "date": date_str,
+            "sum": firestore.Increment(value),
+            "count": firestore.Increment(1),
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        }, merge=True)
+
+    def get_daily_metrics(self, metric_name: str, days: int = 30) -> list:
+        """Get daily metrics for a time range."""
+        from datetime import timedelta
+
+        end_date = datetime.now(timezone.utc)
+        start_date = end_date - timedelta(days=days)
+
+        metrics = (self.db.collection("daily_metrics")
+                  .where("metric", "==", metric_name)
+                  .where("date", ">=", start_date.strftime("%Y-%m-%d"))
+                  .order_by("date")
+                  .stream())
+
+        results = []
+        for doc in metrics:
+            data = doc.to_dict()
+            data["average"] = data["sum"] / data["count"] if data["count"] > 0 else 0
+            results.append(data)
+
+        return results
+
+    # Leaderboard Pattern
+    def update_leaderboard(self, user_id: str, score: int) -> None:
+        """Update user score on leaderboard."""
+        # Update user's score
+        score_ref = self.db.collection("leaderboard").document(user_id)
+        score_ref.set({
+            "user_id": user_id,
+            "score": score,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        })
+
+    def get_top_users(self, limit: int = 10) -> list:
+        """Get top users from leaderboard."""
+        top = (self.db.collection("leaderboard")
+              .order_by("score", direction=firestore.Query.DESCENDING)
+              .limit(limit)
+              .stream())
+
+        return [{"rank": i + 1, **doc.to_dict()} for i, doc in enumerate(top)]
+
+    def get_user_rank(self, user_id: str) -> Optional[int]:
+        """Get a user's rank on leaderboard."""
+        user_doc = self.db.collection("leaderboard").document(user_id).get()
+        if not user_doc.exists:
+            return None
+
+        user_score = user_doc.to_dict()["score"]
+
+        # Count users with higher scores
+        higher = (self.db.collection("leaderboard")
+                 .where("score", ">", user_score)
+                 .count().get())
+
+        return higher[0][0].value + 1
+
+# Usage
+agg = AggregationManager()
+
+# Distributed counter
+agg.increment_counter("page_views/homepage")
+views = agg.get_counter_value("page_views/homepage")
+
+# User stats
+agg.update_user_stats("user123", "login")
+agg.update_user_stats("user123", "post_created")
+stats = agg.get_user_stats("user123")
+
+# Daily metrics
+agg.record_daily_metric("revenue", 99.99)
+metrics = agg.get_daily_metrics("revenue", days=7)
+
+# Leaderboard
+agg.update_leaderboard("user123", 1500)
+top_10 = agg.get_top_users(10)'''
+    },
+    # =========================================================================
+    # SECURITY RULES EXAMPLES
+    # =========================================================================
+    {
+        "instruction": "Write Firestore security rules for a social media application",
+        "output": '''rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return request.auth.token.admin == true;
+    }
+
+    function hasVerifiedEmail() {
+      return request.auth.token.email_verified == true;
+    }
+
+    function isValidUserData(data) {
+      return data.keys().hasAll(['displayName', 'email'])
+        && data.displayName is string
+        && data.displayName.size() >= 2
+        && data.displayName.size() <= 50
+        && data.email == request.auth.token.email;
+    }
+
+    // User profiles
+    match /users/{userId} {
+      // Anyone can read public profiles
+      allow read: if true;
+
+      // Users can only write their own profile
+      allow create: if isOwner(userId) && isValidUserData(request.resource.data);
+      allow update: if isOwner(userId)
+        && request.resource.data.email == resource.data.email  // Can't change email
+        && request.resource.data.createdAt == resource.data.createdAt;  // Can't change creation date
+      allow delete: if isOwner(userId) || isAdmin();
+
+      // User's private settings
+      match /settings/{document=**} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Posts
+    match /posts/{postId} {
+      function isPostOwner() {
+        return resource.data.authorId == request.auth.uid;
+      }
+
+      function isValidPost(data) {
+        return data.keys().hasAll(['title', 'content', 'authorId'])
+          && data.title is string
+          && data.title.size() >= 1
+          && data.title.size() <= 200
+          && data.content is string
+          && data.content.size() <= 10000
+          && data.authorId == request.auth.uid;
+      }
+
+      // Anyone can read published posts
+      allow read: if resource.data.published == true || isPostOwner() || isAdmin();
+
+      // Verified users can create posts
+      allow create: if isSignedIn() && hasVerifiedEmail() && isValidPost(request.resource.data);
+
+      // Only author can update their posts
+      allow update: if isPostOwner()
+        && request.resource.data.authorId == resource.data.authorId;  // Can't change author
+
+      // Author or admin can delete
+      allow delete: if isPostOwner() || isAdmin();
+
+      // Comments subcollection
+      match /comments/{commentId} {
+        function isCommentOwner() {
+          return resource.data.authorId == request.auth.uid;
+        }
+
+        // Anyone can read comments on published posts
+        allow read: if get(/databases/$(database)/documents/posts/$(postId)).data.published == true;
+
+        // Verified users can comment
+        allow create: if isSignedIn()
+          && hasVerifiedEmail()
+          && request.resource.data.authorId == request.auth.uid;
+
+        // Only comment author can update/delete
+        allow update, delete: if isCommentOwner();
+      }
+    }
+
+    // Follow relationships
+    match /follows/{followId} {
+      // followId format: "{followerId}_{followedId}"
+      function getFollowerId() {
+        return followId.split('_')[0];
+      }
+
+      allow read: if true;
+      allow create: if isOwner(getFollowerId());
+      allow delete: if isOwner(getFollowerId());
+    }
+
+    // Notifications (read-only for users)
+    match /notifications/{userId}/{notificationId} {
+      allow read: if isOwner(userId);
+      allow update: if isOwner(userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+    }
+  }
+}'''
+    },
+    {
+        "instruction": "Write Firestore security rules for a multi-tenant SaaS application",
+        "output": '''rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function getTenantMembership(tenantId) {
+      return get(/databases/$(database)/documents/tenants/$(tenantId)/members/$(request.auth.uid)).data;
+    }
+
+    function isTenantMember(tenantId) {
+      return exists(/databases/$(database)/documents/tenants/$(tenantId)/members/$(request.auth.uid));
+    }
+
+    function hasTenantRole(tenantId, roles) {
+      return isTenantMember(tenantId)
+        && getTenantMembership(tenantId).role in roles;
+    }
+
+    function isTenantAdmin(tenantId) {
+      return hasTenantRole(tenantId, ['admin', 'owner']);
+    }
+
+    function isTenantOwner(tenantId) {
+      return hasTenantRole(tenantId, ['owner']);
+    }
+
+    function isSuperAdmin() {
+      return request.auth.token.superAdmin == true;
+    }
+
+    // Rate limiting helper
+    function isRateLimited() {
+      let recentWrites = getAfter(/databases/$(database)/documents/rate_limits/$(request.auth.uid)).data;
+      return recentWrites.count > 100;
+    }
+
+    // Global users collection
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if request.auth.uid == userId;
+      allow update: if request.auth.uid == userId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['tenants']);
+    }
+
+    // Tenants (organizations)
+    match /tenants/{tenantId} {
+      // Only members can read tenant info
+      allow read: if isTenantMember(tenantId) || isSuperAdmin();
+
+      // Only owner can update tenant settings
+      allow update: if isTenantOwner(tenantId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt', 'ownerId']);
+
+      // Super admin can delete tenants
+      allow delete: if isSuperAdmin();
+
+      // Members subcollection
+      match /members/{memberId} {
+        // Members can see other members
+        allow read: if isTenantMember(tenantId);
+
+        // Admins can add members
+        allow create: if isTenantAdmin(tenantId)
+          && request.resource.data.role in ['member', 'editor', 'admin']
+          && request.resource.data.role != 'owner';  // Can't create another owner
+
+        // Admins can update member roles (but not owners)
+        allow update: if isTenantAdmin(tenantId)
+          && resource.data.role != 'owner'  // Can't modify owner
+          && request.resource.data.role != 'owner';  // Can't promote to owner
+
+        // Members can remove themselves, admins can remove others
+        allow delete: if memberId == request.auth.uid
+          || (isTenantAdmin(tenantId) && resource.data.role != 'owner');
+      }
+
+      // Projects within tenant
+      match /projects/{projectId} {
+        function isProjectMember() {
+          return request.auth.uid in resource.data.memberIds;
+        }
+
+        // Tenant members can read projects they're assigned to
+        allow read: if isTenantMember(tenantId)
+          && (isProjectMember() || isTenantAdmin(tenantId));
+
+        // Editors and above can create projects
+        allow create: if hasTenantRole(tenantId, ['editor', 'admin', 'owner'])
+          && request.resource.data.tenantId == tenantId;
+
+        // Project members with editor role can update
+        allow update: if isProjectMember()
+          && hasTenantRole(tenantId, ['editor', 'admin', 'owner'])
+          && request.resource.data.tenantId == resource.data.tenantId;  // Can't move to another tenant
+
+        // Only admins can delete projects
+        allow delete: if isTenantAdmin(tenantId);
+
+        // Documents within projects
+        match /documents/{docId} {
+          allow read: if isTenantMember(tenantId)
+            && (request.auth.uid in get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.memberIds
+                || isTenantAdmin(tenantId));
+
+          allow write: if hasTenantRole(tenantId, ['editor', 'admin', 'owner'])
+            && request.auth.uid in get(/databases/$(database)/documents/tenants/$(tenantId)/projects/$(projectId)).data.memberIds;
+        }
+      }
+
+      // Billing (owner only)
+      match /billing/{document=**} {
+        allow read: if isTenantOwner(tenantId);
+        allow write: if false;  // Only via backend
+      }
+    }
+
+    // Audit logs (read-only)
+    match /audit_logs/{tenantId}/{logId} {
+      allow read: if isTenantAdmin(tenantId);
+      allow write: if false;  // Only via backend
+    }
+  }
+}'''
+    },
+    # =========================================================================
+    # ADDITIONAL CRUD VARIATIONS - PYTHON
+    # =========================================================================
+    {
+        "instruction": "Create a Python function to add a user with validation to Firestore",
+        "output": '''from firebase_admin import firestore
+import re
+
+db = firestore.client()
+
+def add_user(name: str, email: str, age: int) -> dict:
+    """Add a user with validation."""
+    # Validate email
+    if not re.match(r'^[\\w.-]+@[\\w.-]+\\.\\w+$', email):
+        raise ValueError("Invalid email format")
+
+    # Validate age
+    if not 0 < age < 150:
+        raise ValueError("Age must be between 1 and 149")
+
+    user_data = {
+        "name": name.strip(),
+        "email": email.lower(),
+        "age": age,
+        "created_at": firestore.SERVER_TIMESTAMP
+    }
+
+    doc_ref = db.collection("users").add(user_data)
+    return {"id": doc_ref[1].id, **user_data}'''
+    },
+    {
+        "instruction": "Write Python code to update user email in Firestore with validation",
+        "output": '''from firebase_admin import firestore
+import re
+
+db = firestore.client()
+
+def update_user_email(user_id: str, new_email: str) -> bool:
+    """Update user email with validation."""
+    # Validate email format
+    if not re.match(r'^[\\w.-]+@[\\w.-]+\\.\\w+$', new_email):
+        raise ValueError("Invalid email format")
+
+    # Check if email already exists
+    existing = db.collection("users").where("email", "==", new_email.lower()).limit(1).get()
+    if list(existing):
+        raise ValueError("Email already in use")
+
+    # Update email
+    db.collection("users").document(user_id).update({
+        "email": new_email.lower(),
+        "email_updated_at": firestore.SERVER_TIMESTAMP
+    })
+    return True'''
+    },
+    {
+        "instruction": "Write Python code to soft delete a document in Firestore",
+        "output": '''from firebase_admin import firestore
+
+db = firestore.client()
+
+def soft_delete(collection: str, doc_id: str) -> bool:
+    """Soft delete a document by marking it as deleted."""
+    doc_ref = db.collection(collection).document(doc_id)
+    doc = doc_ref.get()
+
+    if not doc.exists:
+        return False
+
+    doc_ref.update({
+        "deleted": True,
+        "deleted_at": firestore.SERVER_TIMESTAMP
+    })
+    return True
+
+def restore_deleted(collection: str, doc_id: str) -> bool:
+    """Restore a soft-deleted document."""
+    doc_ref = db.collection(collection).document(doc_id)
+    doc_ref.update({
+        "deleted": firestore.DELETE_FIELD,
+        "deleted_at": firestore.DELETE_FIELD,
+        "restored_at": firestore.SERVER_TIMESTAMP
+    })
+    return True'''
+    },
+    {
+        "instruction": "Write Python code to get documents with field projection in Firestore",
+        "output": '''from firebase_admin import firestore
+
+db = firestore.client()
+
+def get_users_with_projection(fields: list) -> list:
+    """Get users with only specific fields (projection)."""
+    # Note: Firestore doesn't support true field projection
+    # We fetch all and filter in application
+    docs = db.collection("users").stream()
+
+    users = []
+    for doc in docs:
+        data = doc.to_dict()
+        projected = {k: data[k] for k in fields if k in data}
+        projected["id"] = doc.id
+        users.append(projected)
+
+    return users
+
+# Usage - only get name and email
+users = get_users_with_projection(["name", "email"])'''
+    },
+    {
+        "instruction": "Write Python code to upsert a document in Firestore",
+        "output": '''from firebase_admin import firestore
+
+db = firestore.client()
+
+def upsert_document(collection: str, doc_id: str, data: dict) -> dict:
+    """Upsert (insert or update) a document."""
+    doc_ref = db.collection(collection).document(doc_id)
+    doc = doc_ref.get()
+
+    if doc.exists:
+        # Update existing
+        data["updated_at"] = firestore.SERVER_TIMESTAMP
+        doc_ref.update(data)
+        return {"action": "updated", "id": doc_id}
+    else:
+        # Create new
+        data["created_at"] = firestore.SERVER_TIMESTAMP
+        doc_ref.set(data)
+        return {"action": "created", "id": doc_id}
+
+# Usage
+result = upsert_document("products", "prod_123", {"name": "Widget", "price": 9.99})'''
+    },
+    {
+        "instruction": "Write Python code to get a document or create default in Firestore",
+        "output": '''from firebase_admin import firestore
+from typing import Callable, Dict
+
+db = firestore.client()
+
+def get_or_create(
+    collection: str,
+    doc_id: str,
+    default_factory: Callable[[], Dict]
+) -> dict:
+    """Get a document or create it with default values."""
+    doc_ref = db.collection(collection).document(doc_id)
+    doc = doc_ref.get()
+
+    if doc.exists:
+        return {"exists": True, "data": doc.to_dict()}
+
+    # Create with defaults
+    default_data = default_factory()
+    default_data["created_at"] = firestore.SERVER_TIMESTAMP
+    doc_ref.set(default_data)
+
+    return {"exists": False, "data": default_data}
+
+# Usage
+result = get_or_create(
+    "user_preferences",
+    "user_123",
+    lambda: {"theme": "light", "notifications": True, "language": "en"}
+)'''
+    },
+    # =========================================================================
+    # ADDITIONAL QUERY VARIATIONS
+    # =========================================================================
+    {
+        "instruction": "Write Python code to query Firestore with text search prefix matching",
+        "output": '''from firebase_admin import firestore
+
+db = firestore.client()
+
+def search_by_prefix(collection: str, field: str, prefix: str, limit: int = 20) -> list:
+    """Search documents where field starts with prefix."""
+    # Firestore prefix search technique
+    end = prefix[:-1] + chr(ord(prefix[-1]) + 1)
+
+    query = (db.collection(collection)
+             .where(field, ">=", prefix)
+             .where(field, "<", end)
+             .limit(limit))
+
+    return [{"id": doc.id, **doc.to_dict()} for doc in query.stream()]
+
+# Usage - search users whose name starts with "Joh"
+results = search_by_prefix("users", "name", "Joh")'''
+    },
+    {
+        "instruction": "Write Python code to query Firestore with NOT equal condition",
+        "output": '''from firebase_admin import firestore
+
+db = firestore.client()
+
+def get_active_users() -> list:
+    """Get users where status is NOT 'inactive'."""
+    # Use 'not-in' for not-equal queries
+    query = db.collection("users").where("status", "not-in", ["inactive", "banned", "deleted"])
+
+    return [{"id": doc.id, **doc.to_dict()} for doc in query.stream()]
+
+def get_users_without_role() -> list:
+    """Get users who don't have admin role."""
+    query = db.collection("users").where("role", "!=", "admin")
+
+    return [{"id": doc.id, **doc.to_dict()} for doc in query.stream()]'''
+    },
+    {
+        "instruction": "Write Python code to query Firestore with OR conditions",
+        "output": '''from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import Or, FieldFilter
+
+db = firestore.client()
+
+def get_featured_or_popular_posts() -> list:
+    """Get posts that are either featured OR have many likes."""
+    posts_ref = db.collection("posts")
+
+    # OR query using filters
+    or_filter = Or(filters=[
+        FieldFilter("featured", "==", True),
+        FieldFilter("likes", ">=", 100)
+    ])
+
+    query = posts_ref.where(filter=or_filter)
+
+    return [{"id": doc.id, **doc.to_dict()} for doc in query.stream()]
+
+def get_users_by_role() -> list:
+    """Get users with admin OR moderator role."""
+    users_ref = db.collection("users")
+
+    # Alternative: use 'in' for simple OR on same field
+    query = users_ref.where("role", "in", ["admin", "moderator"])
+
+    return [{"id": doc.id, **doc.to_dict()} for doc in query.stream()]'''
+    },
+    {
+        "instruction": "Write Python code to query Firestore by document ID range",
+        "output": '''from firebase_admin import firestore
+
+db = firestore.client()
+
+def get_documents_in_id_range(
+    collection: str,
+    start_id: str,
+    end_id: str,
+    limit: int = 100
+) -> list:
+    """Get documents with IDs in a specific range."""
+    query = (db.collection(collection)
+             .order_by("__name__")
+             .start_at([start_id])
+             .end_at([end_id])
+             .limit(limit))
+
+    return [{"id": doc.id, **doc.to_dict()} for doc in query.stream()]
+
+def get_documents_after_id(collection: str, last_id: str, limit: int = 100) -> list:
+    """Get documents after a specific ID (for pagination)."""
+    query = (db.collection(collection)
+             .order_by("__name__")
+             .start_after([last_id])
+             .limit(limit))
+
+    return [{"id": doc.id, **doc.to_dict()} for doc in query.stream()]'''
+    },
+    {
+        "instruction": "Write Python code to query Firestore with composite index",
+        "output": '''from firebase_admin import firestore
+
+db = firestore.client()
+
+def get_user_orders(user_id: str, status: str = None, limit: int = 20) -> list:
+    """
+    Get user orders with composite query.
+    Requires composite index: user_id (ASC), created_at (DESC)
+    """
+    query = db.collection("orders").where("user_id", "==", user_id)
+
+    if status:
+        # Requires composite index: user_id (ASC), status (ASC), created_at (DESC)
+        query = query.where("status", "==", status)
+
+    query = query.order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit)
+
+    return [{"id": doc.id, **doc.to_dict()} for doc in query.stream()]
+
+def get_products_by_category_and_price(category: str, min_price: float, max_price: float) -> list:
+    """
+    Get products filtered by category and price range.
+    Requires composite index: category (ASC), price (ASC)
+    """
+    query = (db.collection("products")
+             .where("category", "==", category)
+             .where("price", ">=", min_price)
+             .where("price", "<=", max_price)
+             .order_by("price"))
+
+    return [{"id": doc.id, **doc.to_dict()} for doc in query.stream()]'''
+    },
+    # =========================================================================
+    # TYPESCRIPT/JAVASCRIPT VARIATIONS
+    # =========================================================================
+    {
+        "instruction": "Write TypeScript code to add a document to Firestore with validation",
+        "output": '''import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from './firebase-config';
+
+interface UserData {
+  name: string;
+  email: string;
+  age: number;
+}
+
+interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+function validateUser(data: UserData): ValidationResult {
+  const errors: string[] = [];
+
+  if (!data.name || data.name.trim().length < 2) {
+    errors.push('Name must be at least 2 characters');
+  }
+
+  if (!data.email || !/^[\\w.-]+@[\\w.-]+\\.\\w+$/.test(data.email)) {
+    errors.push('Invalid email format');
+  }
+
+  if (!data.age || data.age < 1 || data.age > 150) {
+    errors.push('Age must be between 1 and 150');
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+async function addUser(userData: UserData): Promise<string> {
+  const validation = validateUser(userData);
+  if (!validation.valid) {
+    throw new Error(validation.errors.join(', '));
+  }
+
+  const docRef = await addDoc(collection(db, 'users'), {
+    ...userData,
+    name: userData.name.trim(),
+    email: userData.email.toLowerCase(),
+    createdAt: serverTimestamp()
+  });
+
+  return docRef.id;
+}'''
+    },
+    {
+        "instruction": "Write TypeScript code to update a Firestore document with optimistic locking",
+        "output": '''import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from './firebase-config';
+
+interface UpdateOptions {
+  version: number;
+  updates: Record<string, any>;
+}
+
+class OptimisticLockError extends Error {
+  constructor() {
+    super('Document was modified by another process');
+    this.name = 'OptimisticLockError';
+  }
+}
+
+async function updateWithVersion(
+  collectionName: string,
+  docId: string,
+  options: UpdateOptions
+): Promise<void> {
+  const docRef = doc(db, collectionName, docId);
+  const docSnap = await getDoc(docRef);
+
+  if (!docSnap.exists()) {
+    throw new Error('Document not found');
+  }
+
+  const currentVersion = docSnap.data().version || 0;
+
+  if (currentVersion !== options.version) {
+    throw new OptimisticLockError();
+  }
+
+  await updateDoc(docRef, {
+    ...options.updates,
+    version: currentVersion + 1,
+    updatedAt: serverTimestamp()
+  });
+}
+
+// Usage with retry
+async function safeUpdate(
+  collection: string,
+  docId: string,
+  updates: Record<string, any>,
+  maxRetries: number = 3
+): Promise<void> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const docSnap = await getDoc(doc(db, collection, docId));
+      const version = docSnap.data()?.version || 0;
+
+      await updateWithVersion(collection, docId, { version, updates });
+      return;
+    } catch (error) {
+      if (error instanceof OptimisticLockError && attempt < maxRetries - 1) {
+        await new Promise(r => setTimeout(r, 100 * (attempt + 1)));
+        continue;
+      }
+      throw error;
+    }
+  }
+}'''
+    },
+    {
+        "instruction": "Write TypeScript code to batch write documents to Firestore",
+        "output": '''import { writeBatch, doc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from './firebase-config';
+
+interface BatchItem {
+  operation: 'set' | 'update' | 'delete';
+  collection: string;
+  id?: string;
+  data?: Record<string, any>;
+}
+
+async function executeBatch(items: BatchItem[]): Promise<void> {
+  // Firestore batch limit is 500
+  const batchSize = 500;
+
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = writeBatch(db);
+    const chunk = items.slice(i, i + batchSize);
+
+    for (const item of chunk) {
+      const docRef = item.id
+        ? doc(db, item.collection, item.id)
+        : doc(collection(db, item.collection));
+
+      switch (item.operation) {
+        case 'set':
+          batch.set(docRef, {
+            ...item.data,
+            createdAt: serverTimestamp()
+          });
+          break;
+        case 'update':
+          batch.update(docRef, {
+            ...item.data,
+            updatedAt: serverTimestamp()
+          });
+          break;
+        case 'delete':
+          batch.delete(docRef);
+          break;
+      }
+    }
+
+    await batch.commit();
+    console.log(`Committed batch ${Math.floor(i / batchSize) + 1}`);
+  }
+}
+
+// Usage
+await executeBatch([
+  { operation: 'set', collection: 'users', data: { name: 'Alice' } },
+  { operation: 'update', collection: 'users', id: 'user123', data: { status: 'active' } },
+  { operation: 'delete', collection: 'users', id: 'oldUser' }
+]);'''
+    },
+    {
+        "instruction": "Write TypeScript code to query Firestore with cursor pagination",
+        "output": '''import {
+  collection,
+  query,
+  orderBy,
+  limit,
+  startAfter,
+  getDocs,
+  DocumentSnapshot,
+  QueryDocumentSnapshot
+} from 'firebase/firestore';
+import { db } from './firebase-config';
+
+interface PaginatedResult<T> {
+  items: T[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+}
+
+async function getPaginatedDocs<T>(
+  collectionName: string,
+  orderField: string,
+  pageSize: number,
+  lastDoc?: DocumentSnapshot
+): Promise<PaginatedResult<T>> {
+  let q = query(
+    collection(db, collectionName),
+    orderBy(orderField),
+    limit(pageSize + 1) // Fetch one extra to check hasMore
+  );
+
+  if (lastDoc) {
+    q = query(q, startAfter(lastDoc));
+  }
+
+  const snapshot = await getDocs(q);
+  const docs = snapshot.docs;
+
+  const hasMore = docs.length > pageSize;
+  const items = docs.slice(0, pageSize).map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  })) as T[];
+
+  const newLastDoc = docs.length > 0 ? docs[Math.min(docs.length - 1, pageSize - 1)] : null;
+
+  return { items, lastDoc: newLastDoc, hasMore };
+}
+
+// React hook for pagination
+function usePaginatedCollection<T>(collectionName: string, orderField: string, pageSize: number) {
+  const [items, setItems] = useState<T[]>([]);
+  const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
+
+  const loadMore = async () => {
+    if (loading || !hasMore) return;
+
+    setLoading(true);
+    const result = await getPaginatedDocs<T>(collectionName, orderField, pageSize, lastDoc);
+
+    setItems(prev => [...prev, ...result.items]);
+    setLastDoc(result.lastDoc);
+    setHasMore(result.hasMore);
+    setLoading(false);
+  };
+
+  return { items, loadMore, hasMore, loading };
+}'''
+    },
+    {
+        "instruction": "Write TypeScript code for Firestore real-time chat room",
+        "output": '''import {
+  collection,
+  addDoc,
+  query,
+  orderBy,
+  limit,
+  onSnapshot,
+  serverTimestamp,
+  Timestamp
+} from 'firebase/firestore';
+import { db } from './firebase-config';
+
+interface Message {
+  id: string;
+  text: string;
+  userId: string;
+  userName: string;
+  createdAt: Date;
+}
+
+interface ChatRoom {
+  roomId: string;
+  messages: Message[];
+  unsubscribe: () => void;
+}
+
+function createChatRoom(
+  roomId: string,
+  onMessage: (messages: Message[]) => void,
+  messageLimit: number = 100
+): ChatRoom {
+  const messagesRef = collection(db, 'chatRooms', roomId, 'messages');
+  const q = query(
+    messagesRef,
+    orderBy('createdAt', 'desc'),
+    limit(messageLimit)
+  );
+
+  const messages: Message[] = [];
+
+  const unsubscribe = onSnapshot(q, (snapshot) => {
+    snapshot.docChanges().forEach((change) => {
+      const data = change.doc.data();
+      const message: Message = {
+        id: change.doc.id,
+        text: data.text,
+        userId: data.userId,
+        userName: data.userName,
+        createdAt: (data.createdAt as Timestamp)?.toDate() || new Date()
+      };
+
+      if (change.type === 'added') {
+        messages.unshift(message);
+      } else if (change.type === 'modified') {
+        const index = messages.findIndex(m => m.id === message.id);
+        if (index !== -1) messages[index] = message;
+      } else if (change.type === 'removed') {
+        const index = messages.findIndex(m => m.id === message.id);
+        if (index !== -1) messages.splice(index, 1);
+      }
+    });
+
+    onMessage([...messages]);
+  });
+
+  return { roomId, messages, unsubscribe };
+}
+
+async function sendMessage(
+  roomId: string,
+  userId: string,
+  userName: string,
+  text: string
+): Promise<string> {
+  const messagesRef = collection(db, 'chatRooms', roomId, 'messages');
+
+  const docRef = await addDoc(messagesRef, {
+    text,
+    userId,
+    userName,
+    createdAt: serverTimestamp()
+  });
+
+  return docRef.id;
+}
+
+// Usage
+const room = createChatRoom('room123', (messages) => {
+  console.log('Messages updated:', messages);
+});
+
+await sendMessage('room123', 'user1', 'Alice', 'Hello!');
+
+// Cleanup
+room.unsubscribe();'''
+    },
+    # =========================================================================
+    # CLOUD FUNCTIONS ADDITIONAL EXAMPLES
+    # =========================================================================
+    {
+        "instruction": "Write Python Cloud Function for webhook handling",
+        "output": '''from firebase_functions import https_fn, options
+from firebase_admin import initialize_app, firestore
+import hashlib
+import hmac
+import json
+
+initialize_app()
+
+@https_fn.on_request(
+    memory=options.MemoryOption.MB_256,
+    timeout_sec=30
+)
+def stripe_webhook(req: https_fn.Request) -> https_fn.Response:
+    """Handle Stripe webhook events."""
+    # Verify webhook signature
+    payload = req.data
+    sig_header = req.headers.get("Stripe-Signature")
+    webhook_secret = "whsec_your_secret"
+
+    try:
+        # Verify signature
+        timestamp, signature = parse_stripe_signature(sig_header)
+        expected_sig = compute_signature(timestamp, payload, webhook_secret)
+
+        if not hmac.compare_digest(expected_sig, signature):
+            return https_fn.Response("Invalid signature", status=401)
+
+        # Parse event
+        event = json.loads(payload)
+        event_type = event["type"]
+
+        db = firestore.client()
+
+        # Handle different event types
+        if event_type == "checkout.session.completed":
+            session = event["data"]["object"]
+            handle_checkout_completed(db, session)
+
+        elif event_type == "invoice.paid":
+            invoice = event["data"]["object"]
+            handle_invoice_paid(db, invoice)
+
+        elif event_type == "customer.subscription.deleted":
+            subscription = event["data"]["object"]
+            handle_subscription_cancelled(db, subscription)
+
+        return https_fn.Response(json.dumps({"received": True}), status=200)
+
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        return https_fn.Response(str(e), status=400)
+
+def parse_stripe_signature(sig_header: str):
+    """Parse Stripe signature header."""
+    parts = dict(item.split("=") for item in sig_header.split(","))
+    return parts["t"], parts["v1"]
+
+def compute_signature(timestamp: str, payload: bytes, secret: str) -> str:
+    """Compute expected Stripe signature."""
+    signed_payload = f"{timestamp}.{payload.decode()}"
+    return hmac.new(
+        secret.encode(),
+        signed_payload.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+def handle_checkout_completed(db, session):
+    """Handle successful checkout."""
+    customer_id = session["customer"]
+    subscription_id = session.get("subscription")
+
+    db.collection("customers").document(customer_id).update({
+        "subscription_status": "active",
+        "subscription_id": subscription_id,
+        "updated_at": firestore.SERVER_TIMESTAMP
+    })'''
+    },
+    {
+        "instruction": "Write Python Cloud Function for data aggregation on schedule",
+        "output": '''from firebase_functions import scheduler_fn, options
+from firebase_admin import initialize_app, firestore
+from datetime import datetime, timedelta, timezone
+from collections import defaultdict
+
+initialize_app()
+
+@scheduler_fn.on_schedule(
+    schedule="0 0 * * *",  # Midnight daily
+    timezone=scheduler_fn.Timezone("UTC"),
+    memory=options.MemoryOption.GB_1,
+    timeout_sec=540
+)
+def daily_analytics_aggregation(event: scheduler_fn.ScheduledEvent) -> None:
+    """Aggregate daily analytics data."""
+    db = firestore.client()
+    yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+    date_str = yesterday.strftime("%Y-%m-%d")
+
+    # Get all events from yesterday
+    start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=1)
+
+    events = (db.collection("events")
+              .where("timestamp", ">=", start)
+              .where("timestamp", "<", end)
+              .stream())
+
+    # Aggregate by event type and user
+    stats = defaultdict(lambda: {"count": 0, "users": set()})
+    user_stats = defaultdict(lambda: {"events": 0, "types": set()})
+
+    for event_doc in events:
+        data = event_doc.to_dict()
+        event_type = data.get("type", "unknown")
+        user_id = data.get("user_id")
+
+        stats[event_type]["count"] += 1
+        if user_id:
+            stats[event_type]["users"].add(user_id)
+            user_stats[user_id]["events"] += 1
+            user_stats[user_id]["types"].add(event_type)
+
+    # Store aggregated stats
+    batch = db.batch()
+
+    # Event type aggregations
+    for event_type, data in stats.items():
+        ref = db.collection("daily_stats").document(f"{date_str}_{event_type}")
+        batch.set(ref, {
+            "date": date_str,
+            "event_type": event_type,
+            "count": data["count"],
+            "unique_users": len(data["users"]),
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+
+    # Daily summary
+    summary_ref = db.collection("daily_summaries").document(date_str)
+    batch.set(summary_ref, {
+        "date": date_str,
+        "total_events": sum(d["count"] for d in stats.values()),
+        "unique_users": len(user_stats),
+        "event_types": dict((k, v["count"]) for k, v in stats.items()),
+        "created_at": firestore.SERVER_TIMESTAMP
+    })
+
+    batch.commit()
+    print(f"Aggregated {sum(d['count'] for d in stats.values())} events for {date_str}")'''
+    },
+    {
+        "instruction": "Write Python Cloud Function for email notification on Firestore trigger",
+        "output": '''from firebase_functions import firestore_fn
+from firebase_admin import initialize_app, firestore
+import requests
+
+initialize_app()
+
+# Email service configuration
+SENDGRID_API_KEY = "your_sendgrid_api_key"
+FROM_EMAIL = "noreply@yourapp.com"
+
+@firestore_fn.on_document_created(document="orders/{orderId}")
+def send_order_confirmation(event: firestore_fn.Event[firestore_fn.DocumentSnapshot]) -> None:
+    """Send order confirmation email when order is created."""
+    order_id = event.params["orderId"]
+    order_data = event.data.to_dict()
+
+    db = firestore.client()
+
+    # Get user email
+    user_id = order_data.get("user_id")
+    user_doc = db.collection("users").document(user_id).get()
+
+    if not user_doc.exists:
+        print(f"User not found: {user_id}")
+        return
+
+    user_email = user_doc.to_dict().get("email")
+    user_name = user_doc.to_dict().get("name", "Customer")
+
+    # Build email content
+    items = order_data.get("items", [])
+    total = order_data.get("total", 0)
+
+    items_html = "".join([
+        "<li>" + item['name'] + " x " + str(item['quantity']) + " - $" + f"{item['price']:.2f}" + "</li>"
+        for item in items
+    ])
+
+    email_html = """
+    <h2>Order Confirmation</h2>
+    <p>Hi """ + user_name + """,</p>
+    <p>Thank you for your order #""" + order_id + """!</p>
+    <h3>Order Details:</h3>
+    <ul>""" + items_html + """</ul>
+    <p><strong>Total: $""" + f"{total:.2f}" + """</strong></p>
+    <p>We'll notify you when your order ships.</p>
+    """
+
+    # Send via SendGrid
+    response = requests.post(
+        "https://api.sendgrid.com/v3/mail/send",
+        headers={
+            "Authorization": f"Bearer {SENDGRID_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        json={
+            "personalizations": [{"to": [{"email": user_email}]}],
+            "from": {"email": FROM_EMAIL},
+            "subject": f"Order Confirmation #{order_id}",
+            "content": [{"type": "text/html", "value": email_html}]
+        }
+    )
+
+    if response.status_code == 202:
+        # Log success
+        db.collection("email_logs").add({
+            "type": "order_confirmation",
+            "order_id": order_id,
+            "user_id": user_id,
+            "email": user_email,
+            "status": "sent",
+            "timestamp": firestore.SERVER_TIMESTAMP
+        })
+        print(f"Order confirmation sent to {user_email}")
+    else:
+        print(f"Failed to send email: {response.text}")'''
+    },
+    # =========================================================================
+    # ERROR HANDLING VARIATIONS
+    # =========================================================================
+    {
+        "instruction": "Write Python code for retry logic with Firestore operations",
+        "output": '''from firebase_admin import firestore
+import time
+from functools import wraps
+from typing import TypeVar, Callable
+import random
+
+T = TypeVar('T')
+
+class FirestoreRetryError(Exception):
+    """Raised when all retries are exhausted."""
+    pass
+
+def with_retry(
+    max_retries: int = 3,
+    initial_delay: float = 0.5,
+    max_delay: float = 30.0,
+    exponential_base: float = 2.0,
+    jitter: bool = True
+):
+    """Decorator for retrying Firestore operations with exponential backoff."""
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @wraps(func)
+        def wrapper(*args, **kwargs) -> T:
+            delay = initial_delay
+            last_exception = None
+
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    error_type = type(e).__name__
+
+                    # Check if error is retryable
+                    retryable = any(err in str(e).lower() for err in [
+                        "deadline exceeded",
+                        "unavailable",
+                        "resource exhausted",
+                        "internal",
+                        "aborted"
+                    ])
+
+                    if not retryable or attempt == max_retries:
+                        raise
+
+                    # Calculate delay with jitter
+                    current_delay = min(delay, max_delay)
+                    if jitter:
+                        current_delay *= (0.5 + random.random())
+
+                    print(f"Retry {attempt + 1}/{max_retries} after {error_type}, waiting {current_delay:.2f}s")
+                    time.sleep(current_delay)
+                    delay *= exponential_base
+
+            raise FirestoreRetryError(f"Failed after {max_retries} retries") from last_exception
+        return wrapper
+    return decorator
+
+db = firestore.client()
+
+@with_retry(max_retries=3)
+def get_user_with_retry(user_id: str) -> dict:
+    """Get user with automatic retry on transient errors."""
+    doc = db.collection("users").document(user_id).get()
+    if not doc.exists:
+        return None
+    return doc.to_dict()
+
+@with_retry(max_retries=5, initial_delay=1.0)
+def batch_write_with_retry(documents: list) -> int:
+    """Batch write with retry logic."""
+    batch = db.batch()
+    for doc_data in documents:
+        ref = db.collection("items").document()
+        batch.set(ref, doc_data)
+    batch.commit()
+    return len(documents)'''
+    },
+    {
+        "instruction": "Write Python code for circuit breaker pattern with Firestore",
+        "output": '''from firebase_admin import firestore
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Callable, TypeVar, Optional
+import threading
+
+T = TypeVar('T')
+
+class CircuitState(Enum):
+    CLOSED = "closed"      # Normal operation
+    OPEN = "open"          # Failing, reject requests
+    HALF_OPEN = "half_open"  # Testing if service recovered
+
+@dataclass
+class CircuitBreakerConfig:
+    failure_threshold: int = 5
+    recovery_timeout: timedelta = timedelta(seconds=30)
+    half_open_requests: int = 3
+
+class CircuitBreaker:
+    """Circuit breaker for Firestore operations."""
+
+    def __init__(self, config: CircuitBreakerConfig = None):
+        self.config = config or CircuitBreakerConfig()
+        self.state = CircuitState.CLOSED
+        self.failure_count = 0
+        self.success_count = 0
+        self.last_failure_time: Optional[datetime] = None
+        self.lock = threading.Lock()
+
+    def _should_allow_request(self) -> bool:
+        with self.lock:
+            if self.state == CircuitState.CLOSED:
+                return True
+
+            if self.state == CircuitState.OPEN:
+                if datetime.now() - self.last_failure_time >= self.config.recovery_timeout:
+                    self.state = CircuitState.HALF_OPEN
+                    self.success_count = 0
+                    return True
+                return False
+
+            # HALF_OPEN - allow limited requests
+            return self.success_count < self.config.half_open_requests
+
+    def _record_success(self):
+        with self.lock:
+            if self.state == CircuitState.HALF_OPEN:
+                self.success_count += 1
+                if self.success_count >= self.config.half_open_requests:
+                    self.state = CircuitState.CLOSED
+                    self.failure_count = 0
+            else:
+                self.failure_count = 0
+
+    def _record_failure(self):
+        with self.lock:
+            self.failure_count += 1
+            self.last_failure_time = datetime.now()
+
+            if self.state == CircuitState.HALF_OPEN:
+                self.state = CircuitState.OPEN
+            elif self.failure_count >= self.config.failure_threshold:
+                self.state = CircuitState.OPEN
+
+    def execute(self, func: Callable[..., T], *args, **kwargs) -> T:
+        """Execute function with circuit breaker protection."""
+        if not self._should_allow_request():
+            raise Exception(f"Circuit breaker is {self.state.value}")
+
+        try:
+            result = func(*args, **kwargs)
+            self._record_success()
+            return result
+        except Exception as e:
+            self._record_failure()
+            raise
+
+# Usage
+db = firestore.client()
+circuit_breaker = CircuitBreaker()
+
+def get_user(user_id: str) -> dict:
+    return circuit_breaker.execute(
+        lambda: db.collection("users").document(user_id).get().to_dict()
+    )'''
+    },
+    # =========================================================================
+    # OFFLINE AND PERSISTENCE
+    # =========================================================================
+    {
+        "instruction": "Write TypeScript code to enable Firestore offline persistence",
+        "output": '''import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  enableIndexedDbPersistence,
+  CACHE_SIZE_UNLIMITED
+} from 'firebase/firestore';
+import { app } from './firebase-config';
+
+// Modern approach (Firebase v9.8+)
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager(),
+    cacheSizeBytes: CACHE_SIZE_UNLIMITED
+  })
+});
+
+// Check connection status
+import { onSnapshot, doc } from 'firebase/firestore';
+
+function setupConnectionListener() {
+  const connectedRef = doc(db, '.info/connected');
+
+  return onSnapshot(connectedRef, (snapshot) => {
+    const isConnected = snapshot.data()?.connected ?? false;
+    console.log(isConnected ? 'Online' : 'Offline');
+
+    // Update UI or handle offline state
+    if (!isConnected) {
+      showOfflineBanner();
+    } else {
+      hideOfflineBanner();
+    }
+  });
+}
+
+// Pending writes indicator
+import { getDocsFromCache, getDocsFromServer, collection, onSnapshotsInSync } from 'firebase/firestore';
+
+async function getPendingWriteCount(): Promise<number> {
+  // This is a simplified approach - actual pending write count
+  // requires tracking locally
+  return 0;
+}
+
+// Force server sync when online
+async function syncWithServer(collectionName: string) {
+  const colRef = collection(db, collectionName);
+
+  try {
+    // Try to get from server
+    const serverDocs = await getDocsFromServer(colRef);
+    console.log(`Synced ${serverDocs.size} documents from server`);
+    return serverDocs;
+  } catch (error) {
+    // Fall back to cache
+    console.log('Failed to sync, using cache');
+    return getDocsFromCache(colRef);
+  }
+}'''
+    },
+    {
+        "instruction": "Write TypeScript code to handle Firestore offline queue",
+        "output": '''import {
+  collection,
+  addDoc,
+  serverTimestamp,
+  onSnapshot,
+  DocumentReference
+} from 'firebase/firestore';
+import { db } from './firebase-config';
+
+interface QueuedOperation {
+  id: string;
+  type: 'create' | 'update' | 'delete';
+  collection: string;
+  docId?: string;
+  data?: Record<string, any>;
+  timestamp: number;
+  status: 'pending' | 'syncing' | 'synced' | 'failed';
+  retryCount: number;
+}
+
+class OfflineQueue {
+  private queue: QueuedOperation[] = [];
+  private readonly STORAGE_KEY = 'firestore_offline_queue';
+  private isOnline: boolean = navigator.onLine;
+
+  constructor() {
+    this.loadFromStorage();
+    this.setupNetworkListeners();
+  }
+
+  private loadFromStorage(): void {
+    const stored = localStorage.getItem(this.STORAGE_KEY);
+    if (stored) {
+      this.queue = JSON.parse(stored);
+    }
+  }
+
+  private saveToStorage(): void {
+    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.queue));
+  }
+
+  private setupNetworkListeners(): void {
+    window.addEventListener('online', () => {
+      this.isOnline = true;
+      this.processQueue();
+    });
+
+    window.addEventListener('offline', () => {
+      this.isOnline = false;
+    });
+  }
+
+  async addOperation(operation: Omit<QueuedOperation, 'id' | 'timestamp' | 'status' | 'retryCount'>): Promise<string> {
+    const id = crypto.randomUUID();
+    const queuedOp: QueuedOperation = {
+      ...operation,
+      id,
+      timestamp: Date.now(),
+      status: 'pending',
+      retryCount: 0
+    };
+
+    this.queue.push(queuedOp);
+    this.saveToStorage();
+
+    if (this.isOnline) {
+      await this.processOperation(queuedOp);
+    }
+
+    return id;
+  }
+
+  private async processQueue(): Promise<void> {
+    const pending = this.queue.filter(op => op.status === 'pending' || op.status === 'failed');
+
+    for (const operation of pending) {
+      await this.processOperation(operation);
+    }
+
+    // Clean up synced operations
+    this.queue = this.queue.filter(op => op.status !== 'synced');
+    this.saveToStorage();
+  }
+
+  private async processOperation(operation: QueuedOperation): Promise<void> {
+    operation.status = 'syncing';
+    this.saveToStorage();
+
+    try {
+      switch (operation.type) {
+        case 'create':
+          await addDoc(collection(db, operation.collection), {
+            ...operation.data,
+            createdAt: serverTimestamp(),
+            _offlineId: operation.id
+          });
+          break;
+        // Add update and delete handlers
+      }
+
+      operation.status = 'synced';
+    } catch (error) {
+      operation.status = 'failed';
+      operation.retryCount++;
+      console.error('Failed to sync operation:', error);
+    }
+
+    this.saveToStorage();
+  }
+
+  getPendingCount(): number {
+    return this.queue.filter(op => op.status !== 'synced').length;
+  }
+}
+
+export const offlineQueue = new OfflineQueue();'''
+    },
+    # =========================================================================
+    # ADMIN SDK OPERATIONS
+    # =========================================================================
+    {
+        "instruction": "Write Python code to list all Firebase users with pagination",
+        "output": '''from firebase_admin import auth
+from typing import List, Dict, Optional
+
+def list_all_users(page_size: int = 1000) -> List[Dict]:
+    """List all Firebase Auth users with pagination."""
+    all_users = []
+    page_token = None
+
+    while True:
+        # Fetch a page of users
+        page = auth.list_users(max_results=page_size, page_token=page_token)
+
+        for user in page.users:
+            all_users.append({
+                "uid": user.uid,
+                "email": user.email,
+                "display_name": user.display_name,
+                "email_verified": user.email_verified,
+                "disabled": user.disabled,
+                "creation_time": user.user_metadata.creation_timestamp,
+                "last_sign_in": user.user_metadata.last_sign_in_timestamp,
+                "providers": [p.provider_id for p in user.provider_data],
+                "custom_claims": user.custom_claims
+            })
+
+        # Check for more pages
+        page_token = page.next_page_token
+        if not page_token:
+            break
+
+    return all_users
+
+def search_users_by_email(email_pattern: str) -> List[Dict]:
+    """Search users by email pattern."""
+    all_users = list_all_users()
+    return [u for u in all_users if email_pattern.lower() in u.get("email", "").lower()]
+
+def get_users_by_custom_claim(claim_name: str, claim_value) -> List[Dict]:
+    """Get users with specific custom claim."""
+    all_users = list_all_users()
+    return [
+        u for u in all_users
+        if u.get("custom_claims", {}).get(claim_name) == claim_value
+    ]
+
+# Usage
+all_users = list_all_users()
+print(f"Total users: {len(all_users)}")
+
+admins = get_users_by_custom_claim("role", "admin")
+print(f"Admin users: {len(admins)}")'''
+    },
+    {
+        "instruction": "Write Python code to export Firestore collection to JSON",
+        "output": '''from firebase_admin import firestore
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+db = firestore.client()
+
+class FirestoreEncoder(json.JSONEncoder):
+    """Custom JSON encoder for Firestore types."""
+    def default(self, obj):
+        if hasattr(obj, 'timestamp'):  # Firestore Timestamp
+            return {"_type": "timestamp", "value": obj.timestamp()}
+        if isinstance(obj, datetime):
+            return {"_type": "datetime", "value": obj.isoformat()}
+        if hasattr(obj, 'path'):  # DocumentReference
+            return {"_type": "reference", "path": obj.path}
+        return super().default(obj)
+
+def export_collection(
+    collection_path: str,
+    output_file: str,
+    include_subcollections: bool = False
+) -> int:
+    """Export Firestore collection to JSON file."""
+    documents = []
+    collection_ref = db.collection(collection_path)
+
+    for doc in collection_ref.stream():
+        doc_data = {
+            "_id": doc.id,
+            "_path": doc.reference.path,
+            **doc.to_dict()
+        }
+
+        if include_subcollections:
+            doc_data["_subcollections"] = export_subcollections(doc.reference)
+
+        documents.append(doc_data)
+
+    # Write to file
+    output_path = Path(output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_path, "w") as f:
+        json.dump({
+            "collection": collection_path,
+            "exported_at": datetime.now().isoformat(),
+            "count": len(documents),
+            "documents": documents
+        }, f, cls=FirestoreEncoder, indent=2)
+
+    return len(documents)
+
+def export_subcollections(doc_ref) -> dict:
+    """Export all subcollections of a document."""
+    subcollections = {}
+
+    for subcol in doc_ref.collections():
+        subcollections[subcol.id] = []
+        for subdoc in subcol.stream():
+            subcollections[subcol.id].append({
+                "_id": subdoc.id,
+                **subdoc.to_dict()
+            })
+
+    return subcollections
+
+# Usage
+count = export_collection("users", "./exports/users.json", include_subcollections=True)
+print(f"Exported {count} documents")'''
+    },
+    {
+        "instruction": "Write Python code to import JSON data to Firestore",
+        "output": '''from firebase_admin import firestore
+import json
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, Any
+
+db = firestore.client()
+
+def restore_firestore_types(obj: Any) -> Any:
+    """Restore Firestore types from JSON."""
+    if isinstance(obj, dict):
+        if obj.get("_type") == "timestamp":
+            return datetime.fromtimestamp(obj["value"])
+        if obj.get("_type") == "datetime":
+            return datetime.fromisoformat(obj["value"])
+        if obj.get("_type") == "reference":
+            return db.document(obj["path"])
+        return {k: restore_firestore_types(v) for k, v in obj.items() if not k.startswith("_")}
+    if isinstance(obj, list):
+        return [restore_firestore_types(item) for item in obj]
+    return obj
+
+def import_collection(
+    input_file: str,
+    collection_path: str = None,
+    merge: bool = False,
+    dry_run: bool = False
+) -> Dict[str, int]:
+    """Import JSON data to Firestore collection."""
+    with open(input_file) as f:
+        data = json.load(f)
+
+    collection_path = collection_path or data.get("collection")
+    if not collection_path:
+        raise ValueError("Collection path not specified")
+
+    documents = data.get("documents", [])
+    stats = {"created": 0, "updated": 0, "skipped": 0}
+
+    batch = db.batch()
+    batch_count = 0
+
+    for doc_data in documents:
+        doc_id = doc_data.get("_id")
+        if not doc_id:
+            stats["skipped"] += 1
+            continue
+
+        # Remove internal fields and restore types
+        clean_data = restore_firestore_types(doc_data)
+        clean_data["imported_at"] = firestore.SERVER_TIMESTAMP
+
+        doc_ref = db.collection(collection_path).document(doc_id)
+
+        if dry_run:
+            print(f"Would {'merge' if merge else 'set'}: {doc_ref.path}")
+            stats["created"] += 1
+            continue
+
+        if merge:
+            batch.set(doc_ref, clean_data, merge=True)
+        else:
+            batch.set(doc_ref, clean_data)
+
+        batch_count += 1
+        stats["created"] += 1
+
+        # Commit in batches of 500
+        if batch_count >= 500:
+            batch.commit()
+            batch = db.batch()
+            batch_count = 0
+
+    if batch_count > 0 and not dry_run:
+        batch.commit()
+
+    return stats
+
+# Usage
+stats = import_collection("./exports/users.json", merge=True)
+print(f"Import complete: {stats}")'''
+    },
+    # =========================================================================
+    # ADDITIONAL VARIATIONS FOR DIVERSITY
+    # =========================================================================
+    {
+        "instruction": "Write Python code to create a Firestore document with nested data",
+        "output": '''from firebase_admin import firestore
+
+db = firestore.client()
+
+def create_order(user_id: str, items: list, shipping_address: dict) -> str:
+    """Create an order with nested data structure."""
+    order_data = {
+        "user_id": user_id,
+        "status": "pending",
+        "items": [
+            {
+                "product_id": item["product_id"],
+                "name": item["name"],
+                "quantity": item["quantity"],
+                "price": item["price"],
+                "subtotal": item["quantity"] * item["price"]
+            }
+            for item in items
+        ],
+        "shipping": {
+            "address": {
+                "street": shipping_address["street"],
+                "city": shipping_address["city"],
+                "state": shipping_address["state"],
+                "zip": shipping_address["zip"],
+                "country": shipping_address.get("country", "US")
+            },
+            "method": shipping_address.get("method", "standard"),
+            "tracking": None
+        },
+        "totals": {
+            "subtotal": sum(item["quantity"] * item["price"] for item in items),
+            "shipping": 5.99,
+            "tax": 0,  # Calculate based on location
+            "total": 0  # Will be calculated
+        },
+        "created_at": firestore.SERVER_TIMESTAMP,
+        "updated_at": firestore.SERVER_TIMESTAMP
+    }
+
+    # Calculate total
+    order_data["totals"]["total"] = (
+        order_data["totals"]["subtotal"] +
+        order_data["totals"]["shipping"] +
+        order_data["totals"]["tax"]
+    )
+
+    doc_ref = db.collection("orders").add(order_data)
+    return doc_ref[1].id'''
+    },
+    {
+        "instruction": "Write Python code to update nested fields in Firestore",
+        "output": '''from firebase_admin import firestore
+
+db = firestore.client()
+
+def update_shipping_status(order_id: str, tracking_number: str, carrier: str) -> bool:
+    """Update nested shipping information."""
+    order_ref = db.collection("orders").document(order_id)
+
+    # Use dot notation for nested field updates
+    order_ref.update({
+        "shipping.tracking": tracking_number,
+        "shipping.carrier": carrier,
+        "shipping.shipped_at": firestore.SERVER_TIMESTAMP,
+        "status": "shipped",
+        "updated_at": firestore.SERVER_TIMESTAMP
+    })
+
+    return True
+
+def update_item_quantity(order_id: str, item_index: int, new_quantity: int) -> bool:
+    """Update quantity of a specific item in order."""
+    order_ref = db.collection("orders").document(order_id)
+    order_doc = order_ref.get()
+
+    if not order_doc.exists:
+        return False
+
+    order_data = order_doc.to_dict()
+    items = order_data.get("items", [])
+
+    if item_index >= len(items):
+        return False
+
+    # Update specific item
+    items[item_index]["quantity"] = new_quantity
+    items[item_index]["subtotal"] = new_quantity * items[item_index]["price"]
+
+    # Recalculate totals
+    new_subtotal = sum(item["subtotal"] for item in items)
+
+    order_ref.update({
+        "items": items,
+        "totals.subtotal": new_subtotal,
+        "totals.total": new_subtotal + order_data["totals"]["shipping"] + order_data["totals"]["tax"],
+        "updated_at": firestore.SERVER_TIMESTAMP
+    })
+
+    return True'''
+    },
+    {
+        "instruction": "Write Python code to query Firestore with geolocation",
+        "output": '''from firebase_admin import firestore
+from typing import List, Dict
+import math
+
+db = firestore.client()
+
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate distance between two points in kilometers."""
+    R = 6371  # Earth's radius in km
+
+    lat1_rad = math.radians(lat1)
+    lat2_rad = math.radians(lat2)
+    delta_lat = math.radians(lat2 - lat1)
+    delta_lon = math.radians(lon2 - lon1)
+
+    a = (math.sin(delta_lat / 2) ** 2 +
+         math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lon / 2) ** 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    return R * c
+
+def find_nearby_stores(
+    lat: float,
+    lon: float,
+    radius_km: float,
+    limit: int = 20
+) -> List[Dict]:
+    """Find stores within a radius of a location."""
+    # Approximate bounding box for initial query
+    lat_delta = radius_km / 111.0  # ~111km per degree of latitude
+    lon_delta = radius_km / (111.0 * math.cos(math.radians(lat)))
+
+    # Query within bounding box
+    stores_ref = db.collection("stores")
+    query = (stores_ref
+             .where("location.lat", ">=", lat - lat_delta)
+             .where("location.lat", "<=", lat + lat_delta))
+
+    stores = []
+    for doc in query.stream():
+        store = doc.to_dict()
+        store["id"] = doc.id
+
+        # Calculate exact distance
+        store_lat = store["location"]["lat"]
+        store_lon = store["location"]["lon"]
+        distance = haversine_distance(lat, lon, store_lat, store_lon)
+
+        # Filter by exact distance
+        if distance <= radius_km:
+            store["distance_km"] = round(distance, 2)
+            stores.append(store)
+
+    # Sort by distance and limit
+    stores.sort(key=lambda x: x["distance_km"])
+    return stores[:limit]
+
+# Store location data
+def save_store_location(store_id: str, lat: float, lon: float) -> None:
+    """Save store with geolocation."""
+    db.collection("stores").document(store_id).set({
+        "location": {
+            "lat": lat,
+            "lon": lon,
+            "geohash": compute_geohash(lat, lon)  # Optional for better queries
+        }
+    }, merge=True)'''
+    },
+    {
+        "instruction": "Write Python code to implement full-text search with Firestore",
+        "output": '''from firebase_admin import firestore
+from typing import List, Dict
+import re
+
+db = firestore.client()
+
+def create_search_index(text: str) -> List[str]:
+    """Create search index tokens from text."""
+    # Normalize text
+    text = text.lower()
+    text = re.sub(r'[^a-z0-9\\s]', '', text)
+
+    # Split into words
+    words = text.split()
+
+    # Create prefix tokens for autocomplete
+    tokens = set()
+    for word in words:
+        tokens.add(word)
+        # Add prefixes for autocomplete (min 2 chars)
+        for i in range(2, len(word) + 1):
+            tokens.add(word[:i])
+
+    return list(tokens)
+
+def save_searchable_document(collection: str, doc_id: str, data: dict, search_fields: List[str]) -> None:
+    """Save document with search index."""
+    # Build search text from specified fields
+    search_text = " ".join(str(data.get(field, "")) for field in search_fields)
+
+    # Create search index
+    data["_search_tokens"] = create_search_index(search_text)
+
+    db.collection(collection).document(doc_id).set(data)
+
+def search_documents(
+    collection: str,
+    query: str,
+    limit: int = 20
+) -> List[Dict]:
+    """Search documents by query."""
+    # Normalize query
+    query_tokens = query.lower().split()
+
+    if not query_tokens:
+        return []
+
+    # Search using first token (Firestore limitation)
+    primary_token = query_tokens[0]
+
+    results_ref = (db.collection(collection)
+                   .where("_search_tokens", "array_contains", primary_token)
+                   .limit(limit * 2))  # Fetch extra for client-side filtering
+
+    results = []
+    for doc in results_ref.stream():
+        data = doc.to_dict()
+        tokens = set(data.get("_search_tokens", []))
+
+        # Check if all query tokens match
+        if all(any(t.startswith(qt) for t in tokens) for qt in query_tokens):
+            data["id"] = doc.id
+            del data["_search_tokens"]  # Remove internal field
+            results.append(data)
+
+    return results[:limit]
+
+# Usage
+save_searchable_document("products", "prod_1", {
+    "name": "Apple iPhone 15 Pro",
+    "description": "Latest smartphone with advanced features",
+    "price": 999
+}, search_fields=["name", "description"])
+
+results = search_documents("products", "iphone pro")'''
+    },
+    {
+        "instruction": "Write Python code for Firestore document versioning",
+        "output": '''from firebase_admin import firestore
+from typing import Dict, Optional, List
+from datetime import datetime
+
+db = firestore.client()
+
+class VersionedDocument:
+    """Manage document versions in Firestore."""
+
+    def __init__(self, collection: str):
+        self.collection = collection
+        self.versions_subcollection = "versions"
+
+    def save(self, doc_id: str, data: Dict, user_id: str = None) -> int:
+        """Save document and create version."""
+        doc_ref = db.collection(self.collection).document(doc_id)
+        doc = doc_ref.get()
+
+        # Get current version number
+        current_version = 0
+        if doc.exists:
+            current_version = doc.to_dict().get("_version", 0)
+
+        new_version = current_version + 1
+
+        # Create version entry
+        version_data = {
+            "version": new_version,
+            "data": data,
+            "created_at": firestore.SERVER_TIMESTAMP,
+            "created_by": user_id
+        }
+
+        # Save current state to versions subcollection
+        if doc.exists:
+            old_data = doc.to_dict()
+            del old_data["_version"]
+            del old_data["_updated_at"]
+            doc_ref.collection(self.versions_subcollection).document(str(current_version)).set({
+                "version": current_version,
+                "data": old_data,
+                "created_at": firestore.SERVER_TIMESTAMP
+            })
+
+        # Update main document
+        data["_version"] = new_version
+        data["_updated_at"] = firestore.SERVER_TIMESTAMP
+        doc_ref.set(data)
+
+        return new_version
+
+    def get_version(self, doc_id: str, version: int) -> Optional[Dict]:
+        """Get a specific version of a document."""
+        if version == 0:
+            return None
+
+        # Check if it's the current version
+        doc_ref = db.collection(self.collection).document(doc_id)
+        doc = doc_ref.get()
+
+        if doc.exists and doc.to_dict().get("_version") == version:
+            data = doc.to_dict()
+            del data["_version"]
+            del data["_updated_at"]
+            return data
+
+        # Get from versions subcollection
+        version_doc = doc_ref.collection(self.versions_subcollection).document(str(version)).get()
+        if version_doc.exists:
+            return version_doc.to_dict().get("data")
+
+        return None
+
+    def list_versions(self, doc_id: str) -> List[Dict]:
+        """List all versions of a document."""
+        doc_ref = db.collection(self.collection).document(doc_id)
+        versions = []
+
+        # Get versions from subcollection
+        for version_doc in doc_ref.collection(self.versions_subcollection).order_by("version").stream():
+            v = version_doc.to_dict()
+            versions.append({
+                "version": v["version"],
+                "created_at": v.get("created_at"),
+                "created_by": v.get("created_by")
+            })
+
+        # Add current version
+        doc = doc_ref.get()
+        if doc.exists:
+            versions.append({
+                "version": doc.to_dict().get("_version"),
+                "created_at": doc.to_dict().get("_updated_at"),
+                "current": True
+            })
+
+        return versions
+
+    def restore_version(self, doc_id: str, version: int, user_id: str = None) -> int:
+        """Restore a document to a specific version."""
+        old_data = self.get_version(doc_id, version)
+        if old_data is None:
+            raise ValueError(f"Version {version} not found")
+
+        return self.save(doc_id, old_data, user_id)
+
+# Usage
+versioned = VersionedDocument("documents")
+version = versioned.save("doc_1", {"title": "Hello", "content": "World"}, "user_123")
+versions = versioned.list_versions("doc_1")'''
+    },
+    {
+        "instruction": "Write Python code for Firestore rate limiting",
+        "output": '''from firebase_admin import firestore
+from datetime import datetime, timedelta
+from typing import Tuple
+
+db = firestore.client()
+
+class RateLimiter:
+    """Token bucket rate limiter using Firestore."""
+
+    def __init__(
+        self,
+        collection: str = "rate_limits",
+        max_tokens: int = 100,
+        refill_rate: float = 10.0,  # tokens per second
+        refill_interval: float = 1.0  # seconds
+    ):
+        self.collection = collection
+        self.max_tokens = max_tokens
+        self.refill_rate = refill_rate
+        self.refill_interval = refill_interval
+
+    def check_rate_limit(self, key: str, tokens_needed: int = 1) -> Tuple[bool, dict]:
+        """
+        Check if request is allowed under rate limit.
+
+        Returns (allowed, info) tuple.
+        """
+        doc_ref = db.collection(self.collection).document(key)
+
+        @firestore.transactional
+        def update_in_transaction(transaction):
+            doc = doc_ref.get(transaction=transaction)
+            now = datetime.now()
+
+            if doc.exists:
+                data = doc.to_dict()
+                tokens = data.get("tokens", self.max_tokens)
+                last_update = data.get("last_update").replace(tzinfo=None)
+
+                # Calculate refilled tokens
+                elapsed = (now - last_update).total_seconds()
+                refilled = elapsed * self.refill_rate
+                tokens = min(self.max_tokens, tokens + refilled)
+            else:
+                tokens = self.max_tokens
+                last_update = now
+
+            # Check if enough tokens
+            if tokens >= tokens_needed:
+                new_tokens = tokens - tokens_needed
+                allowed = True
+            else:
+                new_tokens = tokens
+                allowed = False
+
+            # Update rate limit document
+            transaction.set(doc_ref, {
+                "tokens": new_tokens,
+                "last_update": now,
+                "key": key
+            })
+
+            return allowed, {
+                "allowed": allowed,
+                "remaining": int(new_tokens),
+                "reset_at": now + timedelta(seconds=(self.max_tokens - new_tokens) / self.refill_rate)
+            }
+
+        transaction = db.transaction()
+        return update_in_transaction(transaction)
+
+    def get_limit_info(self, key: str) -> dict:
+        """Get current rate limit info without consuming tokens."""
+        doc = db.collection(self.collection).document(key).get()
+
+        if not doc.exists:
+            return {"remaining": self.max_tokens, "max": self.max_tokens}
+
+        data = doc.to_dict()
+        now = datetime.now()
+        last_update = data.get("last_update").replace(tzinfo=None)
+
+        elapsed = (now - last_update).total_seconds()
+        refilled = elapsed * self.refill_rate
+        tokens = min(self.max_tokens, data.get("tokens", 0) + refilled)
+
+        return {
+            "remaining": int(tokens),
+            "max": self.max_tokens,
+            "reset_at": now + timedelta(seconds=(self.max_tokens - tokens) / self.refill_rate)
+        }
+
+# Usage
+limiter = RateLimiter(max_tokens=100, refill_rate=10)
+
+# Check rate limit for user
+allowed, info = limiter.check_rate_limit(f"user:{user_id}")
+if not allowed:
+    raise Exception(f"Rate limited. Try again at {info['reset_at']}")'''
+    },
+]
+
+def generate_variations(base_examples: List[Dict]) -> List[Dict]:
+    """Generate variations of base examples to expand training data."""
+    variations = []
+
+    # Instruction variations
+    instruction_prefixes_py = [
+        ("Write Python code to ", "Create Python code that "),
+        ("Write Python code to ", "Implement Python code for "),
+        ("Write Python code to ", "Show me how to "),
+        ("Write Python code to ", "Write a Python function to "),
+        ("Write Python code for ", "Create Python code for "),
+        ("Write Python code for ", "Implement Python code for "),
+    ]
+
+    instruction_prefixes_ts = [
+        ("Write TypeScript code to ", "Create TypeScript code that "),
+        ("Write TypeScript code to ", "Implement TypeScript code for "),
+        ("Write TypeScript code for ", "Create TypeScript code for "),
+    ]
+
+    # Collection name variations
+    collection_variations = [
+        ("users", "customers"),
+        ("users", "members"),
+        ("users", "accounts"),
+        ("products", "items"),
+        ("products", "goods"),
+        ("orders", "purchases"),
+        ("orders", "transactions"),
+        ("posts", "articles"),
+        ("posts", "entries"),
+        ("comments", "replies"),
+        ("comments", "feedback"),
+    ]
+
+    # Field name variations
+    field_variations = [
+        ("name", "title"),
+        ("email", "username"),
+        ("status", "state"),
+        ("created_at", "createdAt"),
+        ("user_id", "userId"),
+    ]
+
+    for example in base_examples:
+        instruction = example["instruction"]
+        output = example["output"]
+
+        # Create variations with different instruction phrasings
+        for old_prefix, new_prefix in instruction_prefixes_py:
+            if instruction.startswith(old_prefix):
+                new_instruction = new_prefix + instruction[len(old_prefix):]
+                if new_instruction != instruction:
+                    variations.append({"instruction": new_instruction, "output": output})
+
+        for old_prefix, new_prefix in instruction_prefixes_ts:
+            if instruction.startswith(old_prefix):
+                new_instruction = new_prefix + instruction[len(old_prefix):]
+                if new_instruction != instruction:
+                    variations.append({"instruction": new_instruction, "output": output})
+
+        # Create variations with different collection names
+        for old_col, new_col in collection_variations:
+            if old_col in instruction:
+                new_instruction = instruction.replace(old_col, new_col)
+                new_output = output.replace(f"'{old_col}'", f"'{new_col}'").replace(f'"{old_col}"', f'"{new_col}"')
+                if new_instruction != instruction:
+                    variations.append({"instruction": new_instruction, "output": new_output})
+
+        # Create variations with different field names
+        for old_field, new_field in field_variations[:3]:
+            if old_field in instruction and old_field in output:
+                new_instruction = instruction.replace(old_field, new_field)
+                new_output = output.replace(old_field, new_field)
+                if new_instruction != instruction:
+                    variations.append({"instruction": new_instruction, "output": new_output})
+
+    return variations
 
 def format_examples(examples: List[Dict]) -> List[Dict]:
     """Format examples for training."""
@@ -4476,7 +9440,19 @@ def format_examples(examples: List[Dict]) -> List[Dict]:
 def main():
     import random
 
-    examples = format_examples(ALL_EXAMPLES)
+    # Generate variations to expand training data
+    variations = generate_variations(ALL_EXAMPLES)
+    all_examples = ALL_EXAMPLES + variations
+
+    # Remove duplicates based on instruction
+    seen = set()
+    unique_examples = []
+    for ex in all_examples:
+        if ex["instruction"] not in seen:
+            seen.add(ex["instruction"])
+            unique_examples.append(ex)
+
+    examples = format_examples(unique_examples)
     print(f"Total examples: {len(examples)}")
 
     # Split into train/valid (90/10)

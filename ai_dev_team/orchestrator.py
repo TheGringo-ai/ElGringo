@@ -508,9 +508,15 @@ class AIDevTeam:
                 task_type=apple_task_type,
                 prompt_length=len(prompt) + len(context),
             )
-            prefer_local_models = "local" in routing_decision.tier.value
+            # Only prefer local models for truly simple/fast tasks
+            # For medium+ tasks, let cloud agents participate for better quality
+            prefer_local_models = (
+                routing_decision.tier.value == "local_fast"
+                and classification.complexity == "low"
+            )
             collaboration_log.append(
-                f"Apple router: {routing_decision.tier.value} ({routing_decision.reason})"
+                f"Apple router: {routing_decision.tier.value} ({routing_decision.reason}), "
+                f"local_only={prefer_local_models}"
             )
 
         # Auto-select agents if not specified
@@ -526,14 +532,18 @@ class AIDevTeam:
                     available = list(self.agents.keys())
                     collaboration_log.append("Constraints filtered all local agents, using cloud fallback")
 
-            # Apple Silicon optimization: prioritize local agents for simple/medium tasks
+            # Apple Silicon optimization: only use local agents for simple tasks
             if prefer_local_models and available:
                 local_agents = [a for a in available if 'ollama' in a.lower() or 'local' in a.lower()]
                 if local_agents:
-                    # Put local agents first
-                    cloud_agents = [a for a in available if a not in local_agents]
-                    available = local_agents + cloud_agents
-                    collaboration_log.append(f"Apple optimization: prioritizing local agents {local_agents}")
+                    available = local_agents
+                    collaboration_log.append(f"Simple task: using local agents only {local_agents}")
+            else:
+                # For non-trivial tasks, prefer cloud agents for quality
+                cloud_agents = [a for a in available if 'local' not in a.lower() and 'ollama' not in a.lower()]
+                if cloud_agents:
+                    available = cloud_agents
+                    collaboration_log.append(f"Using cloud agents for quality: {cloud_agents}")
 
             # Check for user-preferred agent for this task type
             task_type_str = classification.primary_type.value
@@ -608,16 +618,21 @@ class AIDevTeam:
 
         # Get prevention context from memory system
         enhanced_prompt = prompt
-        if self._prevention:
+        task_type = classification.primary_type.value
+
+        # Only inject context for tasks that benefit from it (not simple questions)
+        _context_tasks = {"coding", "debugging", "testing", "optimization", "architecture", "security"}
+        _needs_context = task_type in _context_tasks and classification.complexity != "low"
+
+        if _needs_context and self._prevention:
             prevention_context = await self._prevention.get_prevention_context(
-                classification.primary_type.value, self.project_name
+                task_type, self.project_name
             )
             if prevention_context:
                 enhanced_prompt = f"{prevention_context}\n\n{prompt}"
                 collaboration_log.append("Applied prevention context from past mistakes")
 
-        # Add domain knowledge context
-        task_type = classification.primary_type.value
+        # Add domain knowledge context (only for complex/relevant tasks)
         domain_mapping = {
             "coding": ["backend", "frontend"],
             "debugging": ["backend", "testing"],
@@ -631,43 +646,50 @@ class AIDevTeam:
         }
         relevant_domains = domain_mapping.get(task_type, [task_type])
 
-        # Get built-in domain knowledge
-        domain_context = get_domain_context(relevant_domains)
+        if _needs_context:
+            # Get built-in domain knowledge
+            domain_context = get_domain_context(relevant_domains)
 
-        # Get custom teaching knowledge
-        teaching_context = self._teaching_system.generate_teaching_context(
-            domains=relevant_domains, topics=[task_type]
-        )
-
-        if domain_context or teaching_context:
-            knowledge_context = "\n".join(filter(None, [domain_context, teaching_context]))
-            enhanced_prompt = f"DOMAIN EXPERTISE:\n{knowledge_context}\n\nTASK:\n{enhanced_prompt}"
-            collaboration_log.append(f"Applied domain knowledge: {', '.join(relevant_domains)}")
-
-        # Add coding knowledge hub context for coding tasks
-        if task_type in ["coding", "debugging", "testing", "optimization"]:
-            coding_context = self._coding_hub.generate_coding_context(
-                task_description=prompt,
-                language=None,  # Auto-detect
-                framework=None,  # Auto-detect
-                max_items=3,
+            # Get custom teaching knowledge
+            teaching_context = self._teaching_system.generate_teaching_context(
+                domains=relevant_domains, topics=[task_type]
             )
-            if coding_context:
-                enhanced_prompt = f"{coding_context}\n\n{enhanced_prompt}"
-                collaboration_log.append("Applied coding knowledge hub context")
 
-        # Add RAG context for comprehensive knowledge retrieval
-        try:
-            rag_context = self._rag.get_context_for_task(
-                task_description=prompt,
-                max_results=5,
-                max_tokens=1500,
-            )
-            if rag_context.results:
-                enhanced_prompt = f"{rag_context.context_text}\n\n{enhanced_prompt}"
-                collaboration_log.append(f"Applied RAG context ({len(rag_context.results)} sources)")
-        except Exception as e:
-            logger.debug(f"RAG context retrieval skipped: {e}")
+            if domain_context or teaching_context:
+                knowledge_context = "\n".join(filter(None, [domain_context, teaching_context]))
+                # Cap context to prevent prompt bloat
+                if len(knowledge_context) > 2000:
+                    knowledge_context = knowledge_context[:2000] + "\n..."
+                enhanced_prompt = f"DOMAIN EXPERTISE:\n{knowledge_context}\n\nTASK:\n{enhanced_prompt}"
+                collaboration_log.append(f"Applied domain knowledge: {', '.join(relevant_domains)}")
+
+            # Add coding knowledge hub context (only for code-related tasks)
+            if task_type in ["coding", "debugging"]:
+                coding_context = self._coding_hub.generate_coding_context(
+                    task_description=prompt,
+                    language=None,
+                    framework=None,
+                    max_items=2,
+                )
+                if coding_context and len(coding_context) <= 1500:
+                    enhanced_prompt = f"{coding_context}\n\n{enhanced_prompt}"
+                    collaboration_log.append("Applied coding knowledge hub context")
+
+            # Add RAG context (only for complex tasks, capped)
+            if classification.complexity in ("medium", "high"):
+                try:
+                    rag_context = self._rag.get_context_for_task(
+                        task_description=prompt,
+                        max_results=3,
+                        max_tokens=800,
+                    )
+                    if rag_context.results:
+                        enhanced_prompt = f"{rag_context.context_text}\n\n{enhanced_prompt}"
+                        collaboration_log.append(f"Applied RAG context ({len(rag_context.results)} sources)")
+                except Exception as e:
+                    logger.debug(f"RAG context retrieval skipped: {e}")
+        else:
+            collaboration_log.append(f"Skipped context injection (task_type={task_type}, complexity={classification.complexity})")
 
         # Select active agents
         active_agents = [self.agents[name] for name in agents if name in self.agents]
@@ -802,18 +824,23 @@ class AIDevTeam:
                 )
 
             # Auto-learn code to coding hub if successful coding task
+            # Only store actual code blocks, not conversational responses
             if result.success and task_type in ["coding", "debugging"]:
-                # Extract code blocks from the final answer
                 import re
                 code_blocks = re.findall(r'```(\w+)?\n(.*?)```', final_answer, re.DOTALL)
                 for lang, code in code_blocks:
-                    if code and len(code.strip()) > 50:
+                    code_stripped = code.strip()
+                    # Only store substantial code with actual code-like content
+                    if (code_stripped
+                            and len(code_stripped) > 100
+                            and lang  # Must have a language tag
+                            and any(kw in code_stripped for kw in ['def ', 'class ', 'import ', 'function ', 'const ', 'return ', 'async '])):
                         self._coding_hub.learn_from_successful_code(
-                            code=code.strip(),
-                            language=lang or "python",
+                            code=code_stripped,
+                            language=lang,
                             task_description=prompt[:100],
                         )
-                        collaboration_log.append(f"Learned code snippet to hub ({lang or 'python'})")
+                        collaboration_log.append(f"Learned code snippet to hub ({lang})")
 
             # Validate generated code and add warnings
             if task_type in ["coding", "debugging", "testing"]:

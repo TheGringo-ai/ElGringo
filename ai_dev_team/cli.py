@@ -174,6 +174,39 @@ class AITeamCLI:
   {Colors.CYAN}/reason <problem>{Colors.RESET}  Chain-of-thought reasoning
   {Colors.CYAN}/plan <goal>{Colors.RESET}       Create and execute a multi-step plan
 
+{Colors.BOLD}Git Automation:{Colors.RESET}
+
+  {Colors.CYAN}/git{Colors.RESET}               Show git commands
+  {Colors.CYAN}/git status{Colors.RESET}        Show repository status
+  {Colors.CYAN}/git log{Colors.RESET}           Show recent commits
+  {Colors.CYAN}/git diff{Colors.RESET}          Show changes
+  {Colors.CYAN}/commit{Colors.RESET}            Smart commit (AI-generated message)
+  {Colors.CYAN}/commit <msg>{Colors.RESET}      Commit with custom message
+
+{Colors.BOLD}Code Execution:{Colors.RESET}
+
+  {Colors.CYAN}/run python <code>{Colors.RESET}  Execute Python code
+  {Colors.CYAN}/run js <code>{Colors.RESET}      Execute JavaScript code
+  {Colors.CYAN}/run file <path>{Colors.RESET}    Execute a file
+
+{Colors.BOLD}Project Generator:{Colors.RESET}
+
+  {Colors.CYAN}/new <template> <name>{Colors.RESET}  Create from template
+  {Colors.CYAN}/new <description>{Colors.RESET}      AI generates project
+  {Colors.CYAN}/templates{Colors.RESET}              List available templates
+
+{Colors.BOLD}Screenshot Analysis:{Colors.RESET}
+
+  {Colors.CYAN}/analyze <path>{Colors.RESET}         Analyze image with AI
+  {Colors.CYAN}/analyze <path> code{Colors.RESET}    Convert UI to code
+  {Colors.CYAN}/analyze <path> error{Colors.RESET}   Debug error screenshot
+
+{Colors.BOLD}Voice Commands:{Colors.RESET}
+
+  {Colors.CYAN}/voice{Colors.RESET}                  Speak a request
+  {Colors.CYAN}/voice code{Colors.RESET}             Speak to generate code
+  {Colors.CYAN}/voice file <path>{Colors.RESET}      Transcribe audio file
+
 {Colors.BOLD}Usage:{Colors.RESET}
 
   Just type your request naturally:
@@ -246,6 +279,39 @@ class AITeamCLI:
 
         elif cmd == "/plan":
             await self.run_plan(args)
+
+        elif cmd == "/git":
+            await self.run_git(args)
+
+        elif cmd == "/commit":
+            await self.run_smart_commit(args)
+
+        elif cmd == "/status" and args.strip() == "git":
+            await self.run_git("status")
+
+        elif cmd == "/run":
+            await self.run_code(args)
+
+        elif cmd == "/exec":
+            await self.run_code(args)
+
+        elif cmd in ["/new", "/create"]:
+            await self.create_project(args)
+
+        elif cmd == "/templates":
+            await self.list_templates()
+
+        elif cmd == "/analyze":
+            await self.analyze_screenshot(args)
+
+        elif cmd == "/screenshot":
+            await self.analyze_screenshot(args)
+
+        elif cmd == "/voice":
+            await self.voice_input(args)
+
+        elif cmd == "/listen":
+            await self.voice_input(args)
 
         else:
             print(f"{Colors.RED}Unknown command: {cmd}{Colors.RESET}")
@@ -620,6 +686,504 @@ class AITeamCLI:
             print(f"{Colors.RED}Planning error: {e}{Colors.RESET}")
             import traceback
             traceback.print_exc()
+
+    async def run_git(self, args: str):
+        """Run git commands."""
+        if not args:
+            print(f"\n{Colors.BOLD}Git Commands:{Colors.RESET}")
+            print(f"  {Colors.CYAN}/git status{Colors.RESET}        - Show repository status")
+            print(f"  {Colors.CYAN}/git log{Colors.RESET}           - Show recent commits")
+            print(f"  {Colors.CYAN}/git diff{Colors.RESET}          - Show unstaged changes")
+            print(f"  {Colors.CYAN}/git branch{Colors.RESET}        - List branches")
+            print(f"  {Colors.CYAN}/git add <file>{Colors.RESET}    - Stage a file")
+            print(f"  {Colors.CYAN}/git add .{Colors.RESET}         - Stage all changes")
+            print(f"  {Colors.CYAN}/commit{Colors.RESET}            - Smart commit (AI message)")
+            print(f"  {Colors.CYAN}/commit <msg>{Colors.RESET}      - Commit with message")
+            print(f"  {Colors.CYAN}/git push{Colors.RESET}          - Push to remote")
+            print(f"  {Colors.CYAN}/git pull{Colors.RESET}          - Pull from remote")
+            print()
+            return
+
+        try:
+            from ai_dev_team.tools.git import create_smart_git_tools
+            git = create_smart_git_tools(os.getcwd())
+
+            parts = args.split(maxsplit=1)
+            subcmd = parts[0].lower()
+            subargs = parts[1] if len(parts) > 1 else ""
+
+            if subcmd == "status":
+                result = git._status()
+            elif subcmd == "log":
+                count = int(subargs) if subargs.isdigit() else 10
+                result = git._log(count=count)
+            elif subcmd == "diff":
+                staged = "--staged" in subargs
+                result = git._diff(staged=staged)
+            elif subcmd == "branch":
+                result = git._branch(all_branches="-a" in subargs)
+            elif subcmd == "add":
+                if subargs == "." or subargs == "-A":
+                    result = git._add(all_files=True)
+                else:
+                    result = git._add(files=[subargs] if subargs else None)
+            elif subcmd == "push":
+                result = git._push()
+            elif subcmd == "pull":
+                result = git._pull()
+            elif subcmd == "fetch":
+                result = git._fetch()
+            elif subcmd == "analyze":
+                result = git._analyze_changes()
+            else:
+                print(f"{Colors.RED}Unknown git command: {subcmd}{Colors.RESET}")
+                return
+
+            if result.success:
+                print(f"\n{Colors.GREEN}Git {subcmd}:{Colors.RESET}")
+                print(result.output if result.output else "(no output)")
+            else:
+                print(f"{Colors.RED}Git error: {result.error}{Colors.RESET}")
+
+        except Exception as e:
+            print(f"{Colors.RED}Git error: {e}{Colors.RESET}")
+            import traceback
+            traceback.print_exc()
+
+        print()
+
+    async def run_smart_commit(self, message: str = ""):
+        """Smart commit with AI-generated message."""
+        try:
+            from ai_dev_team.tools.git import create_smart_git_tools
+            git = create_smart_git_tools(os.getcwd())
+
+            # Analyze changes first
+            print(f"\n{Colors.CYAN}Analyzing changes...{Colors.RESET}")
+            analysis = git._analyze_changes()
+
+            if not analysis.success:
+                print(f"{Colors.RED}Error analyzing changes: {analysis.error}{Colors.RESET}\n")
+                return
+
+            metadata = analysis.metadata
+            total_files = metadata.get('total_files', 0)
+
+            if total_files == 0:
+                print(f"{Colors.YELLOW}No changes to commit{Colors.RESET}\n")
+                return
+
+            # Show what we're committing
+            print(f"\n{Colors.BOLD}Changes to commit:{Colors.RESET}")
+            print(f"  Added:    {metadata.get('added', 0)}")
+            print(f"  Modified: {metadata.get('modified', 0)}")
+            print(f"  Deleted:  {metadata.get('deleted', 0)}")
+
+            files = metadata.get('files', {})
+            if files.get('added'):
+                print(f"\n  {Colors.GREEN}+ {', '.join(files['added'][:5])}{Colors.RESET}")
+            if files.get('modified'):
+                print(f"  {Colors.YELLOW}~ {', '.join(files['modified'][:5])}{Colors.RESET}")
+            if files.get('deleted'):
+                print(f"  {Colors.RED}- {', '.join(files['deleted'][:5])}{Colors.RESET}")
+
+            # Perform commit
+            print(f"\n{Colors.CYAN}Committing...{Colors.RESET}")
+            result = git._smart_commit(
+                message=message if message else None,
+                add_all=True,
+                push=False
+            )
+
+            if result.success:
+                print(f"\n{Colors.GREEN}✓ Commit successful!{Colors.RESET}")
+                print(f"{Colors.DIM}{result.output}{Colors.RESET}")
+            else:
+                print(f"{Colors.RED}Commit failed: {result.error}{Colors.RESET}")
+
+        except Exception as e:
+            print(f"{Colors.RED}Commit error: {e}{Colors.RESET}")
+            import traceback
+            traceback.print_exc()
+
+        print()
+
+    async def run_code(self, args: str):
+        """Execute code in the sandbox."""
+        if not args:
+            print(f"\n{Colors.BOLD}Code Execution:{Colors.RESET}")
+            print(f"  {Colors.CYAN}/run python <code>{Colors.RESET}   - Run Python code")
+            print(f"  {Colors.CYAN}/run js <code>{Colors.RESET}       - Run JavaScript code")
+            print(f"  {Colors.CYAN}/run file <path>{Colors.RESET}     - Run a file")
+            print(f"\n{Colors.BOLD}Examples:{Colors.RESET}")
+            print(f"  {Colors.DIM}/run python print('Hello, World!')")
+            print(f"  /run js console.log(2 + 2)")
+            print(f"  /run python for i in range(5): print(i){Colors.RESET}")
+            print()
+            return
+
+        try:
+            from ai_dev_team.sandbox import get_code_executor
+
+            executor = get_code_executor()
+
+            # Parse language and code
+            parts = args.split(maxsplit=1)
+            lang_or_cmd = parts[0].lower()
+            code_or_path = parts[1] if len(parts) > 1 else ""
+
+            if lang_or_cmd == "file":
+                # Execute a file
+                if not code_or_path:
+                    print(f"{Colors.RED}Please provide a file path{Colors.RESET}\n")
+                    return
+
+                path = os.path.expanduser(code_or_path)
+                if not os.path.exists(path):
+                    print(f"{Colors.RED}File not found: {path}{Colors.RESET}\n")
+                    return
+
+                with open(path, 'r') as f:
+                    code = f.read()
+
+                # Detect language from extension
+                if path.endswith('.py'):
+                    language = 'python'
+                elif path.endswith(('.js', '.mjs')):
+                    language = 'javascript'
+                else:
+                    print(f"{Colors.RED}Unknown file type. Use .py or .js{Colors.RESET}\n")
+                    return
+
+                print(f"\n{Colors.CYAN}Executing {path}...{Colors.RESET}")
+
+            elif lang_or_cmd in ('python', 'py'):
+                language = 'python'
+                code = code_or_path
+            elif lang_or_cmd in ('javascript', 'js', 'node'):
+                language = 'javascript'
+                code = code_or_path
+            else:
+                # Assume python if no language specified
+                language = 'python'
+                code = args
+
+            if not code:
+                print(f"{Colors.RED}Please provide code to execute{Colors.RESET}\n")
+                return
+
+            print(f"\n{Colors.CYAN}Executing {language}...{Colors.RESET}")
+            print(f"{Colors.DIM}{'─' * 40}{Colors.RESET}")
+
+            # Validate and execute
+            result = await executor.execute_with_validation(code, language)
+
+            # Show results
+            if result.success:
+                print(f"{Colors.GREEN}Output:{Colors.RESET}")
+                if result.stdout:
+                    print(result.stdout)
+                else:
+                    print(f"{Colors.DIM}(no output){Colors.RESET}")
+            else:
+                print(f"{Colors.RED}Execution failed:{Colors.RESET}")
+                if result.stderr:
+                    print(result.stderr)
+                if result.error:
+                    print(f"{Colors.RED}{result.error}{Colors.RESET}")
+                if result.timed_out:
+                    print(f"{Colors.YELLOW}Execution timed out{Colors.RESET}")
+
+            print(f"{Colors.DIM}{'─' * 40}{Colors.RESET}")
+            print(f"{Colors.DIM}Exit code: {result.exit_code} | Time: {result.execution_time}s{Colors.RESET}")
+
+        except Exception as e:
+            print(f"{Colors.RED}Execution error: {e}{Colors.RESET}")
+            import traceback
+            traceback.print_exc()
+
+        print()
+
+    async def list_templates(self):
+        """List available project templates."""
+        from ai_dev_team.app_generator import APP_TEMPLATES
+
+        print(f"\n{Colors.BOLD}Available Project Templates:{Colors.RESET}\n")
+
+        for key, template in APP_TEMPLATES.items():
+            stack = ", ".join(template.get("stack", []))
+            print(f"  {Colors.CYAN}{key:12}{Colors.RESET} - {template['name']}")
+            print(f"               {Colors.DIM}Stack: {stack}{Colors.RESET}")
+
+        print(f"\n{Colors.BOLD}Usage:{Colors.RESET}")
+        print(f"  {Colors.CYAN}/new <template> <name>{Colors.RESET}  - Create from template")
+        print(f"  {Colors.CYAN}/new <description>{Colors.RESET}      - AI generates project")
+        print(f"\n{Colors.BOLD}Examples:{Colors.RESET}")
+        print(f"  {Colors.DIM}/new fastapi my-api")
+        print(f"  /new react my-dashboard")
+        print(f"  /new Build a task manager with user auth{Colors.RESET}")
+        print()
+
+    async def create_project(self, args: str):
+        """Create a new project from template or description."""
+        if not args:
+            await self.list_templates()
+            return
+
+        from ai_dev_team.app_generator import APP_TEMPLATES, AppGenerator
+
+        parts = args.split(maxsplit=1)
+        first_arg = parts[0].lower()
+
+        # Check if first arg is a template name
+        if first_arg in APP_TEMPLATES:
+            template = first_arg
+            name = parts[1] if len(parts) > 1 else None
+
+            if not name:
+                print(f"{Colors.RED}Please provide a project name{Colors.RESET}")
+                print(f"{Colors.DIM}Example: /new {template} my-project{Colors.RESET}\n")
+                return
+
+            print(f"\n{Colors.CYAN}Creating {template} project: {name}{Colors.RESET}")
+            print(f"{Colors.DIM}This may take a moment...{Colors.RESET}\n")
+
+            try:
+                generator = AppGenerator(output_dir=os.getcwd())
+                result = await generator.create_app(
+                    description=f"Create a {APP_TEMPLATES[template]['name']} project",
+                    name=name,
+                    template=template
+                )
+
+                if result.get("success"):
+                    print(f"{Colors.GREEN}✓ Project created successfully!{Colors.RESET}\n")
+                    print(f"  {Colors.BOLD}Location:{Colors.RESET} {result['project_path']}")
+                    print(f"  {Colors.BOLD}Template:{Colors.RESET} {result['template']}")
+                    print(f"  {Colors.BOLD}Files:{Colors.RESET} {len(result.get('files_created', []))}")
+
+                    if result.get("next_steps"):
+                        print(f"\n{Colors.BOLD}Next Steps:{Colors.RESET}")
+                        for step in result["next_steps"][:5]:
+                            print(f"  • {step}")
+                else:
+                    print(f"{Colors.RED}Project creation failed{Colors.RESET}")
+
+            except Exception as e:
+                print(f"{Colors.RED}Error creating project: {e}{Colors.RESET}")
+                import traceback
+                traceback.print_exc()
+
+        else:
+            # Treat as natural language description
+            description = args
+            print(f"\n{Colors.CYAN}Generating project from description...{Colors.RESET}")
+            print(f"{Colors.DIM}Description: {description[:100]}{'...' if len(description) > 100 else ''}{Colors.RESET}\n")
+
+            try:
+                generator = AppGenerator(output_dir=os.getcwd())
+                result = await generator.create_app(description=description)
+
+                if result.get("success"):
+                    print(f"{Colors.GREEN}✓ Project created successfully!{Colors.RESET}\n")
+                    print(f"  {Colors.BOLD}Name:{Colors.RESET} {result['project_name']}")
+                    print(f"  {Colors.BOLD}Location:{Colors.RESET} {result['project_path']}")
+                    print(f"  {Colors.BOLD}Template:{Colors.RESET} {result['template']}")
+                    print(f"  {Colors.BOLD}Files:{Colors.RESET} {len(result.get('files_created', []))}")
+
+                    if result.get("next_steps"):
+                        print(f"\n{Colors.BOLD}Next Steps:{Colors.RESET}")
+                        for step in result["next_steps"][:5]:
+                            print(f"  • {step}")
+                else:
+                    print(f"{Colors.RED}Project creation failed{Colors.RESET}")
+
+            except Exception as e:
+                print(f"{Colors.RED}Error creating project: {e}{Colors.RESET}")
+                import traceback
+                traceback.print_exc()
+
+        print()
+
+    async def analyze_screenshot(self, args: str):
+        """Analyze a screenshot or image."""
+        if not args:
+            print(f"\n{Colors.BOLD}Screenshot Analysis:{Colors.RESET}")
+            print(f"  {Colors.CYAN}/analyze <path> [prompt]{Colors.RESET}  - Analyze an image")
+            print(f"  {Colors.CYAN}/analyze <path> code{Colors.RESET}      - Convert UI to code")
+            print(f"  {Colors.CYAN}/analyze <path> error{Colors.RESET}     - Analyze error screenshot")
+            print(f"  {Colors.CYAN}/analyze <path> arch{Colors.RESET}      - Analyze architecture diagram")
+            print(f"\n{Colors.BOLD}Examples:{Colors.RESET}")
+            print(f"  {Colors.DIM}/analyze ~/Desktop/screenshot.png")
+            print(f"  /analyze ./mockup.png Convert to React")
+            print(f"  /analyze error.png error{Colors.RESET}")
+            print()
+            return
+
+        parts = args.split(maxsplit=1)
+        image_path = os.path.expanduser(parts[0])
+        prompt_or_mode = parts[1] if len(parts) > 1 else ""
+
+        if not os.path.exists(image_path):
+            print(f"{Colors.RED}Image not found: {image_path}{Colors.RESET}\n")
+            return
+
+        try:
+            from ai_dev_team.advanced.vision import VisionEngine
+
+            engine = VisionEngine()
+
+            print(f"\n{Colors.CYAN}Analyzing image...{Colors.RESET}")
+            print(f"{Colors.DIM}Path: {image_path}{Colors.RESET}")
+            print(f"{Colors.YELLOW}{'─' * 50}{Colors.RESET}\n")
+
+            # Determine analysis type
+            mode = prompt_or_mode.lower().strip()
+
+            if mode == "code" or mode.startswith("convert"):
+                # Screenshot to code
+                framework = "react"
+                if "vue" in mode:
+                    framework = "vue"
+                elif "svelte" in mode:
+                    framework = "svelte"
+                elif "html" in mode:
+                    framework = "html"
+
+                print(f"{Colors.CYAN}Converting to {framework} code...{Colors.RESET}\n")
+                result = await engine.screenshot_to_code(image_path, framework=framework)
+
+            elif mode == "error":
+                # Error analysis
+                print(f"{Colors.CYAN}Analyzing error...{Colors.RESET}\n")
+                result = await engine.analyze_error_screenshot(image_path)
+
+            elif mode == "arch" or mode == "architecture":
+                # Architecture diagram
+                print(f"{Colors.CYAN}Analyzing architecture...{Colors.RESET}\n")
+                result = await engine.analyze_architecture_diagram(image_path)
+
+            else:
+                # Custom prompt or general analysis
+                prompt = prompt_or_mode if prompt_or_mode else """Analyze this image and provide:
+1. Description of what you see
+2. UI/UX feedback if it's a UI
+3. Suggestions for improvement
+4. Any issues or concerns"""
+
+                result = await engine.analyze_image(image_path, prompt)
+
+            # Display results
+            print(f"{Colors.BOLD}Analysis Result:{Colors.RESET}")
+            print(f"{Colors.DIM}Model: {result.model_used} | Time: {result.processing_time:.2f}s{Colors.RESET}\n")
+
+            print(result.description)
+
+            if result.code:
+                print(f"\n{Colors.BOLD}Generated Code:{Colors.RESET}")
+                print(f"{Colors.GREEN}{result.code}{Colors.RESET}")
+
+            if result.suggestions:
+                print(f"\n{Colors.BOLD}Suggestions:{Colors.RESET}")
+                for s in result.suggestions:
+                    print(f"  • {s}")
+
+            print(f"\n{Colors.YELLOW}{'─' * 50}{Colors.RESET}")
+
+        except Exception as e:
+            print(f"{Colors.RED}Analysis error: {e}{Colors.RESET}")
+            import traceback
+            traceback.print_exc()
+
+        print()
+
+    async def voice_input(self, args: str):
+        """Handle voice input commands."""
+        if args == "help" or not args:
+            print(f"\n{Colors.BOLD}Voice Commands:{Colors.RESET}")
+            print(f"  {Colors.CYAN}/voice{Colors.RESET}              - Speak a command")
+            print(f"  {Colors.CYAN}/voice code{Colors.RESET}         - Speak and generate code")
+            print(f"  {Colors.CYAN}/voice file <path>{Colors.RESET}  - Transcribe audio file")
+            print(f"\n{Colors.BOLD}Requirements:{Colors.RESET}")
+            print(f"  {Colors.DIM}pip install SpeechRecognition pyaudio")
+            print(f"  OPENAI_API_KEY for Whisper (best quality){Colors.RESET}")
+            print(f"\n{Colors.BOLD}Examples:{Colors.RESET}")
+            print(f"  {Colors.DIM}/voice              # Speak a request to AI Team")
+            print(f"  /voice code        # Speak code requirements{Colors.RESET}")
+            print()
+            return
+
+        try:
+            from ai_dev_team.advanced.voice import VoiceInput, VoiceToCodePipeline
+
+            if args.startswith("file "):
+                # Transcribe audio file
+                file_path = os.path.expanduser(args[5:].strip())
+                if not os.path.exists(file_path):
+                    print(f"{Colors.RED}File not found: {file_path}{Colors.RESET}\n")
+                    return
+
+                print(f"\n{Colors.CYAN}Transcribing audio file...{Colors.RESET}")
+                pipeline = VoiceToCodePipeline()
+                result = await pipeline.transcribe(file_path)
+
+                print(f"\n{Colors.BOLD}Transcription:{Colors.RESET}")
+                print(result.text)
+                print(f"\n{Colors.DIM}Confidence: {result.confidence:.0%} | Duration: {result.duration:.2f}s{Colors.RESET}")
+
+            elif args == "code":
+                # Voice to code
+                print(f"\n{Colors.CYAN}Voice-to-Code Mode{Colors.RESET}")
+                print(f"{Colors.DIM}Speak what you want to create...{Colors.RESET}\n")
+
+                voice = VoiceInput()
+                result = await voice.listen()
+
+                if not result.text:
+                    print(f"{Colors.YELLOW}No speech detected{Colors.RESET}\n")
+                    return
+
+                print(f"\n{Colors.BOLD}You said:{Colors.RESET} {result.text}")
+                print(f"\n{Colors.CYAN}Generating code...{Colors.RESET}")
+
+                pipeline = VoiceToCodePipeline()
+                code_result = await pipeline.execute_voice_command(result.text)
+
+                print(f"\n{Colors.BOLD}Generated Code:{Colors.RESET}")
+                print(f"{Colors.GREEN}{code_result.code}{Colors.RESET}")
+
+                if code_result.explanation:
+                    print(f"\n{Colors.BOLD}Explanation:{Colors.RESET}")
+                    print(code_result.explanation)
+
+            else:
+                # Voice command to AI Team
+                print(f"\n{Colors.CYAN}Speak your request...{Colors.RESET}\n")
+
+                voice = VoiceInput()
+                result = await voice.listen()
+
+                if not result.text:
+                    print(f"{Colors.YELLOW}No speech detected{Colors.RESET}\n")
+                    return
+
+                print(f"\n{Colors.BOLD}You said:{Colors.RESET} {result.text}")
+                print(f"{Colors.DIM}Confidence: {result.confidence:.0%}{Colors.RESET}")
+
+                # Process through AI Team
+                print(f"\n{Colors.CYAN}Processing with AI Team...{Colors.RESET}")
+                await self.process_request(result.text)
+
+        except ImportError as e:
+            print(f"{Colors.RED}Voice input requires additional packages:{Colors.RESET}")
+            print(f"{Colors.DIM}pip install SpeechRecognition pyaudio{Colors.RESET}")
+            print(f"\n{Colors.DIM}Error: {e}{Colors.RESET}\n")
+        except Exception as e:
+            print(f"{Colors.RED}Voice error: {e}{Colors.RESET}")
+            import traceback
+            traceback.print_exc()
+
+        print()
 
     async def process_request(self, user_input: str):
         """Process a user request through the AI team."""

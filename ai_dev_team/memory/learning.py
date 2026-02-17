@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from .system import MemorySystem, MistakeType, OutcomeRating
+from .system import MemorySystem, MistakeType, OutcomeRating, tokenize
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +236,20 @@ class LearningEngine:
         """
         if not result.success or result.confidence_score < 0.7:
             return ""
+
+        # Quality gate: skip trivial prompts (< 4 tokens)
+        prompt_tokens = tokenize(problem_description)
+        if len(prompt_tokens) < 4:
+            logger.debug(f"Skipping trivial prompt ({len(prompt_tokens)} tokens): {problem_description[:60]}")
+            return ""
+
+        # Dedup check: if a near-duplicate solution exists, bump its access instead
+        for sol in self.memory._solutions_cache:
+            existing_tokens = tokenize(sol.problem_pattern)
+            if MemorySystem._jaccard_similarity(prompt_tokens, existing_tokens) >= 0.7:
+                MemorySystem._bump_access(sol)
+                logger.debug(f"Near-duplicate found, bumped access on {sol.solution_id}")
+                return sol.solution_id
 
         # Extract solution steps from agent responses
         solution_steps = []

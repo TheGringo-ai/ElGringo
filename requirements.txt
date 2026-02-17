@@ -1,20 +1,44 @@
-# Web Platform
+# AI Team Platform - Core Dependencies
+# Install with: pip install ai-team-platform
+# Or for all features: pip install ai-team-platform[all]
+
+# Core Framework
+aiohttp>=3.9.0
 fastapi>=0.109.0
 uvicorn>=0.27.0
-pydantic>=2.10.0       # Python 3.13 compatible
-python-multipart>=0.0.9
+pydantic>=2.10.0
 jinja2>=3.1.2
 python-dotenv>=1.0.0
+python-multipart>=0.0.9
 requests>=2.31.0
 aiofiles>=23.2.1
 
-# AI Dev Team - Core
-aiohttp>=3.9.0
+# AI Model SDKs (install as needed)
+anthropic>=0.40.0          # Claude - pip install ai-team-platform[claude]
+openai>=1.50.0             # ChatGPT/Grok - pip install ai-team-platform[openai]
+google-genai>=1.0.0        # Gemini - pip install ai-team-platform[gemini]
 
-# AI Model SDKs
-anthropic>=0.40.0      # Claude
-openai>=1.50.0         # ChatGPT
-google-generativeai>=0.8.0  # Gemini
+# Integrations (optional)
+firebase-admin>=6.0.0      # Firestore - pip install ai-team-platform[firestore]
+PyGithub>=2.0.0            # GitHub - pip install ai-team-platform[github]
+flask>=3.0.0               # Flask API - pip install ai-team-platform[flask]
+flask-cors>=4.0.0
 
-# Optional: Firebase for persistent memory
-# firebase-admin>=6.0.0
+# ML Intelligence (optional) - pip install ai-team-platform[ml]
+sentence-transformers>=2.2.0  # Code embeddings
+numpy>=1.24.0                  # Array operations
+
+# Apple Silicon MLX (Mac only) - pip install ai-team-platform[mlx]
+mlx>=0.4.0                     # Apple ML framework
+mlx-lm>=0.4.0                  # MLX language models
+# mlx-embeddings>=0.1.0        # MLX embeddings (when available)
+
+# Cross-platform ML (optional)
+# torch>=2.0.0                 # PyTorch (use MLX on Mac instead)
+
+# Development & Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+black>=24.0.0
+ruff>=0.2.0

@@ -5,7 +5,7 @@ Claude Agent - Anthropic Claude AI Integration
 import logging
 import os
 import time
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 from .base import AIAgent, AgentConfig, AgentResponse, ModelType
 
@@ -122,3 +122,41 @@ class ClaudeAgent(AIAgent):
                 response_time=response_time,
                 error=str(e)
             )
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        context: str = "",
+        system_override: Optional[str] = None
+    ) -> AsyncIterator[str]:
+        """Stream response tokens as they arrive"""
+        try:
+            client = await self._get_client()
+            if not client:
+                return
+
+            # Build system prompt
+            system_prompt = system_override or self.config.system_prompt or (
+                f"You are {self.name}, a {self.role}. "
+                f"Your capabilities include: {', '.join(self.config.capabilities)}. "
+                "Provide thoughtful, analytical, and comprehensive responses."
+            )
+
+            # Build user message
+            user_content = prompt
+            if context:
+                user_content = f"Context:\n{context}\n\nTask:\n{prompt}"
+
+            # Stream the response
+            async with client.messages.stream(
+                model=self.config.model_name or self.DEFAULT_MODEL,
+                max_tokens=min(self.config.max_tokens, 8192),
+                temperature=self.config.temperature,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_content}]
+            ) as stream:
+                async for text in stream.text_stream:
+                    yield text
+
+        except Exception as e:
+            logger.error(f"Claude streaming error: {e}")

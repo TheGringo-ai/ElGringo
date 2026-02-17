@@ -12,11 +12,23 @@ Usage:
     fixer = FredFix()
     result = await fixer.auto_fix("/path/to/project")
     print(result.fixes_applied)
+
+Supported Languages:
+    - Python (.py)
+    - JavaScript/TypeScript (.js, .jsx, .ts, .tsx)
+    - Go (.go)
+    - Rust (.rs)
+    - Java (.java)
+    - C/C++ (.c, .cpp, .h, .hpp)
+    - Ruby (.rb)
+    - PHP (.php)
 """
 
 import asyncio
+import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +38,56 @@ from .memory.system import MemorySystem, MistakeType
 from .agents.base import AgentResponse
 
 logger = logging.getLogger(__name__)
+
+
+# Language configuration for multi-language support
+LANGUAGE_CONFIG = {
+    "python": {
+        "extensions": [".py"],
+        "exclude_dirs": ["__pycache__", ".venv", "venv", ".eggs", "*.egg-info"],
+        "comment_prefix": "#",
+    },
+    "javascript": {
+        "extensions": [".js", ".jsx", ".mjs"],
+        "exclude_dirs": ["node_modules", "dist", "build", ".next"],
+        "comment_prefix": "//",
+    },
+    "typescript": {
+        "extensions": [".ts", ".tsx"],
+        "exclude_dirs": ["node_modules", "dist", "build", ".next"],
+        "comment_prefix": "//",
+    },
+    "go": {
+        "extensions": [".go"],
+        "exclude_dirs": ["vendor"],
+        "comment_prefix": "//",
+    },
+    "rust": {
+        "extensions": [".rs"],
+        "exclude_dirs": ["target"],
+        "comment_prefix": "//",
+    },
+    "java": {
+        "extensions": [".java"],
+        "exclude_dirs": ["target", "build", ".gradle"],
+        "comment_prefix": "//",
+    },
+    "cpp": {
+        "extensions": [".c", ".cpp", ".cc", ".h", ".hpp"],
+        "exclude_dirs": ["build", "cmake-build-*"],
+        "comment_prefix": "//",
+    },
+    "ruby": {
+        "extensions": [".rb"],
+        "exclude_dirs": ["vendor", ".bundle"],
+        "comment_prefix": "#",
+    },
+    "php": {
+        "extensions": [".php"],
+        "exclude_dirs": ["vendor"],
+        "comment_prefix": "//",
+    },
+}
 
 
 @dataclass
@@ -112,13 +174,15 @@ class FredFix:
         self,
         project_path: str,
         focus_areas: Optional[List[str]] = None,
+        languages: Optional[List[str]] = None,
     ) -> List[Issue]:
         """
-        Scan a project for issues.
+        Scan a project for issues across multiple languages.
 
         Args:
             project_path: Path to project directory
             focus_areas: Specific areas to focus on (security, performance, etc.)
+            languages: Languages to scan (None = auto-detect all)
 
         Returns:
             List of detected issues
@@ -134,11 +198,10 @@ class FredFix:
         if not project.exists():
             raise ValueError(f"Project path does not exist: {project_path}")
 
-        # Find Python files (extend for other languages)
-        files = list(project.glob("**/*.py"))
-        files = [f for f in files if "__pycache__" not in str(f) and ".venv" not in str(f)]
+        # Collect files from all configured languages
+        files = self._gather_files(project, languages)
 
-        self.memory_log(f"Found {len(files)} Python files to scan")
+        self.memory_log(f"Found {len(files)} files to scan")
 
         focus = focus_areas or ["security", "bugs", "performance"]
         focus_str = ", ".join(focus)
@@ -204,45 +267,209 @@ Respond with a JSON array of issues, or empty array if none found."""
 
         return all_issues
 
+    def _gather_files(
+        self,
+        project: Path,
+        languages: Optional[List[str]] = None,
+    ) -> List[Path]:
+        """
+        Gather files from project for scanning.
+
+        Args:
+            project: Project path
+            languages: Languages to include (None = all)
+
+        Returns:
+            List of file paths to scan
+        """
+        files = []
+        langs_to_scan = languages or list(LANGUAGE_CONFIG.keys())
+
+        # Build exclude patterns
+        all_excludes = set([".git", ".svn", ".hg"])
+        for lang in langs_to_scan:
+            config = LANGUAGE_CONFIG.get(lang, {})
+            all_excludes.update(config.get("exclude_dirs", []))
+
+        for lang in langs_to_scan:
+            config = LANGUAGE_CONFIG.get(lang, {})
+            extensions = config.get("extensions", [])
+
+            for ext in extensions:
+                for file_path in project.rglob(f"*{ext}"):
+                    # Check if file is in excluded directory
+                    parts = file_path.parts
+                    if not any(excl in parts for excl in all_excludes):
+                        files.append(file_path)
+
+        # Limit to prevent context overflow
+        return files[:100]
+
+    def _detect_language(self, file_path: Path) -> str:
+        """Detect language from file extension"""
+        ext = file_path.suffix.lower()
+        for lang, config in LANGUAGE_CONFIG.items():
+            if ext in config.get("extensions", []):
+                return lang
+        return "unknown"
+
     def _parse_issues(self, response: str, project_path: str) -> List[Issue]:
-        """Parse issues from AI response"""
+        """
+        Parse issues from AI response with robust JSON and text parsing.
+
+        Attempts multiple parsing strategies:
+        1. JSON array parsing
+        2. JSON object parsing
+        3. Markdown/text pattern matching
+        """
         issues = []
 
-        # Simple parsing - look for issue patterns
-        # In production, use structured JSON parsing
+        # Strategy 1: Try to parse as JSON array
+        json_issues = self._try_parse_json_array(response)
+        if json_issues:
+            for item in json_issues:
+                issues.append(self._create_issue(item, project_path))
+            return issues
+
+        # Strategy 2: Try to extract JSON from response (might be wrapped in markdown)
+        json_match = re.search(r'\[[\s\S]*?\]', response)
+        if json_match:
+            json_issues = self._try_parse_json_array(json_match.group())
+            if json_issues:
+                for item in json_issues:
+                    issues.append(self._create_issue(item, project_path))
+                return issues
+
+        # Strategy 3: Fall back to text parsing
+        issues = self._parse_text_issues(response, project_path)
+
+        return issues
+
+    def _try_parse_json_array(self, text: str) -> Optional[List[Dict]]:
+        """Try to parse text as JSON array"""
+        try:
+            # Clean up common issues
+            text = text.strip()
+
+            # Try direct parsing
+            data = json.loads(text)
+            if isinstance(data, list):
+                return data
+            elif isinstance(data, dict) and "issues" in data:
+                return data["issues"]
+        except json.JSONDecodeError:
+            pass
+
+        # Try with relaxed parsing (handle trailing commas, etc.)
+        try:
+            # Remove trailing commas before ] or }
+            cleaned = re.sub(r',(\s*[\]}])', r'\1', text)
+            data = json.loads(cleaned)
+            if isinstance(data, list):
+                return data
+        except json.JSONDecodeError:
+            pass
+
+        return None
+
+    def _parse_text_issues(self, response: str, project_path: str) -> List[Issue]:
+        """Parse issues from text/markdown format"""
+        issues = []
         lines = response.split("\n")
 
         current_issue = {}
         for line in lines:
             line = line.strip()
-            if "file_path:" in line.lower() or "file:" in line.lower():
+
+            # Skip empty lines and headers
+            if not line or line.startswith("#"):
+                continue
+
+            # Check for various field formats
+            lower_line = line.lower()
+
+            if any(x in lower_line for x in ["file_path:", "file:", "path:"]):
+                # Save previous issue if exists
                 if current_issue.get("description"):
                     issues.append(self._create_issue(current_issue, project_path))
-                current_issue = {"file_path": line.split(":", 1)[-1].strip()}
-            elif "severity:" in line.lower():
-                current_issue["severity"] = line.split(":", 1)[-1].strip().lower()
-            elif "issue_type:" in line.lower() or "type:" in line.lower():
-                current_issue["issue_type"] = line.split(":", 1)[-1].strip().lower()
-            elif "description:" in line.lower():
-                current_issue["description"] = line.split(":", 1)[-1].strip()
-            elif "suggested_fix:" in line.lower() or "fix:" in line.lower():
-                current_issue["suggested_fix"] = line.split(":", 1)[-1].strip()
+                # Start new issue
+                value = self._extract_value(line)
+                current_issue = {"file_path": value}
 
+            elif "severity:" in lower_line:
+                current_issue["severity"] = self._extract_value(line).lower()
+
+            elif any(x in lower_line for x in ["issue_type:", "type:", "category:"]):
+                current_issue["issue_type"] = self._extract_value(line).lower()
+
+            elif any(x in lower_line for x in ["description:", "issue:", "problem:"]):
+                current_issue["description"] = self._extract_value(line)
+
+            elif any(x in lower_line for x in ["suggested_fix:", "fix:", "solution:", "recommendation:"]):
+                current_issue["suggested_fix"] = self._extract_value(line)
+
+            elif any(x in lower_line for x in ["line:", "line_number:"]):
+                try:
+                    current_issue["line_number"] = int(self._extract_value(line))
+                except ValueError:
+                    pass
+
+            elif "confidence:" in lower_line:
+                try:
+                    current_issue["confidence"] = float(self._extract_value(line))
+                except ValueError:
+                    pass
+
+        # Don't forget the last issue
         if current_issue.get("description"):
             issues.append(self._create_issue(current_issue, project_path))
 
         return issues
 
+    def _extract_value(self, line: str) -> str:
+        """Extract value from a 'key: value' line"""
+        if ":" in line:
+            return line.split(":", 1)[-1].strip().strip('"\'')
+        return line.strip()
+
     def _create_issue(self, data: Dict, project_path: str) -> Issue:
-        """Create Issue from parsed data"""
+        """Create Issue from parsed data with validation"""
+        # Normalize severity
+        severity = str(data.get("severity", "medium")).lower()
+        if severity not in ["critical", "high", "medium", "low"]:
+            severity = "medium"
+
+        # Normalize issue type
+        issue_type = str(data.get("issue_type", data.get("type", "bug"))).lower()
+        valid_types = ["security", "performance", "bug", "style", "architecture", "logic"]
+        if issue_type not in valid_types:
+            # Try to categorize
+            type_lower = issue_type.lower()
+            if any(x in type_lower for x in ["sql", "xss", "injection", "auth", "crypto"]):
+                issue_type = "security"
+            elif any(x in type_lower for x in ["slow", "memory", "cpu", "optimize"]):
+                issue_type = "performance"
+            elif any(x in type_lower for x in ["lint", "format", "naming"]):
+                issue_type = "style"
+            else:
+                issue_type = "bug"
+
+        # Extract confidence if provided
+        confidence = data.get("confidence", 0.7)
+        if isinstance(confidence, str):
+            try:
+                confidence = float(confidence)
+            except ValueError:
+                confidence = 0.7
+
         return Issue(
-            file_path=data.get("file_path", "unknown"),
-            line_number=data.get("line_number"),
-            issue_type=data.get("issue_type", "bug"),
-            severity=data.get("severity", "medium"),
-            description=data.get("description", "No description"),
-            suggested_fix=data.get("suggested_fix", ""),
-            confidence=0.7
+            file_path=str(data.get("file_path", data.get("file", "unknown"))),
+            line_number=data.get("line_number", data.get("line")),
+            issue_type=issue_type,
+            severity=severity,
+            description=str(data.get("description", data.get("issue", "No description"))),
+            suggested_fix=str(data.get("suggested_fix", data.get("fix", data.get("recommendation", "")))),
+            confidence=confidence
         )
 
     async def generate_fix(self, issue: Issue) -> Optional[Dict[str, Any]]:
@@ -418,6 +645,7 @@ Provide:
             "auto_apply": self.auto_apply,
             "safe_mode": self.safe_mode,
             "min_confidence": self.min_confidence,
+            "supported_languages": list(LANGUAGE_CONFIG.keys()),
             "memory_stats": self.memory.get_statistics() if self.memory else None
         }
 

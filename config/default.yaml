@@ -1,0 +1,183 @@
+# =============================================================================
+# AI Team Platform - Default Configuration
+# =============================================================================
+# This file contains all non-secret configuration settings.
+# Secrets (API keys, passwords) should be in .env
+#
+# Override settings with environment variables using the same name.
+# Environment variables take precedence over this file.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Application Settings
+# -----------------------------------------------------------------------------
+app:
+  name: "AI Team Platform"
+  env: development  # development, staging, production
+  debug: true
+  port: 8080
+  host: "0.0.0.0"
+
+# -----------------------------------------------------------------------------
+# Logging
+# -----------------------------------------------------------------------------
+logging:
+  level: info  # debug, info, warning, error
+  format: json  # json, text
+  file: logs/ai-platform.log
+  max_size_mb: 100
+  backup_count: 10
+
+# -----------------------------------------------------------------------------
+# CORS Settings
+# -----------------------------------------------------------------------------
+cors:
+  origins:
+    - "*"
+  methods:
+    - GET
+    - POST
+    - PUT
+    - DELETE
+    - OPTIONS
+  headers:
+    - "*"
+
+# -----------------------------------------------------------------------------
+# AI Team Configuration
+# -----------------------------------------------------------------------------
+ai:
+  # Enabled providers (requires corresponding API key in .env)
+  providers:
+    - anthropic
+    - openai
+    - gemini
+    - xai
+    - groq
+
+  # Default models per provider
+  models:
+    anthropic: claude-3-sonnet-20240229
+    openai: gpt-4-turbo
+    gemini: gemini-pro
+    xai: grok-beta
+    groq: llama-3.1-70b-versatile
+
+  # Team settings
+  team_size: 5
+  max_concurrent_requests: 10
+  timeout_seconds: 300
+  enable_fallback: true
+
+  # Ollama (local models)
+  ollama:
+    enabled: true
+    host: "http://localhost:11434"
+
+# -----------------------------------------------------------------------------
+# Cloud Provider Defaults
+# -----------------------------------------------------------------------------
+cloud:
+  provider: gcp  # gcp, aws, azure
+  gcp:
+    region: us-central1
+    zone: us-central1-a
+  aws:
+    region: us-west-2
+  azure:
+    region: westus2
+
+# -----------------------------------------------------------------------------
+# Database Settings
+# -----------------------------------------------------------------------------
+database:
+  pool_size: 20
+  max_overflow: 30
+  pool_timeout: 30
+
+# -----------------------------------------------------------------------------
+# Redis/Cache Settings
+# -----------------------------------------------------------------------------
+cache:
+  ttl_seconds: 3600
+  max_size: 1000
+
+# -----------------------------------------------------------------------------
+# Security Settings
+# -----------------------------------------------------------------------------
+security:
+  jwt:
+    algorithm: HS256
+    expire_minutes: 1440  # 24 hours
+  rate_limit:
+    enabled: true
+    requests_per_minute: 100
+    burst: 10
+  ssl:
+    enabled: false
+
+# -----------------------------------------------------------------------------
+# Worker Configuration
+# -----------------------------------------------------------------------------
+workers:
+  count: 4
+  class: uvicorn.workers.UvicornWorker
+  timeout: 3600
+  keep_alive: 2
+
+# -----------------------------------------------------------------------------
+# Request Settings
+# -----------------------------------------------------------------------------
+requests:
+  timeout: 300
+  connect_timeout: 60
+
+# -----------------------------------------------------------------------------
+# Feature Flags
+# -----------------------------------------------------------------------------
+features:
+  registration: true
+  api_docs: true
+  admin_panel: true
+  background_tasks: true
+  websockets: true
+
+# -----------------------------------------------------------------------------
+# File Storage
+# -----------------------------------------------------------------------------
+storage:
+  provider: local  # local, s3, gcs
+  local:
+    folder: uploads
+    max_size_mb: 50
+
+# -----------------------------------------------------------------------------
+# Monitoring
+# -----------------------------------------------------------------------------
+monitoring:
+  metrics:
+    enabled: true
+    port: 9090
+  tracing:
+    enabled: true
+    jaeger_endpoint: "http://localhost:14268/api/traces"
+
+# -----------------------------------------------------------------------------
+# Deployment
+# -----------------------------------------------------------------------------
+deployment:
+  target: docker  # docker, kubernetes, cloudrun, lambda
+  health_check_path: /health
+  readiness_check_path: /ready
+  default_replicas: 3
+  max_deployment_time: 1800
+
+# -----------------------------------------------------------------------------
+# Application Generation
+# -----------------------------------------------------------------------------
+app_generation:
+  default_tech_stack:
+    - FastAPI
+    - React
+    - PostgreSQL
+  enable_auto_scaling: true

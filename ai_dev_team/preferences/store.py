@@ -30,8 +30,8 @@ class DevConstraints:
     """
 
     # Model preferences
-    prefer_local: bool = True
-    allow_cloud_fallback: bool = False
+    prefer_local: bool = False
+    allow_cloud_fallback: bool = True
     blocked_providers: List[str] = field(default_factory=list)
     preferred_agents: Dict[str, str] = field(default_factory=dict)  # task_type -> agent
 

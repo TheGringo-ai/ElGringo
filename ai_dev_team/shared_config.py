@@ -136,22 +136,13 @@ DEFAULT_PROVIDERS: List[AIProviderConfig] = [
 
     # X.AI (Grok)
     AIProviderConfig(
-        id="grok",
-        name="Grok",
+        id="grok-3",
+        name="Grok 3",
         type=ProviderType.XAI,
-        model="grok-beta",
+        model="grok-3-beta",
         endpoint="https://api.x.ai/v1/chat/completions",
-        description="Creative problem solving with innovation",
-        specialties=["creative-coding", "innovation", "problem-solving"],
-    ),
-    AIProviderConfig(
-        id="grok-2",
-        name="Grok 2",
-        type=ProviderType.XAI,
-        model="grok-2-latest",
-        endpoint="https://api.x.ai/v1/chat/completions",
-        description="Latest Grok model",
-        specialties=["reasoning", "coding", "analysis"],
+        description="Latest Grok 3 model - powerful reasoning",
+        specialties=["reasoning", "coding", "analysis", "creative-coding"],
     ),
 
     # Groq (Fast inference)
@@ -398,3 +389,98 @@ shared_config = SharedConfig()
 def get_shared_config() -> SharedConfig:
     """Get the shared configuration instance"""
     return shared_config
+
+
+# ============================================
+# Project Management
+# ============================================
+
+@dataclass
+class ProjectConfig:
+    """Configuration for a managed project"""
+    name: str
+    path: str
+    description: str
+    domain: str
+    tech_stack: List[str] = field(default_factory=list)
+    priority: str = "medium"
+    status: str = "active"
+    ai_roles: List[str] = field(default_factory=list)
+
+    def get_full_path(self, platform_dir: Optional[Path] = None) -> Path:
+        """Get the full filesystem path to the project"""
+        if platform_dir is None:
+            platform_dir = Path(__file__).parent.parent
+        return (platform_dir / self.path).resolve()
+
+
+class ProjectManager:
+    """Manages projects available to the AI team"""
+
+    def __init__(self):
+        self._platform_dir = Path(__file__).parent.parent
+        self._config_path = self._platform_dir / "config" / "projects.yaml"
+        self._projects: Dict[str, ProjectConfig] = {}
+        self._load_projects()
+
+    def _load_projects(self):
+        """Load projects from config/projects.yaml"""
+        if not self._config_path.exists():
+            return
+
+        try:
+            import yaml
+        except ImportError:
+            # Fallback to basic parsing if PyYAML not available
+            return
+
+        try:
+            with open(self._config_path) as f:
+                data = yaml.safe_load(f)
+
+            if data and "projects" in data:
+                for project_id, project_data in data["projects"].items():
+                    self._projects[project_id] = ProjectConfig(
+                        name=project_data.get("name", project_id),
+                        path=project_data.get("path", f"projects/{project_id}"),
+                        description=project_data.get("description", ""),
+                        domain=project_data.get("domain", "general"),
+                        tech_stack=project_data.get("tech_stack", []),
+                        priority=project_data.get("priority", "medium"),
+                        status=project_data.get("status", "active"),
+                        ai_roles=project_data.get("ai_roles", []),
+                    )
+        except Exception:
+            pass
+
+    def list_projects(self) -> List[ProjectConfig]:
+        """Get all managed projects"""
+        return list(self._projects.values())
+
+    def get_project(self, project_id: str) -> Optional[ProjectConfig]:
+        """Get a specific project by ID"""
+        return self._projects.get(project_id)
+
+    def get_active_projects(self) -> List[ProjectConfig]:
+        """Get all active projects"""
+        return [p for p in self._projects.values() if p.status == "active"]
+
+    def get_projects_by_domain(self, domain: str) -> List[ProjectConfig]:
+        """Get projects by domain"""
+        return [p for p in self._projects.values() if p.domain == domain]
+
+    def get_project_path(self, project_id: str) -> Optional[Path]:
+        """Get the full path to a project"""
+        project = self.get_project(project_id)
+        if project:
+            return project.get_full_path(self._platform_dir)
+        return None
+
+
+# Singleton instance
+project_manager = ProjectManager()
+
+
+def get_project_manager() -> ProjectManager:
+    """Get the project manager instance"""
+    return project_manager

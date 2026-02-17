@@ -23,6 +23,11 @@ from .documentation_loader import (
     DocumentChunk,
     get_documentation_loader,
 )
+from .firebase_docs import (
+    FirebaseDocumentation,
+    DocChunk,
+    get_firebase_docs,
+)
 
 __all__ = [
     "DOMAIN_EXPERTISE", "get_domain_context", "get_all_domains",
@@ -36,4 +41,6 @@ __all__ = [
     "UniversalRAG", "Document", "SearchResult", "RAGContext", "get_rag",
     # Documentation Loader
     "DocumentationLoader", "DocumentChunk", "get_documentation_loader",
+    # Firebase Documentation
+    "FirebaseDocumentation", "DocChunk", "get_firebase_docs",
 ]

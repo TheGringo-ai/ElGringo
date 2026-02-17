@@ -5,7 +5,7 @@ Grok Agent - xAI Grok Integration
 import logging
 import os
 import time
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 import aiohttp
 
@@ -150,3 +150,84 @@ class GrokAgent(AIAgent):
                 response_time=response_time,
                 error=str(e)
             )
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        context: str = "",
+        system_override: Optional[str] = None
+    ) -> AsyncIterator[str]:
+        """Stream response tokens as they arrive"""
+        api_key = os.getenv(self.API_KEY_ENV)
+        if not api_key:
+            logger.error(f"{self.API_KEY_ENV} not configured")
+            return
+
+        try:
+            # Build system prompt
+            system_prompt = system_override or self.config.system_prompt
+            if not system_prompt:
+                if "coder" in self.name.lower():
+                    system_prompt = (
+                        "You are a highly efficient coding specialist. "
+                        "Focus on clean, optimized, production-ready code solutions. "
+                        "Be concise and practical."
+                    )
+                else:
+                    system_prompt = (
+                        f"You are {self.name}, a {self.role}. "
+                        "Provide thoughtful strategic analysis and insights."
+                    )
+
+            # Build user content
+            user_content = prompt
+            if context:
+                user_content = f"Context:\n{context}\n\nTask:\n{prompt}"
+
+            # Build request
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+
+            data = {
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content}
+                ],
+                "model": self.config.model_name or self.DEFAULT_MODEL,
+                "temperature": self.config.temperature,
+                "max_tokens": min(self.config.max_tokens, 4000),
+                "stream": True
+            }
+
+            # Make streaming API call
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.API_URL,
+                    headers=headers,
+                    json=data,
+                    timeout=aiohttp.ClientTimeout(total=120)
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"Grok streaming API Error {response.status}: {error_text}")
+                        return
+
+                    # Process SSE stream
+                    async for line in response.content:
+                        line = line.decode("utf-8").strip()
+                        if line.startswith("data: "):
+                            data_str = line[6:]
+                            if data_str == "[DONE]":
+                                break
+                            try:
+                                import json
+                                chunk = json.loads(data_str)
+                                if chunk.get("choices") and chunk["choices"][0].get("delta", {}).get("content"):
+                                    yield chunk["choices"][0]["delta"]["content"]
+                            except json.JSONDecodeError:
+                                continue
+
+        except Exception as e:
+            logger.error(f"Grok streaming error: {e}")

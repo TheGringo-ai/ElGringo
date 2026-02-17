@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,7 @@ class AgentConfig:
     temperature: float = 0.7
     enabled: bool = True
     system_prompt: Optional[str] = None
+    cost_tier: str = "standard"  # "budget", "standard", "premium"
 
     # Performance tracking
     total_requests: int = 0
@@ -83,6 +84,23 @@ class AIAgent(ABC):
     ) -> AgentResponse:
         """Generate a response from this AI agent"""
         pass
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        context: str = "",
+        system_override: Optional[str] = None
+    ) -> AsyncIterator[str]:
+        """
+        Stream response tokens as they arrive.
+
+        Override this method to enable streaming for the agent.
+        Default implementation falls back to non-streaming.
+        """
+        # Default: yield entire response at once (fallback for non-streaming agents)
+        response = await self.generate_response(prompt, context, system_override)
+        if response.success:
+            yield response.content
 
     @abstractmethod
     async def is_available(self) -> bool:

@@ -1,0 +1,194 @@
+{
+  "qwen-coder-custom": {
+    "scores": [
+      0.6666666666666666,
+      0.3333333333333333,
+      0.6666666666666666,
+      0.6666666666666666,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "details": [
+      {
+        "name": "Firestore Add Document",
+        "score": 0.6666666666666666,
+        "issues": [
+          "Missing: '.add('"
+        ],
+        "time": 5.26875114440918,
+        "response_length": 603
+      },
+      {
+        "name": "Firestore Query with Filter",
+        "score": 0.3333333333333333,
+        "issues": [
+          "Missing: '>='",
+          "Missing: 'stream()'"
+        ],
+        "time": 6.889794826507568,
+        "response_length": 751
+      },
+      {
+        "name": "Firestore Transaction",
+        "score": 0.6666666666666666,
+        "issues": [
+          "Missing: '@firestore.transactional'"
+        ],
+        "time": 22.301542043685913,
+        "response_length": 2988
+      },
+      {
+        "name": "Security Rules",
+        "score": 0.6666666666666666,
+        "issues": [
+          "Missing: 'rules_version'"
+        ],
+        "time": 16.80734395980835,
+        "response_length": 1928
+      },
+      {
+        "name": "Cloud Function Trigger",
+        "score": 1.0,
+        "issues": [],
+        "time": 9.376328945159912,
+        "response_length": 1223
+      },
+      {
+        "name": "JavaScript Firestore",
+        "score": 1.0,
+        "issues": [],
+        "time": 32.357343912124634,
+        "response_length": 3579
+      },
+      {
+        "name": "Batch Write",
+        "score": 1.0,
+        "issues": [],
+        "time": 24.72204303741455,
+        "response_length": 2810
+      },
+      {
+        "name": "Real-time Listener",
+        "score": 1.0,
+        "issues": [],
+        "time": 18.258863925933838,
+        "response_length": 2169
+      },
+      {
+        "name": "General Python",
+        "score": 1.0,
+        "issues": [],
+        "time": 8.971329927444458,
+        "response_length": 635
+      },
+      {
+        "name": "General Algorithm",
+        "score": 1.0,
+        "issues": [],
+        "time": 24.989689111709595,
+        "response_length": 2603
+      }
+    ]
+  },
+  "qwen2.5-coder:7b": {
+    "scores": [
+      0.6666666666666666,
+      0.3333333333333333,
+      0.6666666666666666,
+      0.6666666666666666,
+      0.6666666666666666,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "details": [
+      {
+        "name": "Firestore Add Document",
+        "score": 0.6666666666666666,
+        "issues": [
+          "Missing: '.add('"
+        ],
+        "time": 21.081737995147705,
+        "response_length": 2055
+      },
+      {
+        "name": "Firestore Query with Filter",
+        "score": 0.3333333333333333,
+        "issues": [
+          "Missing: '>='",
+          "Missing: 'stream()'"
+        ],
+        "time": 12.356332063674927,
+        "response_length": 1386
+      },
+      {
+        "name": "Firestore Transaction",
+        "score": 0.6666666666666666,
+        "issues": [
+          "Missing: '@firestore.transactional'"
+        ],
+        "time": 25.836348056793213,
+        "response_length": 3497
+      },
+      {
+        "name": "Security Rules",
+        "score": 0.6666666666666666,
+        "issues": [
+          "Missing: 'rules_version'"
+        ],
+        "time": 20.95960021018982,
+        "response_length": 2452
+      },
+      {
+        "name": "Cloud Function Trigger",
+        "score": 0.6666666666666666,
+        "issues": [
+          "Missing: 'snapshot'"
+        ],
+        "time": 7.4537060260772705,
+        "response_length": 979
+      },
+      {
+        "name": "JavaScript Firestore",
+        "score": 1.0,
+        "issues": [],
+        "time": 34.63002300262451,
+        "response_length": 3794
+      },
+      {
+        "name": "Batch Write",
+        "score": 1.0,
+        "issues": [],
+        "time": 22.46325182914734,
+        "response_length": 2430
+      },
+      {
+        "name": "Real-time Listener",
+        "score": 1.0,
+        "issues": [],
+        "time": 28.280704021453857,
+        "response_length": 3033
+      },
+      {
+        "name": "General Python",
+        "score": 1.0,
+        "issues": [],
+        "time": 15.202624797821045,
+        "response_length": 1462
+      },
+      {
+        "name": "General Algorithm",
+        "score": 1.0,
+        "issues": [],
+        "time": 24.481152057647705,
+        "response_length": 2343
+      }
+    ]
+  }
+}

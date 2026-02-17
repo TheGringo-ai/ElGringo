@@ -1,11 +1,13 @@
 """
 Gemini Agent - Google Gemini AI Integration
+
+Uses the google-genai SDK (not the deprecated google-generativeai).
 """
 
 import logging
 import os
 import time
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 from .base import AIAgent, AgentConfig, AgentResponse, ModelType
 
@@ -13,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class GeminiAgent(AIAgent):
-    """Gemini AI Agent using Google AI API"""
+    """Gemini AI Agent using Google GenAI SDK"""
 
     DEFAULT_MODEL = "gemini-2.5-flash"
     API_KEY_ENV = "GEMINI_API_KEY"
@@ -28,24 +30,19 @@ class GeminiAgent(AIAgent):
                 model_name=self.DEFAULT_MODEL,
             )
         super().__init__(config)
-        self._model = None
-        self._configured = False
+        self._client = None
 
-    async def _get_model(self):
-        """Get or create Gemini model"""
-        if self._model is None and not self._configured:
+    def _get_client(self):
+        """Get or create Gemini client"""
+        if self._client is None:
             try:
-                import google.generativeai as genai
+                from google import genai
                 api_key = os.getenv(self.API_KEY_ENV)
                 if api_key:
-                    genai.configure(api_key=api_key)
-                    self._model = genai.GenerativeModel(
-                        self.config.model_name or self.DEFAULT_MODEL
-                    )
-                    self._configured = True
+                    self._client = genai.Client(api_key=api_key)
             except ImportError:
-                logger.error("Google AI SDK not installed. Run: pip install google-generativeai")
-        return self._model
+                logger.error("Google GenAI SDK not installed. Run: pip install google-genai")
+        return self._client
 
     async def is_available(self) -> bool:
         """Check if Gemini is available"""
@@ -61,8 +58,8 @@ class GeminiAgent(AIAgent):
         start_time = time.time()
 
         try:
-            model = await self._get_model()
-            if not model:
+            client = self._get_client()
+            if not client:
                 return AgentResponse(
                     agent_name=self.name,
                     model_type=self.config.model_type,
@@ -72,24 +69,31 @@ class GeminiAgent(AIAgent):
                     error=f"{self.API_KEY_ENV} not configured or SDK not installed"
                 )
 
-            # Build prompt with context and role
-            system_context = system_override or self.config.system_prompt or (
+            from google.genai import types
+
+            system_instruction = system_override or self.config.system_prompt or (
                 f"You are {self.name}, a {self.role}. "
                 f"Your capabilities include: {', '.join(self.config.capabilities)}. "
                 "Provide creative, innovative, and forward-thinking responses."
             )
 
-            full_prompt = f"{system_context}\n\n"
+            user_content = prompt
             if context:
-                full_prompt += f"Context:\n{context}\n\n"
-            full_prompt += f"Task:\n{prompt}"
+                user_content = f"Context:\n{context}\n\nTask:\n{prompt}"
 
-            # Make API call
-            response = await model.generate_content_async(full_prompt)
+            response = await client.aio.models.generate_content(
+                model=self.config.model_name or self.DEFAULT_MODEL,
+                contents=user_content,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=self.config.temperature,
+                    max_output_tokens=self.config.max_tokens,
+                ),
+            )
+
             content = response.text
             response_time = time.time() - start_time
 
-            # Update stats
             self.update_stats(response_time, True)
             self.add_to_history("user", prompt)
             self.add_to_history("assistant", content)
@@ -116,3 +120,43 @@ class GeminiAgent(AIAgent):
                 response_time=response_time,
                 error=str(e)
             )
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        context: str = "",
+        system_override: Optional[str] = None
+    ) -> AsyncIterator[str]:
+        """Stream response tokens as they arrive"""
+        try:
+            client = self._get_client()
+            if not client:
+                return
+
+            from google.genai import types
+
+            system_instruction = system_override or self.config.system_prompt or (
+                f"You are {self.name}, a {self.role}. "
+                f"Your capabilities include: {', '.join(self.config.capabilities)}. "
+                "Provide creative, innovative, and forward-thinking responses."
+            )
+
+            user_content = prompt
+            if context:
+                user_content = f"Context:\n{context}\n\nTask:\n{prompt}"
+
+            stream = await client.aio.models.generate_content_stream(
+                model=self.config.model_name or self.DEFAULT_MODEL,
+                contents=user_content,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=self.config.temperature,
+                    max_output_tokens=self.config.max_tokens,
+                ),
+            )
+            async for chunk in stream:
+                if chunk.text:
+                    yield chunk.text
+
+        except Exception as e:
+            logger.error(f"Gemini streaming error: {e}")

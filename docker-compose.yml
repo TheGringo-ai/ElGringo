@@ -1,12 +1,16 @@
-# 🚀 AI TEAM PLATFORM - DOCKER COMPOSE CONFIGURATION
-# Complete local development environment with all services
-# Supports database, cache, monitoring, and AI model services
+# AI TEAM PLATFORM - Docker Compose (Slim)
+# For personal development use
+#
+# Usage:
+#   docker-compose up              # Just the AI platform
+#   docker-compose --profile db up # With PostgreSQL + Redis
+#   docker-compose --profile full up # Everything (monitoring, etc.)
 
 version: '3.8'
 
 services:
   # =============================================================================
-  # AI Team Platform Application
+  # AI Team Platform - Main Application
   # =============================================================================
   ai-platform:
     build:
@@ -17,226 +21,59 @@ services:
       - "8080:8080"
     environment:
       - AI_PLATFORM_ENV=development
-      - DATABASE_URL=postgresql://aiplatform:aiplatform_secure@postgres:5432/aiplatform_db
-      - REDIS_URL=redis://redis:6379/0
-      - LOG_LEVEL=debug
+      - LOG_LEVEL=info
       - CORS_ORIGINS=*
-      - SECRET_KEY=dev-secret-key-change-in-production
+      - SECRET_KEY=dev-secret-key
+      # Database URLs (only if using db profile)
+      - DATABASE_URL=postgresql://aiplatform:aiplatform@postgres:5432/aiplatform_db
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - .:/app
       - ./logs:/app/logs
-      - ./data:/app/data
-    depends_on:
-      - postgres
-      - redis
-      - mongodb
     networks:
-      - ai-platform-network
+      - ai-network
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
+      interval: 60s
       timeout: 10s
       retries: 3
-      start_period: 40s
 
   # =============================================================================
-  # PostgreSQL Database
+  # Database Services (Optional - use with: --profile db)
   # =============================================================================
   postgres:
     image: postgres:15-alpine
+    profiles: ["db", "full"]
     environment:
       - POSTGRES_DB=aiplatform_db
       - POSTGRES_USER=aiplatform
-      - POSTGRES_PASSWORD=aiplatform_secure
-      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+      - POSTGRES_PASSWORD=aiplatform
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init:/docker-entrypoint-initdb.d
     networks:
-      - ai-platform-network
+      - ai-network
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aiplatform -d aiplatform_db"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
-  # =============================================================================
-  # Redis Cache & Session Store
-  # =============================================================================
   redis:
     image: redis:7-alpine
+    profiles: ["db", "full"]
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-      - ./redis/redis.conf:/etc/redis/redis.conf:ro
-    command: redis-server /etc/redis/redis.conf
     networks:
-      - ai-platform-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # =============================================================================
-  # MongoDB for AI Model Data & Training
-  # =============================================================================
-  mongodb:
-    image: mongo:7
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=aiplatform
-      - MONGO_INITDB_ROOT_PASSWORD=aiplatform_secure
-      - MONGO_INITDB_DATABASE=aiplatform_models
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-      - ./mongodb/init:/docker-entrypoint-initdb.d
-    networks:
-      - ai-platform-network
-    restart: unless-stopped
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # =============================================================================
-  # Nginx Reverse Proxy & Load Balancer
-  # =============================================================================
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./ssl:/etc/ssl/certs
-    depends_on:
-      - ai-platform
-    networks:
-      - ai-platform-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # =============================================================================
-  # Monitoring with Prometheus
-  # =============================================================================
-  prometheus:
-    image: prom/prometheus:latest
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--web.enable-lifecycle'
-    networks:
-      - ai-platform-network
+      - ai-network
     restart: unless-stopped
 
   # =============================================================================
-  # Grafana Dashboard
-  # =============================================================================
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin_secure_password
-      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
-    depends_on:
-      - prometheus
-    networks:
-      - ai-platform-network
-    restart: unless-stopped
-
-  # =============================================================================
-  # ELK Stack for Logging
-  # =============================================================================
-  elasticsearch:
-    image: elasticsearch:8.11.0
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-    ports:
-      - "9200:9200"
-    volumes:
-      - elasticsearch_data:/usr/share/elasticsearch/data
-    networks:
-      - ai-platform-network
-    restart: unless-stopped
-
-  kibana:
-    image: kibana:8.11.0
-    ports:
-      - "5601:5601"
-    environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-    depends_on:
-      - elasticsearch
-    networks:
-      - ai-platform-network
-    restart: unless-stopped
-
-  # =============================================================================
-  # Mock AI Services (for development)
-  # =============================================================================
-  mock-claude:
-    image: alpine:latest
-    command: |
-      sh -c "
-        apk add --no-cache python3 py3-pip curl &&
-        pip3 install fastapi uvicorn &&
-        echo 'from fastapi import FastAPI; app = FastAPI(); @app.get(\"/\"); async def root(): return {\"model\": \"claude-sonnet-4\", \"status\": \"ready\"}' > app.py &&
-        uvicorn app:app --host 0.0.0.0 --port 8001
-      "
-    ports:
-      - "8001:8001"
-    networks:
-      - ai-platform-network
-    restart: unless-stopped
-
-  mock-chatgpt:
-    image: alpine:latest
-    command: |
-      sh -c "
-        apk add --no-cache python3 py3-pip curl &&
-        pip3 install fastapi uvicorn &&
-        echo 'from fastapi import FastAPI; app = FastAPI(); @app.get(\"/\"); async def root(): return {\"model\": \"chatgpt-4\", \"status\": \"ready\"}' > app.py &&
-        uvicorn app:app --host 0.0.0.0 --port 8002
-      "
-    ports:
-      - "8002:8002"
-    networks:
-      - ai-platform-network
-    restart: unless-stopped
-
-  # =============================================================================
-  # Development Tools
+  # Dev Tools (Optional - use with: --profile tools)
   # =============================================================================
   adminer:
     image: adminer:latest
+    profiles: ["tools", "full"]
     ports:
       - "8081:8080"
     environment:
@@ -244,44 +81,37 @@ services:
     depends_on:
       - postgres
     networks:
-      - ai-platform-network
-    restart: unless-stopped
+      - ai-network
 
-  redis-commander:
-    image: rediscommander/redis-commander:latest
+  # =============================================================================
+  # Monitoring (Optional - use with: --profile full)
+  # =============================================================================
+  prometheus:
+    image: prom/prometheus:latest
+    profiles: ["full"]
     ports:
-      - "8082:8081"
-    environment:
-      - REDIS_HOSTS=local:redis:6379
-    depends_on:
-      - redis
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     networks:
-      - ai-platform-network
-    restart: unless-stopped
+      - ai-network
 
-# =============================================================================
-# Network Configuration
-# =============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    profiles: ["full"]
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+    networks:
+      - ai-network
+
 networks:
-  ai-platform-network:
+  ai-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
 
-# =============================================================================
-# Volume Configuration
-# =============================================================================
 volumes:
   postgres_data:
-    driver: local
   redis_data:
-    driver: local
-  mongodb_data:
-    driver: local
-  prometheus_data:
-    driver: local
-  grafana_data:
-    driver: local
-  elasticsearch_data:
-    driver: local

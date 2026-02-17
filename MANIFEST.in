@@ -1,0 +1,42 @@
+# Include essential files
+include LICENSE
+include README.md
+include AI_DEV_TEAM_README.md
+include CHANGELOG.md
+include pyproject.toml
+include requirements.txt
+
+# Include examples
+recursive-include examples *.py *.md
+
+# Include package data
+recursive-include ai_dev_team *.py *.json *.yaml *.yml
+
+# Exclude development and test files
+exclude .gitignore
+exclude .env
+exclude .env.example
+exclude Makefile
+exclude tox.ini
+
+# Exclude directories
+prune tests
+prune .git
+prune .github
+prune .pytest_cache
+prune .mypy_cache
+prune .ruff_cache
+prune __pycache__
+prune *.egg-info
+prune build
+prune dist
+prune .venv
+prune venv
+prune docs/_build
+
+# Exclude compiled files
+global-exclude *.py[cod]
+global-exclude *.so
+global-exclude *.dylib
+global-exclude .DS_Store
+global-exclude Thumbs.db

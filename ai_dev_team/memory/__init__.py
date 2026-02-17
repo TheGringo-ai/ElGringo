@@ -1,20 +1,10 @@
-"""
-Memory System - Persistent Learning and Knowledge Management
-=============================================================
-
-Provides:
-- Conversation history storage
-- Mistake pattern tracking
-- Solution knowledge base
-- Cross-project learning
-"""
-
-from .system import MemorySystem
-from .prevention import MistakePrevention
-from .learning import LearningEngine
+"""Memory and learning systems"""
+from .system import MemorySystem, Interaction, MistakeRecord, SolutionRecord
+from .learning import LearningEngine, LearningInsight
+from .prevention import MistakePrevention, PreventionGuidance
 
 __all__ = [
-    "MemorySystem",
-    "MistakePrevention",
-    "LearningEngine",
+    "MemorySystem", "Interaction", "MistakeRecord", "SolutionRecord",
+    "LearningEngine", "LearningInsight",
+    "MistakePrevention", "PreventionGuidance",
 ]

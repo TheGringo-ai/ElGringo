@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "ai-team-platform": {
+      "command": "/bin/zsh",
+      "args": [
+        "-c",
+        "source ~/.ai_secrets && python3 /Users/fredtaylor/Development/Projects/AITeamPlatform/servers/mcp_server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "/Users/fredtaylor/Development/Projects/AITeamPlatform"
+      }
+    }
+  }
+}

@@ -14,11 +14,22 @@ from .chatterfix import (
     KnowledgeBase
 )
 
+from .github import (
+    GitHubIntegration,
+    PRFile,
+    PRReview,
+    PROutcome,
+)
+
 __all__ = [
     'ChatterFixConnector',
     'get_connector',
     'check_against_learnings',
     'find_solution',
     'Lesson',
-    'KnowledgeBase'
+    'KnowledgeBase',
+    'GitHubIntegration',
+    'PRFile',
+    'PRReview',
+    'PROutcome',
 ]

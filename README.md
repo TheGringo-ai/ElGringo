@@ -1,10 +1,23 @@
 # FredAI
 
+[![CI](https://github.com/TheGringo-ai/FredAI/actions/workflows/ci.yml/badge.svg)](https://github.com/TheGringo-ai/FredAI/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+
 **Multi-agent AI orchestration platform that makes your AI models work as a team.**
 
 FredAI connects ChatGPT, Gemini, Grok, Claude, Ollama, and LlamaCloud into a single intelligent workforce. Instead of chatting with one model at a time, FredAI routes tasks to the right model, runs them in parallel, synthesizes their responses, learns from every interaction, and never repeats mistakes.
 
 Think of it as the operating system layer between AI models and real-world work.
+
+### Try it in 30 seconds (just Ollama, no API keys)
+
+```bash
+git clone https://github.com/TheGringo-ai/FredAI.git && cd FredAI
+pip install -e .
+ollama pull llama3.2:3b
+python demo.py
+```
 
 ---
 

@@ -21,11 +21,12 @@ Usage:
     prompt = f"{context}\n\nTask: {task}"
 """
 
+import asyncio
 import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Optional, Set, TYPE_CHECKING
 from datetime import datetime
 
 from .code_embeddings import (
@@ -33,6 +34,9 @@ from .code_embeddings import (
     chunk_code_file,
     chunk_by_functions,
 )
+
+if TYPE_CHECKING:
+    from ..memory.system import MemorySystem
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +74,19 @@ class RetrievedContext:
                 parts.append(pattern_text)
                 tokens_used += len(pattern_text) // 4
 
+        # Add similar solutions from memory
+        if self.similar_solutions and tokens_used < max_tokens - 300:
+            parts.append("### Past Solutions\n")
+            for sol in self.similar_solutions[:3]:
+                sol_text = f"**{sol.get('problem', 'Problem')}** (success: {sol.get('success_rate', 0):.0%})\n"
+                steps = sol.get('steps', [])
+                if steps:
+                    sol_text += "\n".join(f"  - {s}" for s in steps[:3]) + "\n"
+                if tokens_used + len(sol_text) // 4 > max_tokens:
+                    break
+                parts.append(sol_text)
+                tokens_used += len(sol_text) // 4
+
         return "\n".join(parts)
 
 
@@ -84,6 +101,7 @@ class CodeRAG:
         self,
         embeddings: Optional[CodeEmbeddings] = None,
         max_context_tokens: int = 2000,
+        memory: Optional["MemorySystem"] = None,
     ):
         """
         Initialize Code RAG.
@@ -91,9 +109,11 @@ class CodeRAG:
         Args:
             embeddings: Code embeddings instance (creates new if None)
             max_context_tokens: Maximum tokens in retrieved context
+            memory: Optional MemorySystem for solution pattern retrieval
         """
         self.embeddings = embeddings or CodeEmbeddings()
         self.max_context_tokens = max_context_tokens
+        self.memory = memory
 
         # Track indexed projects
         self._indexed_projects: Set[str] = set()
@@ -263,15 +283,45 @@ class CodeRAG:
         # Detect patterns (simple heuristic for now)
         patterns = self._detect_patterns(query, code_snippets)
 
+        # Query memory for similar solutions
+        similar_solutions = []
+        if self.memory:
+            try:
+                # Run async query from sync context
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        solutions = pool.submit(
+                            asyncio.run,
+                            self.memory.find_solution_patterns(query, limit=3)
+                        ).result()
+                else:
+                    solutions = loop.run_until_complete(
+                        self.memory.find_solution_patterns(query, limit=3)
+                    )
+                similar_solutions = [
+                    {
+                        "problem": s.problem_pattern,
+                        "steps": s.solution_steps,
+                        "success_rate": s.success_rate,
+                        "projects": s.projects_used,
+                    }
+                    for s in solutions
+                ]
+            except Exception as e:
+                logger.debug(f"Memory solution lookup failed: {e}")
+
         # Estimate tokens
         total_content = sum(len(s["content"]) for s in code_snippets)
-        tokens_estimate = total_content // 4  # Rough estimate
+        sol_content = sum(len(str(s)) for s in similar_solutions)
+        tokens_estimate = (total_content + sol_content) // 4
 
         return RetrievedContext(
             query=query,
             code_snippets=code_snippets,
             patterns=patterns,
-            similar_solutions=[],  # TODO: Add solution memory integration
+            similar_solutions=similar_solutions,
             total_tokens_estimate=tokens_estimate,
         )
 

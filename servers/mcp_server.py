@@ -70,7 +70,10 @@ def get_team() -> AIDevTeam:
     if team is None:
         logger.info("Initializing AI Team...")
         team = AIDevTeam(project_name="mcp-collaboration")
-        memory = MemorySystem()
+        has_firestore = bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+        memory = MemorySystem(use_firestore=has_firestore)
+        if has_firestore:
+            logger.info("Firestore memory enabled (persistent cross-session)")
         fixer = FredFix(team=team, memory=memory)
         engine = ParallelCodingEngine(team)
         logger.info(f"AI Team ready with {len(team.agents)} agents: {list(team.agents.keys())}")
@@ -599,7 +602,7 @@ async def handle_tool_call(name: str, arguments: Dict[str, Any]) -> str:
 
         elif name == "memory_search":
             if memory is None:
-                memory = MemorySystem()
+                memory = MemorySystem(use_firestore=bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")))
 
             query = arguments["query"]
             search_type = arguments.get("search_type", "all")
@@ -698,7 +701,7 @@ async def handle_tool_call(name: str, arguments: Dict[str, Any]) -> str:
 
         elif name == "memory_store_mistake":
             if memory is None:
-                memory = MemorySystem()
+                memory = MemorySystem(use_firestore=bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")))
 
             from ai_dev_team.memory.system import MistakeType
 
@@ -733,7 +736,7 @@ async def handle_tool_call(name: str, arguments: Dict[str, Any]) -> str:
 
         elif name == "memory_store_solution":
             if memory is None:
-                memory = MemorySystem()
+                memory = MemorySystem(use_firestore=bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")))
 
             solution_id = await memory.capture_solution(
                 problem_pattern=arguments["problem_pattern"],

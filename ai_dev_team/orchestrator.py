@@ -1107,10 +1107,15 @@ class AIDevTeam:
         if len(successful_responses) == 1:
             return successful_responses[0].content
 
-        # Use Claude for synthesis if available (try multiple name patterns)
+        # Use the best available agent for synthesis
         synthesis_agent = None
-        claude_patterns = ["claude-analyst", "claude", "anthropic"]
-        for pattern in claude_patterns:
+        preferred_patterns = [
+            "claude-analyst", "claude", "anthropic",
+            "chatgpt", "openai", "gpt",
+            "grok-reasoner", "grok",
+            "gemini",
+        ]
+        for pattern in preferred_patterns:
             for agent_name, agent in self.agents.items():
                 if pattern in agent_name.lower():
                     synthesis_agent = agent
@@ -1186,9 +1191,9 @@ Provide a unified, synthesized response:"""
                     selected_agent = self.agents[agent_name]
                     break
 
-            # Fallback to Claude (try multiple patterns) or first available
+            # Fallback to best available agent
             if not selected_agent:
-                for pattern in ["claude-analyst", "claude", "anthropic"]:
+                for pattern in ["claude", "chatgpt", "gpt", "grok-reasoner", "grok", "gemini"]:
                     for agent_name, agent in self.agents.items():
                         if pattern in agent_name.lower():
                             selected_agent = agent
@@ -2193,14 +2198,8 @@ Provide a detailed analysis."""
         if not self.agents:
             return None
 
-        # Prefer Claude for reasoning tasks
-        for pattern in ["claude", "anthropic"]:
-            for name, agent in self.agents.items():
-                if pattern in name.lower():
-                    return agent
-
-        # Then try ChatGPT
-        for pattern in ["chatgpt", "openai", "gpt"]:
+        # Prefer the best available reasoning agent
+        for pattern in ["claude", "chatgpt", "gpt", "grok-reasoner", "grok", "gemini"]:
             for name, agent in self.agents.items():
                 if pattern in name.lower():
                     return agent

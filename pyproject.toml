@@ -3,15 +3,15 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ai-team-platform"
+name = "fred-ai"
 version = "1.0.0"
-description = "AI Team Platform - Multi-Model AI Orchestration for Rapid Application Development"
-readme = "AI_DEV_TEAM_README.md"
-license = "MIT"
+description = "FredAI - Multi-Agent AI Orchestration Platform"
+readme = "README.md"
+license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.9"
 authors = [
-    {name = "Fred AI Team", email = "fred@example.com"}
+    {name = "Fred Taylor"}
 ]
 keywords = [
     "ai",

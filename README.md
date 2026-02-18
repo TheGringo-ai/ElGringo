@@ -156,6 +156,9 @@ ollama pull llama3.2:3b
 # Interactive CLI
 fred
 
+# Quick demo (no API keys, just Ollama)
+python demo.py
+
 # MCP Server (for Claude Code / Cursor)
 python servers/mcp_server.py
 
@@ -163,7 +166,7 @@ python servers/mcp_server.py
 python servers/api_server.py
 
 # Gradio UI
-python -m ai_dev_team.studio_ui
+fred-studio
 ```
 
 ### MCP Integration
@@ -227,6 +230,18 @@ Key differences:
 - Specialist agents for security, architecture, and code review
 - Apple Silicon optimization for local inference
 - Cost-aware routing (budget/standard/premium tiers)
+
+## What This Is NOT
+
+- **Not a wrapper around one model** — FredAI orchestrates multiple models, it doesn't just proxy requests to ChatGPT
+- **Not a chatbot** — it's a tool execution platform. Agents take actions, not just generate text
+- **Not autonomous by default** — tool calls require approval through the MCP client. Nothing runs without your consent
+- **Not a hosted service** — everything runs on your machine. Your code and API keys never leave your environment
+- **Not a LangChain competitor** — LangChain is a composable framework for building chains. FredAI is a ready-to-run platform with opinionated defaults. You configure it, not compose it
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for the full security model, tool permissions, and vulnerability reporting.
 
 ## License
 

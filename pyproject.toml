@@ -76,16 +76,15 @@ dev = [
 ]
 
 [project.scripts]
-ai-dev-team = "ai_dev_team.cli:main"
-ai-team = "ai_dev_team.cli:main"
-ai-chat = "ai_dev_team.chat_ui:main"
-ai-studio = "ai_dev_team.studio_ui:main"
-ai-launcher = "ai_dev_team.launcher:main"
+fred = "ai_dev_team.cli:main"
+fred-chat = "ai_dev_team.chat_ui:main"
+fred-studio = "ai_dev_team.studio_ui:main"
+fred-launch = "ai_dev_team.launcher:main"
 
 [project.urls]
-Homepage = "https://github.com/fredtaylor/ai-team-platform"
-Documentation = "https://github.com/fredtaylor/ai-team-platform#readme"
-Repository = "https://github.com/fredtaylor/ai-team-platform"
+Homepage = "https://github.com/TheGringo-ai/FredAI"
+Documentation = "https://github.com/TheGringo-ai/FredAI#readme"
+Repository = "https://github.com/TheGringo-ai/FredAI"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -56,27 +56,29 @@ class WeightedConsensus:
 
     # Agent expertise by task type - comprehensive mapping
     AGENT_EXPERTISE: Dict[str, Dict[str, float]] = {
-        # Claude agents
-        "claude-analyst": {
-            "analysis": 1.0, "architecture": 0.95, "research": 0.9,
-            "coding": 0.7, "debugging": 0.75, "security": 0.85,
-            "general": 0.85, "creative": 0.7, "documentation": 0.85,
-        },
-        "claude": {
-            "analysis": 1.0, "architecture": 0.95, "research": 0.9,
-            "coding": 0.7, "debugging": 0.75, "security": 0.85,
-            "general": 0.85, "creative": 0.7, "documentation": 0.85,
-        },
-        # ChatGPT agents
+        # ChatGPT agents (Lead Developer & Architect)
         "chatgpt-coder": {
             "coding": 1.0, "debugging": 0.95, "testing": 0.9,
-            "analysis": 0.7, "documentation": 0.8, "optimization": 0.85,
-            "general": 0.8, "architecture": 0.75, "security": 0.7,
+            "analysis": 0.95, "documentation": 0.85, "optimization": 0.9,
+            "general": 0.9, "architecture": 0.9, "security": 0.8,
+            "research": 0.85,
         },
         "chatgpt": {
             "coding": 1.0, "debugging": 0.95, "testing": 0.9,
-            "analysis": 0.7, "documentation": 0.8, "optimization": 0.85,
-            "general": 0.8, "architecture": 0.75, "security": 0.7,
+            "analysis": 0.95, "documentation": 0.85, "optimization": 0.9,
+            "general": 0.9, "architecture": 0.9, "security": 0.8,
+            "research": 0.85,
+        },
+        # Claude agents (optional - Analyst & Researcher)
+        "claude-analyst": {
+            "analysis": 0.85, "architecture": 0.8, "research": 0.85,
+            "coding": 0.7, "debugging": 0.75, "security": 0.8,
+            "general": 0.75, "creative": 0.7, "documentation": 0.8,
+        },
+        "claude": {
+            "analysis": 0.85, "architecture": 0.8, "research": 0.85,
+            "coding": 0.7, "debugging": 0.75, "security": 0.8,
+            "general": 0.75, "creative": 0.7, "documentation": 0.8,
         },
         # Gemini agents
         "gemini-creative": {

@@ -46,6 +46,12 @@ Thumbs.db
 # Logs
 *.log
 
+# Logs
+logs/
+
+# Symlinks to other repos
+projects/
+
 # Separate products (not part of FredAI framework)
 ChatterFixApp/
 dashboard/

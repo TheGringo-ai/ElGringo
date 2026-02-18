@@ -5,27 +5,12 @@ AI Development Team - Multi-Model AI Orchestration Platform
 A standalone, reusable AI development team that orchestrates multiple AI models
 (Claude, ChatGPT, Gemini, Grok) for collaborative software development.
 
-Features:
-- Multi-model orchestration with intelligent task routing
-- Never-repeat-mistakes memory system
-- Advanced collaboration patterns (consensus, devil's advocate, peer review)
-- Performance optimization with caching
-- Cross-project learning and knowledge sharing
-- Self-sustaining monitoring with Apple Intelligence integration
-- Auto-recovery and self-healing capabilities
-
 Usage:
     from ai_dev_team import AIDevTeam
 
     team = AIDevTeam()
     result = await team.collaborate("Build a REST API for user authentication")
     print(result.final_answer)
-
-Control Center:
-    from ai_dev_team.monitor import ControlCenter
-
-    center = ControlCenter(team=team)
-    await center.start()  # Starts monitoring, health checks, auto-recovery
 """
 
 __version__ = "1.0.0"
@@ -40,25 +25,6 @@ from .agents import (
     GrokAgent,
     AgentConfig,
     ModelType,
-)
-from .memory import MemorySystem, MistakePrevention, LearningEngine
-from .collaboration import CollaborationEngine, CollaborationMode, WeightedConsensus, StreamingCollaborationEngine
-from .routing import TaskRouter, TaskType, TaskClassification, CostOptimizer, ModelTier
-from .integrations import ChatterFixConnector, check_against_learnings, find_solution, GitHubIntegration
-from .parallel_coding import ParallelCodingEngine, CodeTask, CodeFix, ParallelCodingResult
-from .shared_config import SharedConfig, AIProviderConfig, ProviderType, shared_config, get_shared_config
-from .fredfix import FredFix, FixResult, create_fredfix
-from .app_generator import AppGenerator, create_app_generator, generate_app
-from .tools import (
-    create_all_tools,
-    GitTools, DockerTools, DatabaseTools, PackageTools, DeployTools,
-    # Infrastructure tools
-    KubernetesTools, TerraformTools, GCPTools,
-    create_kubernetes_tools, create_terraform_tools, create_gcp_tools,
-    # Frontend tools
-    FrontendTools, create_frontend_tools,
-)
-from .agents import (
     # Specialized agents
     SecurityAuditor,
     CodeReviewer,
@@ -74,6 +40,33 @@ from .agents import (
     create_code_reviewer,
     create_solution_architect,
     create_frontend_developer,
+)
+from .memory import MemorySystem, MistakePrevention, LearningEngine
+from .collaboration import CollaborationEngine, CollaborationMode, WeightedConsensus
+from .routing import (
+    TaskRouter,
+    TaskType,
+    TaskClassification,
+    CostOptimizer,
+    ModelTier,
+    RoutingDecision,
+    AgentScore,
+    DecisionLogger,
+    get_decision_logger,
+)
+from .integrations import ChatterFixConnector, check_against_learnings, find_solution, GitHubIntegration
+from .parallel_coding import ParallelCodingEngine, CodeTask, CodeFix, ParallelCodingResult
+from .shared_config import SharedConfig, AIProviderConfig, ProviderType, shared_config, get_shared_config
+from .fredfix import FredFix, FixResult, create_fredfix
+from .app_generator import AppGenerator, create_app_generator, generate_app
+from .tools import (
+    create_all_tools,
+    GitTools, DockerTools, DatabaseTools, PackageTools, DeployTools,
+    # Infrastructure tools
+    KubernetesTools, TerraformTools, GCPTools,
+    create_kubernetes_tools, create_terraform_tools, create_gcp_tools,
+    # Frontend tools
+    FrontendTools, create_frontend_tools,
 )
 from .security import (
     SecurityValidator,
@@ -102,9 +95,8 @@ from .workflows import (
     run_pre_commit,
 )
 
-# v2 Modules - Preferences, Routing Decisions, Bootstrap
+# v2 Modules - Preferences, Bootstrap
 from .preferences import DevConstraints, PreferenceStore, get_preference_store
-from .routing import RoutingDecision, AgentScore, DecisionLogger, get_decision_logger
 from .bootstrap import AppSpec, AppBootstrapper, BootstrapResult, bootstrap_app
 
 # Advanced Agent Framework
@@ -161,13 +153,16 @@ __all__ = [
     "CollaborationEngine",
     "CollaborationMode",
     "WeightedConsensus",
-    "StreamingCollaborationEngine",
     # Routing & Cost Optimization
     "TaskRouter",
     "TaskType",
     "TaskClassification",
     "CostOptimizer",
     "ModelTier",
+    "RoutingDecision",
+    "AgentScore",
+    "DecisionLogger",
+    "get_decision_logger",
     # Integrations
     "ChatterFixConnector",
     "check_against_learnings",
@@ -251,11 +246,6 @@ __all__ = [
     "DevConstraints",
     "PreferenceStore",
     "get_preference_store",
-    # v2 - Routing Decisions
-    "RoutingDecision",
-    "AgentScore",
-    "DecisionLogger",
-    "get_decision_logger",
     # v2 - Bootstrap
     "AppSpec",
     "AppBootstrapper",

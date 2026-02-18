@@ -282,7 +282,7 @@ class SharedConfig:
         task_lower = task.lower()
 
         if "complex" in task_lower or "architecture" in task_lower:
-            for pid in ["gpt-4", "claude-3.5", "claude-3-opus"]:
+            for pid in ["gpt-4", "grok", "gemini-pro"]:
                 provider = self.get_provider(pid)
                 if provider in available:
                     return provider
@@ -300,7 +300,7 @@ class SharedConfig:
                     return provider
 
         if "code" in task_lower or "coding" in task_lower:
-            for pid in ["claude-3.5", "gpt-4", "ollama-qwen"]:
+            for pid in ["gpt-4", "grok", "ollama-qwen"]:
                 provider = self.get_provider(pid)
                 if provider in available:
                     return provider

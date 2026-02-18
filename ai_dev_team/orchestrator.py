@@ -39,28 +39,17 @@ from .memory import MemorySystem, LearningEngine, MistakePrevention
 from .collaboration import WeightedConsensus
 from .knowledge import TeachingSystem, get_domain_context, AutoLearner, get_coding_hub, get_rag
 from .tools import FileSystemTools, BrowserTools, ShellTools, PermissionManager
-from .security import validate_tool_call, get_security_validator, ThreatLevel
 from .validation import get_validator
-from .framework import (
-    ReActAgent,
-    ReActTrace,
-    TaskPlanner,
-    ExecutionPlan,
-    ChainOfThought,
-    ReasoningChain,
-    ContextManager,
-    get_tool_registry,
-)
 from .autonomous import (
     SelfCorrector,
-    CorrectionResult,
     TaskDecomposer,
-    ExecutionGraph,
-    GraphExecutor,
     SessionLearner,
     TaskOutcome,
     TeamAdapter,
 )
+from .tools.tool_manager import ToolManager
+from .autonomous.executor import AutonomousExecutor
+from .framework.facade import FrameworkFacade
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +182,11 @@ class AIDevTeam:
         self.enable_task_decomposition = True
         self.enable_session_learning = True
 
+        # Extracted managers (delegate to reduce orchestrator size)
+        self.tool_manager = ToolManager(self)
+        self.autonomous_executor = AutonomousExecutor(self)
+        self.framework_facade = FrameworkFacade(self)
+
         if auto_setup:
             self.setup_agents()
 
@@ -210,15 +204,15 @@ class AIDevTeam:
             return
 
         # Cloud agents (requires API keys)
-        # Claude - Lead Analyst
-        if os.getenv("ANTHROPIC_API_KEY"):
-            self.register_agent(ClaudeAgent())
-            logger.info("Registered Claude agent (Lead Analyst)")
-
-        # ChatGPT - Senior Developer
+        # ChatGPT - Lead Developer & Architect
         if os.getenv("OPENAI_API_KEY"):
             self.register_agent(ChatGPTAgent())
-            logger.info("Registered ChatGPT agent (Senior Developer)")
+            logger.info("Registered ChatGPT agent (Lead Developer & Architect)")
+
+        # Claude - Analyst (optional, requires ANTHROPIC_API_KEY)
+        if os.getenv("ANTHROPIC_API_KEY"):
+            self.register_agent(ClaudeAgent())
+            logger.info("Registered Claude agent (Analyst)")
 
         # Gemini - Creative Director
         if os.getenv("GEMINI_API_KEY"):
@@ -1522,7 +1516,7 @@ Provide:
         return await self.collaborate(prompt, mode="consensus", max_iterations=2)
 
     # ==========================
-    # Autonomous AI Capabilities
+    # Autonomous AI Capabilities (delegated to AutonomousExecutor)
     # ==========================
 
     async def _decompose_analyze(self, prompt: str) -> str:
@@ -1533,566 +1527,53 @@ Provide:
             return response.content
         return ""
 
-    async def auto_collaborate(
-        self,
-        goal: str,
-        context: Dict[str, Any] = None,
-        enable_correction: bool = True,
-        enable_decomposition: bool = True,
-        on_progress: callable = None
-    ) -> Dict[str, Any]:
-        """
-        Fully autonomous collaboration with self-correction and task decomposition.
+    async def auto_collaborate(self, goal, context=None, enable_correction=True, enable_decomposition=True, on_progress=None):
+        """Fully autonomous collaboration. Delegates to AutonomousExecutor."""
+        return await self.autonomous_executor.auto_collaborate(goal, context, enable_correction, enable_decomposition, on_progress)
 
-        This is the main entry point for autonomous coding assistance.
+    async def build(self, description, context=None, on_progress=None):
+        """High-level autonomous build command. Delegates to AutonomousExecutor."""
+        return await self.autonomous_executor.build(description, context, on_progress)
 
-        Args:
-            goal: High-level goal to accomplish
-            context: Additional context (code, project info, etc.)
-            enable_correction: Auto-correct failed responses
-            enable_decomposition: Break complex goals into subtasks
-            on_progress: Callback for progress updates
-
-        Returns:
-            Dict with results, including all subtask outputs
-        """
-        start_time = time.time()
-        context = context or {}
-
-        # Register agents with session learner
-        for agent_id in self.available_agents:
-            self._session_learner.register_agent(agent_id)
-
-        # Check if task is complex enough to decompose
-        is_complex = len(goal.split()) > 20 or any(
-            kw in goal.lower() for kw in ['build', 'create', 'implement', 'develop', 'full']
-        )
-
-        if enable_decomposition and is_complex:
-            # Decompose and execute
-            logger.info(f"Decomposing complex goal: {goal[:50]}...")
-            result = await self._execute_with_decomposition(goal, context, on_progress)
-        else:
-            # Direct execution with correction
-            result = await self._execute_with_correction(
-                goal, context, enable_correction
-            )
-
-        # Update session learner
-        outcome = TaskOutcome(
-            task_id=str(uuid.uuid4()),
-            task_type=self._task_router.classify(goal).primary_type.value,
-            agent_id=result.get('agent', 'unknown'),
-            prompt=goal,
-            response=result.get('response', ''),
-            success=result.get('success', False),
-            confidence=result.get('confidence', 0.5),
-            execution_time=time.time() - start_time,
-            corrections_needed=result.get('corrections', 0)
-        )
-        self._session_learner.record_outcome(outcome)
-        # Auto-save learning data after each outcome
-        self._session_learner.save()
-
-        return {
-            **result,
-            'total_time': time.time() - start_time,
-            'session_stats': self._session_learner.get_session_stats()
-        }
-
-    async def _execute_with_decomposition(
-        self,
-        goal: str,
-        context: Dict[str, Any],
-        on_progress: callable = None
-    ) -> Dict[str, Any]:
-        """Execute a complex goal with task decomposition."""
-        # Decompose the goal
-        graph = await self._task_decomposer.decompose(goal, context, use_ai=True)
-
-        # Create executor
-        async def execute_subtask(prompt: str, **kwargs) -> str:
-            result = await self._execute_with_correction(prompt, context, True)
-            return result.get('response', '')
-
-        executor = GraphExecutor(
-            execute_fn=execute_subtask,
-            max_parallel=3,
-            on_progress=on_progress
-        )
-
-        # Execute all subtasks
-        completed_graph = await executor.execute(graph, context)
-
-        return {
-            'success': completed_graph.is_complete(),
-            'response': completed_graph.final_result,
-            'subtasks': {
-                tid: {
-                    'title': t.title,
-                    'status': t.status.value,
-                    'result': t.result[:500] if t.result else None
-                }
-                for tid, t in completed_graph.subtasks.items()
-            },
-            'progress': completed_graph.get_progress(),
-            'corrections': 0,
-            'agent': 'team'
-        }
-
-    async def _execute_with_correction(
-        self,
-        prompt: str,
-        context: Dict[str, Any],
-        enable_correction: bool = True
-    ) -> Dict[str, Any]:
-        """Execute a task with self-correction if needed."""
-        # Get best agent from session learner
-        task_type = self._task_router.classify(prompt).primary_type.value
-        best_agent_id = self._session_learner.get_best_agent(task_type)
-
-        if not best_agent_id:
-            best_agent_id = self.available_agents[0] if self.available_agents else None
-
-        if not best_agent_id:
-            return {
-                'success': False,
-                'response': 'No agents available',
-                'agent': None,
-                'confidence': 0.0,
-                'corrections': 0
-            }
-
-        agent = self.get_agent(best_agent_id)
-        if not agent:
-            # Fallback to collaborate
-            result = await self.collaborate(prompt)
-            return {
-                'success': True,
-                'response': result.final_answer,
-                'agent': 'team',
-                'confidence': 0.7,
-                'corrections': 0
-            }
-
-        # Execute
-        response = await agent.generate_response(prompt)
-        original_response = response.content
-
-        if not enable_correction or not self.enable_self_correction:
-            return {
-                'success': True,
-                'response': original_response,
-                'agent': best_agent_id,
-                'confidence': 0.7,
-                'corrections': 0
-            }
-
-        # Self-correction
-        async def retry_execute(new_prompt: str, **kwargs) -> str:
-            agent_override = kwargs.get('agent_override')
-            mode = kwargs.get('mode')
-
-            if mode == 'consensus':
-                result = await self.collaborate(new_prompt, mode='consensus')
-                return result.final_answer
-            elif agent_override:
-                alt_agent = self.get_agent(agent_override)
-                if alt_agent:
-                    resp = await alt_agent.generate_response(new_prompt)
-                    return resp.content
-            return (await agent.generate_response(new_prompt)).content
-
-        correction_result = await self._self_corrector.correct(
-            original_prompt=prompt,
-            original_response=original_response,
-            execute_fn=retry_execute,
-            task_type=task_type,
-            available_agents=self.available_agents,
-            context={'current_agent': best_agent_id, 'task_type': task_type}
-        )
-
-        return {
-            'success': correction_result.success,
-            'response': correction_result.corrected_response or original_response,
-            'agent': best_agent_id,
-            'confidence': correction_result.confidence,
-            'corrections': correction_result.attempts,
-            'strategy_used': correction_result.strategy_used.value if correction_result.strategy_used else None
-        }
-
-    async def build(
-        self,
-        description: str,
-        context: Dict[str, Any] = None,
-        on_progress: callable = None
-    ) -> Dict[str, Any]:
-        """
-        High-level autonomous build command.
-
-        Example:
-            result = await team.build("Create a FastAPI REST API for user management")
-
-        Args:
-            description: What to build
-            context: Additional context (existing code, requirements, etc.)
-            on_progress: Progress callback
-
-        Returns:
-            Dict with complete build output
-        """
-        return await self.auto_collaborate(
-            goal=description,
-            context=context,
-            enable_correction=True,
-            enable_decomposition=True,
-            on_progress=on_progress
-        )
-
-    def get_autonomous_stats(self) -> Dict[str, Any]:
+    def get_autonomous_stats(self):
         """Get statistics on autonomous features."""
-        return {
-            'self_correction': self._self_corrector.get_statistics(),
-            'session_learning': self._session_learner.get_session_stats(),
-            'team_adaptation': self._team_adapter.get_adaptation_stats(),
-            'recommendations': self._session_learner.get_recommendations()
-        }
+        return self.autonomous_executor.get_autonomous_stats()
 
-    def get_best_agent_for(self, task_type: str) -> Optional[str]:
+    def get_best_agent_for(self, task_type):
         """Get the best agent for a specific task type based on session learning."""
-        return self._session_learner.get_best_agent(task_type)
+        return self.autonomous_executor.get_best_agent_for(task_type)
 
     # =================
-    # Tool Access Methods
+    # Tool Access Methods (delegated to ToolManager)
     # =================
 
-    def get_tools(self) -> Dict[str, Any]:
-        """Get all available tools"""
-        return self._tools
+    def get_tools(self):
+        """Get all available tools."""
+        return self.tool_manager.get_tools()
 
-    def get_tool_capabilities(self) -> Dict[str, List[Dict[str, str]]]:
-        """
-        Get capabilities of all registered tools.
+    def get_tool_capabilities(self):
+        """Get capabilities of all registered tools."""
+        return self.tool_manager.get_tool_capabilities()
 
-        Returns:
-            Dict mapping tool names to their operations
-        """
-        capabilities = {}
-        for name, tool in self._tools.items():
-            capabilities[name] = tool.get_capabilities()
-        return capabilities
+    async def execute_tool(self, tool_name, operation, **kwargs):
+        """Execute a tool operation."""
+        return await self.tool_manager.execute_tool(tool_name, operation, **kwargs)
 
-    async def execute_tool(
-        self,
-        tool_name: str,
-        operation: str,
-        **kwargs
-    ) -> Dict[str, Any]:
-        """
-        Execute a tool operation.
+    def grant_tool_permission(self, tool_name, operation, level="session"):
+        """Grant permission for a tool operation."""
+        self.tool_manager.grant_tool_permission(tool_name, operation, level)
 
-        Args:
-            tool_name: Name of tool (filesystem, browser, shell)
-            operation: Operation to perform
-            **kwargs: Operation parameters
+    def revoke_tool_permission(self, tool_name, operation):
+        """Revoke permission for a tool operation."""
+        self.tool_manager.revoke_tool_permission(tool_name, operation)
 
-        Returns:
-            Dict with success, output, error keys
-        """
-        # Security validation before execution
-        security_result = validate_tool_call({
-            "tool": tool_name,
-            "operation": operation,
-            "params": kwargs
-        })
+    def list_tool_permissions(self):
+        """List all granted tool permissions."""
+        return self.tool_manager.list_tool_permissions()
 
-        if not security_result.is_valid:
-            logger.warning(
-                f"SECURITY BLOCKED: {tool_name}.{operation} - "
-                f"Threat: {security_result.threat_level.name}, Issues: {security_result.issues}"
-            )
-            return {
-                "success": False,
-                "output": None,
-                "error": f"Security validation failed: {'; '.join(security_result.issues)}",
-                "threat_level": security_result.threat_level.name,
-            }
-
-        if tool_name not in self._tools:
-            return {
-                "success": False,
-                "output": None,
-                "error": f"Unknown tool: {tool_name}. Available: {list(self._tools.keys())}"
-            }
-
-        tool = self._tools[tool_name]
-        result = await tool.execute(operation, **kwargs)
-
-        return {
-            "success": result.success,
-            "output": result.output,
-            "error": result.error,
-            "metadata": result.metadata,
-            "execution_time": result.execution_time,
-        }
-
-    def grant_tool_permission(
-        self,
-        tool_name: str,
-        operation: str,
-        level: str = "session"
-    ):
-        """
-        Grant permission for a tool operation.
-
-        Args:
-            tool_name: Tool name
-            operation: Operation to grant
-            level: "session" (temporary) or "always" (persistent)
-        """
-        from .tools.base import PermissionLevel
-
-        perm_level = PermissionLevel.SESSION if level == "session" else PermissionLevel.ALWAYS
-        self._permission_manager.grant_permission(tool_name, operation, perm_level)
-        logger.info(f"Granted {level} permission for {tool_name}.{operation}")
-
-    def revoke_tool_permission(self, tool_name: str, operation: str):
-        """Revoke permission for a tool operation"""
-        self._permission_manager.revoke_permission(tool_name, operation)
-        logger.info(f"Revoked permission for {tool_name}.{operation}")
-
-    def list_tool_permissions(self) -> List[Dict[str, Any]]:
-        """List all granted tool permissions"""
-        permissions = self._permission_manager.get_all_permissions()
-        return [
-            {
-                "tool": p.tool_name,
-                "operation": p.operation,
-                "level": p.level.name,
-                "granted_at": p.granted_at,
-            }
-            for p in permissions
-        ]
-
-    # =================
-    # Agentic Tool Execution
-    # =================
-
-    async def agentic_task(
-        self,
-        task: str,
-        allowed_tools: Optional[List[str]] = None,
-        max_tool_calls: int = 10,
-        agent_name: Optional[str] = None,
-    ) -> CollaborationResult:
-        """
-        Execute a task where the AI agent can autonomously use tools.
-
-        The agent will analyze the task, decide which tools to use,
-        execute them, and synthesize results.
-
-        Args:
-            task: Task description
-            allowed_tools: List of allowed tool names (default: all)
-            max_tool_calls: Maximum tool calls allowed
-            agent_name: Specific agent to use (auto-select if None)
-
-        Returns:
-            CollaborationResult with task outcome
-        """
-        start_time = time.time()
-        task_id = str(uuid.uuid4())[:8]
-        collaboration_log = []
-
-        # Select agent
-        if agent_name and agent_name in self.agents:
-            agent = self.agents[agent_name]
-        else:
-            # Use task router to select best agent
-            classification = self._task_router.classify(task, "")
-            agent_name = classification.recommended_agents[0] if classification.recommended_agents else None
-            agent = self.agents.get(agent_name) if agent_name else list(self.agents.values())[0]
-
-        collaboration_log.append(f"Selected agent: {agent.name}")
-
-        # Build tool context
-        available_tools = allowed_tools or list(self._tools.keys())
-        tool_info = self._build_tool_context(available_tools)
-
-        # Initial prompt with tool capabilities
-        agentic_prompt = f"""You are an AI agent with DIRECT ACCESS to real tools. You MUST use these tools to complete the task.
-DO NOT write code to solve the problem - USE THE TOOLS DIRECTLY.
-
-AVAILABLE TOOLS (you MUST use these):
-{tool_info}
-
-TASK: {task}
-
-IMPORTANT: To use a tool, output EXACTLY this format (one per line):
-TOOL_CALL: filesystem.list(path=".", pattern="*.py")
-TOOL_CALL: filesystem.read(path="./file.py")
-TOOL_CALL: shell.run_safe(command="pwd")
-
-Start by making tool calls to gather information. Output your tool calls now:"""
-
-        responses = []
-        tool_calls_made = 0
-        tool_results = []
-
-        # Initial agent response
-        response = await agent.generate_response(agentic_prompt)
-        responses.append(response)
-        collaboration_log.append(f"Agent initial response received")
-
-        # Parse and execute tool calls
-        while tool_calls_made < max_tool_calls:
-            tool_calls = self._parse_tool_calls(response.content)
-
-            if not tool_calls:
-                break  # No more tool calls
-
-            for call in tool_calls:
-                if tool_calls_made >= max_tool_calls:
-                    break
-
-                tool_name = call.get("tool")
-                operation = call.get("operation")
-                params = call.get("params", {})
-
-                if tool_name not in available_tools:
-                    tool_results.append({
-                        "call": call,
-                        "result": {"success": False, "error": f"Tool {tool_name} not allowed"}
-                    })
-                    continue
-
-                collaboration_log.append(f"Executing: {tool_name}.{operation}")
-                result = await self.execute_tool(tool_name, operation, **params)
-                tool_results.append({"call": call, "result": result})
-                tool_calls_made += 1
-
-            # If we made tool calls, send results back to agent
-            if tool_results:
-                results_str = self._format_tool_results(tool_results[-len(tool_calls):])
-                followup_prompt = f"""Tool execution results:
-{results_str}
-
-Continue with the task. Make more tool calls if needed, or provide your final answer."""
-
-                response = await agent.generate_response(followup_prompt, context=response.content)
-                responses.append(response)
-
-        # Get final answer
-        final_answer = response.content
-
-        # Record in auto-learner
-        if self._auto_learner:
-            await self._auto_learner.capture_interaction(
-                user_prompt=task,
-                ai_responses=[{"agent": agent.name, "content": final_answer}],
-                outcome="completed",
-                task_type="agentic_task",
-                metadata={
-                    "tools_used": [tr["call"]["tool"] for tr in tool_results],
-                    "tool_calls_count": tool_calls_made,
-                }
-            )
-
-        return CollaborationResult(
-            task_id=task_id,
-            success=True,
-            final_answer=final_answer,
-            agent_responses=responses,
-            collaboration_log=collaboration_log,
-            total_time=time.time() - start_time,
-            confidence_score=response.confidence if hasattr(response, 'confidence') else 0.8,
-            participating_agents=[agent.name],
-            metadata={
-                "tool_calls": tool_calls_made,
-                "tool_results": tool_results,
-                "mode": "agentic",
-            }
-        )
-
-    def _build_tool_context(self, allowed_tools: List[str]) -> str:
-        """Build tool context string for agent prompt"""
-        lines = []
-        for tool_name in allowed_tools:
-            if tool_name in self._tools:
-                tool = self._tools[tool_name]
-                lines.append(f"\n{tool_name.upper()}:")
-                for cap in tool.get_capabilities():
-                    lines.append(f"  - {cap['operation']}: {cap['description']}")
-        return "\n".join(lines)
-
-    def _parse_tool_calls(self, content: str) -> List[Dict[str, Any]]:
-        """Parse tool calls from agent response with security validation"""
-        import re
-        calls = []
-        security_validator = get_security_validator()
-
-        # Pattern: TOOL_CALL: tool.operation(param=value, ...)
-        pattern = r'TOOL_CALL:\s*(\w+)\.(\w+)\(([^)]*)\)'
-        matches = re.findall(pattern, content)
-
-        for tool, operation, params_str in matches:
-            params = {}
-            if params_str.strip():
-                # Parse params like: param1=value1, param2="value2"
-                param_pattern = r'(\w+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^,\s]+))'
-                for match in re.findall(param_pattern, params_str):
-                    key = match[0]
-                    value = match[1] or match[2] or match[3]
-                    # Try to convert to appropriate type
-                    if value.lower() == 'true':
-                        value = True
-                    elif value.lower() == 'false':
-                        value = False
-                    elif value.isdigit():
-                        value = int(value)
-                    params[key] = value
-
-            # Build the call dict
-            call = {
-                "tool": tool,
-                "operation": operation,
-                "params": params,
-            }
-
-            # Security validation at parse time
-            validation = security_validator.validate_tool_call(call)
-            if validation.is_valid:
-                calls.append(call)
-            else:
-                # Log blocked calls but don't include them
-                logger.warning(
-                    f"SECURITY: Blocked parsed tool call {tool}.{operation} - "
-                    f"Threat: {validation.threat_level.name}, Issues: {validation.issues}"
-                )
-
-        return calls
-
-    def _format_tool_results(self, tool_results: List[Dict]) -> str:
-        """Format tool results for agent"""
-        lines = []
-        for tr in tool_results:
-            call = tr["call"]
-            result = tr["result"]
-            lines.append(f"\n{call['tool']}.{call['operation']}:")
-            if result["success"]:
-                output = result.get("output", "")
-                if isinstance(output, dict):
-                    import json
-                    output = json.dumps(output, indent=2)[:1000]
-                elif isinstance(output, list):
-                    import json
-                    output = json.dumps(output[:10], indent=2)[:1000]
-                else:
-                    output = str(output)[:1000]
-                lines.append(f"  SUCCESS: {output}")
-            else:
-                lines.append(f"  ERROR: {result.get('error', 'Unknown error')}")
-        return "\n".join(lines)
+    async def agentic_task(self, task, allowed_tools=None, max_tool_calls=10, agent_name=None):
+        """Execute a task where the AI agent can autonomously use tools."""
+        return await self.tool_manager.agentic_task(task, allowed_tools, max_tool_calls, agent_name)
 
     async def browse_and_analyze(
         self,
@@ -2190,260 +1671,32 @@ Provide a detailed analysis."""
         return await self.collaborate(prompt, mode="parallel")
 
     # =================
-    # Advanced Agent Framework
+    # Advanced Agent Framework (delegated to FrameworkFacade)
     # =================
 
-    def _get_best_agent(self) -> Optional[AIAgent]:
-        """Get the best available agent for framework tasks."""
-        if not self.agents:
-            return None
+    async def react(self, task, max_steps=10, verbose=False):
+        """Execute a task using ReAct (Reasoning + Acting) pattern."""
+        return await self.framework_facade.react(task, max_steps, verbose)
 
-        # Prefer the best available reasoning agent
-        for pattern in ["claude", "chatgpt", "gpt", "grok-reasoner", "grok", "gemini"]:
-            for name, agent in self.agents.items():
-                if pattern in name.lower():
-                    return agent
+    async def plan_and_execute(self, goal, context="", available_tools=None):
+        """Create and execute a multi-step plan for achieving a goal."""
+        return await self.framework_facade.plan_and_execute(goal, context, available_tools)
 
-        # Then any cloud agent
-        for name, agent in self.agents.items():
-            if "local" not in name.lower():
-                return agent
+    async def reason(self, problem, method="zero_shot", verify=False):
+        """Apply chain-of-thought reasoning to a problem."""
+        return await self.framework_facade.reason(problem, method, verify)
 
-        # Finally, any agent
-        return list(self.agents.values())[0]
+    def get_context_manager(self, max_tokens=8000):
+        """Get a context manager for managing conversation history."""
+        return self.framework_facade.get_context_manager(max_tokens)
 
-    async def react(
-        self,
-        task: str,
-        max_steps: int = 10,
-        verbose: bool = False,
-    ) -> ReActTrace:
-        """
-        Execute a task using ReAct (Reasoning + Acting) pattern.
+    def get_framework_tools(self):
+        """Get list of available framework tools."""
+        return self.framework_facade.get_framework_tools()
 
-        ReAct interleaves reasoning with tool use for complex problem solving.
-        The agent will think step-by-step, decide on actions, observe results,
-        and continue until the task is complete.
-
-        Args:
-            task: The task to solve
-            max_steps: Maximum reasoning/action steps
-            verbose: Print steps as they execute
-
-        Returns:
-            ReActTrace with complete execution history
-
-        Example:
-            trace = await team.react("Find all TODO comments in Python files")
-            print(trace.final_answer)
-        """
-        # Create LLM call function using best available agent
-        agent = self._get_best_agent()
-
-        if not agent:
-            return ReActTrace(
-                task=task,
-                success=False,
-                final_answer="No agents available for ReAct execution",
-            )
-
-        async def llm_call(prompt: str, system: str) -> str:
-            context = system if system else ""
-            response = await agent.generate_response(prompt, context)
-            return response.content if response.success else f"Error: {response.error}"
-
-        # Create and run ReAct agent
-        react_agent = ReActAgent(
-            llm_call=llm_call,
-            tools=get_tool_registry(),
-            max_steps=max_steps,
-            verbose=verbose,
-        )
-
-        trace = await react_agent.run(task)
-
-        # Auto-learn from ReAct execution
-        if self._auto_learner and trace.success:
-            # Ensure final_answer is a string for auto-learner
-            answer_str = trace.final_answer if isinstance(trace.final_answer, str) else str(trace.final_answer)
-            await self._auto_learner.capture_interaction(
-                user_prompt=task,
-                ai_responses=[{"agent": "react", "content": answer_str}],
-                outcome="success",
-                task_type="react",
-                metadata={
-                    "steps": len(trace.steps),
-                    "tools_used": trace.tools_used,
-                }
-            )
-
-        return trace
-
-    async def plan_and_execute(
-        self,
-        goal: str,
-        context: str = "",
-        available_tools: Optional[List[str]] = None,
-    ) -> ExecutionPlan:
-        """
-        Create and execute a multi-step plan for achieving a goal.
-
-        The planner will decompose the goal into steps, track dependencies,
-        and execute steps in parallel when possible.
-
-        Args:
-            goal: The goal to achieve
-            context: Additional context
-            available_tools: List of available tool names
-
-        Returns:
-            ExecutionPlan with results
-
-        Example:
-            plan = await team.plan_and_execute("Set up a new Python project with tests")
-            print(plan.to_markdown())
-        """
-        # Create LLM call function
-        agent = self._get_best_agent()
-
-        if not agent:
-            return ExecutionPlan(
-                id="error",
-                goal=goal,
-                steps=[],
-                metadata={"error": "No agents available"},
-            )
-
-        async def llm_call(prompt: str) -> str:
-            response = await agent.generate_response(prompt, context)
-            return response.content if response.success else ""
-
-        # Create planner
-        planner = TaskPlanner(llm_call=llm_call)
-
-        # Create plan
-        plan = await planner.create_plan(
-            goal=goal,
-            context=context,
-            available_tools=available_tools,
-        )
-
-        # Optimize plan for parallelization
-        plan = await planner.optimize_plan(plan)
-
-        # Execute plan with callbacks
-        def on_step_start(step):
-            logger.info(f"Starting step: {step.description}")
-
-        def on_step_complete(step):
-            logger.info(f"Completed step: {step.description}")
-
-        def on_step_failed(step, error):
-            logger.warning(f"Step failed: {step.description} - {error}")
-
-        executed_plan = await planner.execute_plan(
-            plan,
-            on_step_start=on_step_start,
-            on_step_complete=on_step_complete,
-            on_step_failed=on_step_failed,
-        )
-
-        return executed_plan
-
-    async def reason(
-        self,
-        problem: str,
-        method: str = "zero_shot",
-        verify: bool = False,
-    ) -> ReasoningChain:
-        """
-        Apply chain-of-thought reasoning to a problem.
-
-        Encourages step-by-step reasoning for more accurate answers.
-
-        Args:
-            problem: The problem to reason about
-            method: "zero_shot", "few_shot", "self_consistency", or "tree_of_thought"
-            verify: Whether to verify the reasoning chain
-
-        Returns:
-            ReasoningChain with steps and conclusion
-
-        Example:
-            chain = await team.reason("What is 17 * 23?")
-            print(chain.conclusion)
-        """
-        from .framework import ReasoningType
-
-        # Map method string to enum
-        method_map = {
-            "zero_shot": ReasoningType.ZERO_SHOT,
-            "few_shot": ReasoningType.FEW_SHOT,
-            "self_consistency": ReasoningType.SELF_CONSISTENCY,
-            "tree_of_thought": ReasoningType.TREE_OF_THOUGHT,
-        }
-        reasoning_type = method_map.get(method, ReasoningType.ZERO_SHOT)
-
-        # Create LLM call function
-        agent = self._get_best_agent()
-
-        if not agent:
-            return ReasoningChain(
-                problem=problem,
-                steps=[],
-                conclusion="No agents available for reasoning",
-                confidence=0.0,
-                reasoning_type=reasoning_type,
-            )
-
-        async def llm_call(prompt: str, system: str = None) -> str:
-            context = system if system else ""
-            response = await agent.generate_response(prompt, context)
-            return response.content if response.success else ""
-
-        # Create chain-of-thought reasoner
-        cot = ChainOfThought(
-            llm_call=llm_call,
-            default_type=reasoning_type,
-            verify_reasoning=verify,
-        )
-
-        return await cot.reason(problem, reasoning_type=reasoning_type)
-
-    def get_context_manager(self, max_tokens: int = 8000) -> ContextManager:
-        """
-        Get a context manager for managing conversation history.
-
-        Useful for long conversations that need to fit within token limits.
-
-        Args:
-            max_tokens: Maximum tokens for the context window
-
-        Returns:
-            ContextManager instance
-        """
-        return ContextManager(max_tokens=max_tokens)
-
-    def get_framework_tools(self) -> List[str]:
-        """
-        Get list of available framework tools.
-
-        Returns:
-            List of tool names registered in the framework
-        """
-        return get_tool_registry().list_tools()
-
-    def get_framework_tool_schemas(self, format: str = "openai") -> List[Dict[str, Any]]:
-        """
-        Get tool schemas for API integration.
-
-        Args:
-            format: "openai" or "anthropic"
-
-        Returns:
-            List of tool schemas in the specified format
-        """
-        return get_tool_registry().get_schemas(format=format)
+    def get_framework_tool_schemas(self, format="openai"):
+        """Get tool schemas for API integration."""
+        return self.framework_facade.get_framework_tool_schemas(format)
 
 
 # Convenience function for quick setup

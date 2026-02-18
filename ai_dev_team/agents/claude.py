@@ -23,7 +23,7 @@ class ClaudeAgent(AIAgent):
             config = AgentConfig(
                 name="claude-analyst",
                 model_type=ModelType.CLAUDE,
-                role="Lead Analyst & Architect",
+                role="Analyst & Researcher",
                 capabilities=["analysis", "reasoning", "planning", "architecture", "code-review"],
                 model_name=self.DEFAULT_MODEL,
             )
@@ -100,7 +100,7 @@ class ClaudeAgent(AIAgent):
                 agent_name=self.name,
                 model_type=self.config.model_type,
                 content=content,
-                confidence=0.9,
+                confidence=0.85,
                 response_time=response_time,
                 metadata={
                     "model": self.config.model_name,

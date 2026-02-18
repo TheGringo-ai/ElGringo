@@ -150,7 +150,7 @@ class TestWeightedConsensus:
     def test_expertise_weight_claude(self, consensus):
         """Claude should have high analysis expertise"""
         weight = consensus.get_expertise_weight("claude-analyst", "analysis")
-        assert weight >= 0.9
+        assert weight >= 0.8
 
     def test_expertise_weight_chatgpt(self, consensus):
         """ChatGPT should have high coding expertise"""
@@ -170,7 +170,7 @@ class TestWeightedConsensus:
     def test_expertise_weight_partial_match(self, consensus):
         """Partial name matches should work"""
         weight = consensus.get_expertise_weight("my-claude-agent", "analysis")
-        assert weight >= 0.9
+        assert weight >= 0.8
 
     def test_expertise_weight_unknown_agent(self, consensus):
         """Unknown agents should get default weight"""

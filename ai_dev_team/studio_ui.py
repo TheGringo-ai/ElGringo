@@ -932,7 +932,7 @@ def create_app_builder_ui(app_project_state, current_page_idx, home_dir):
     from ai_dev_team.app_builder import (
         AppProject, Page, Component, DataModel, DataField,
         create_default_project, COMPONENT_PALETTE, APP_TYPE_TEMPLATES,
-        COMPONENT_TEMPLATES, AppGenerator
+        COMPONENT_TEMPLATES, VisualAppBuilder
     )
     from ai_dev_team.app_builder.components import FULL_APP_TEMPLATES, COMPONENT_TEMPLATES, count_components
 
@@ -1287,7 +1287,7 @@ Export your complete application:
                 project.data_models.append(model)
 
             # Generate the app
-            generator = AppGenerator()
+            generator = VisualAppBuilder()
             result = generator.generate(project)
 
             if result["success"]:
@@ -1383,7 +1383,7 @@ Export your complete application:
                         project.add_page(page_row[0], page_row[1], page_row[2])
 
             # Generate
-            generator = AppGenerator()
+            generator = VisualAppBuilder()
             result = generator.generate(project)
 
             if result["success"]:

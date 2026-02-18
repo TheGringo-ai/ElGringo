@@ -35,7 +35,7 @@ from .components import (
 )
 
 from .generator import (
-    AppGenerator,
+    VisualAppBuilder,
     IntentDetector,
     SchemaGenerator,
     BackendGenerator,

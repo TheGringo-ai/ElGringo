@@ -180,7 +180,7 @@ class TestWeightedConsensus:
         wc = WeightedConsensus()
 
         # Claude should be high on analysis
-        assert wc.get_expertise_weight("claude-analyst", "analysis") >= 0.9
+        assert wc.get_expertise_weight("claude-analyst", "analysis") >= 0.8
 
         # ChatGPT should be high on coding
         assert wc.get_expertise_weight("chatgpt-coder", "coding") >= 0.9

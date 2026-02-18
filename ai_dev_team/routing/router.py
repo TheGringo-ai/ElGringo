@@ -144,17 +144,17 @@ class TaskRouter:
     def _build_agent_strengths(self) -> Dict[str, Dict]:
         """Build agent capability mappings"""
         return {
+            "chatgpt-coder": {
+                "model_type": ModelType.CHATGPT,
+                "strengths": [TaskType.CODING, TaskType.DEBUGGING, TaskType.TESTING, TaskType.ANALYSIS, TaskType.ARCHITECTURE],
+                "capabilities": ["coding", "debugging", "testing", "documentation", "analysis", "architecture"],
+                "performance_weight": 1.3,
+            },
             "claude-analyst": {
                 "model_type": ModelType.CLAUDE,
                 "strengths": [TaskType.ANALYSIS, TaskType.ARCHITECTURE, TaskType.RESEARCH],
                 "capabilities": ["analysis", "reasoning", "planning", "architecture"],
-                "performance_weight": 1.2,
-            },
-            "chatgpt-coder": {
-                "model_type": ModelType.CHATGPT,
-                "strengths": [TaskType.CODING, TaskType.DEBUGGING, TaskType.TESTING],
-                "capabilities": ["coding", "debugging", "testing", "documentation"],
-                "performance_weight": 1.1,
+                "performance_weight": 1.0,
             },
             "gemini-creative": {
                 "model_type": ModelType.GEMINI,

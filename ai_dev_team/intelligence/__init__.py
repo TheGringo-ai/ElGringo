@@ -4,16 +4,12 @@ AI Intelligence Module
 ML-powered code intelligence for smarter coding assistance.
 
 Components:
-- CodeEmbeddings: Semantic code search using embeddings
 - MLXCodeEmbeddings: Apple Silicon optimized embeddings
-- CodeRAG: Retrieval-augmented generation for code context
 - CodeAnalyzer: AST-based code understanding
 - MLXCodeGenerator: Local code generation on Apple Silicon
 - UniversalIngestor: Schema-agnostic data ingestion for any CSV
 """
 
-from .code_embeddings import CodeEmbeddings, get_code_embeddings
-from .code_rag import CodeRAG
 from .code_analyzer import CodeAnalyzer
 from .mlx_embeddings import (
     MLXCodeEmbeddings,
@@ -42,10 +38,6 @@ from .cmms_schemas import (
 )
 
 __all__ = [
-    # Standard (cross-platform)
-    "CodeEmbeddings",
-    "get_code_embeddings",
-    "CodeRAG",
     "CodeAnalyzer",
     # Apple Silicon optimized
     "MLXCodeEmbeddings",

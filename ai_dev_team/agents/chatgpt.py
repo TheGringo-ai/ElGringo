@@ -23,8 +23,8 @@ class ChatGPTAgent(AIAgent):
             config = AgentConfig(
                 name="chatgpt-coder",
                 model_type=ModelType.CHATGPT,
-                role="Senior Developer",
-                capabilities=["coding", "debugging", "testing", "optimization", "documentation"],
+                role="Lead Developer & Architect",
+                capabilities=["coding", "debugging", "testing", "optimization", "documentation", "analysis", "architecture"],
                 model_name=self.DEFAULT_MODEL,
             )
         super().__init__(config)
@@ -103,7 +103,7 @@ class ChatGPTAgent(AIAgent):
                 agent_name=self.name,
                 model_type=self.config.model_type,
                 content=content,
-                confidence=0.88,
+                confidence=0.92,
                 response_time=response_time,
                 metadata={
                     "model": self.config.model_name,

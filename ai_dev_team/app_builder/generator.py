@@ -1004,8 +1004,8 @@ const auth = {
 '''
 
 
-class AppGenerator:
-    """Main generator that orchestrates all generators"""
+class VisualAppBuilder:
+    """Main generator that orchestrates all generators for the visual app builder"""
 
     def __init__(self):
         self.intent_detector = IntentDetector()

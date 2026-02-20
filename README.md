@@ -106,7 +106,7 @@ FredAI:
 - GPU memory detection for optimal model selection
 - Core ML integration for on-device inference
 
-### MCP Server (16 tools)
+### MCP Server (22 tools)
 Works directly with Claude Code, Cursor, or any MCP-compatible client:
 
 | Tool | What it does |
@@ -123,10 +123,16 @@ Works directly with Claude Code, Cursor, or any MCP-compatible client:
 | `memory_search` | Search past interactions |
 | `memory_store_mistake` | Record a mistake pattern |
 | `memory_store_solution` | Record a solution pattern |
+| `memory_curate` | Deduplicate and clean memory entries |
 | `ai_team_teach` | Teach the team new knowledge |
 | `ai_team_insights` | Get learning analytics |
 | `ai_team_prompts` | Browse prompt templates |
-| `ai_team_status` | Team health and stats |
+| `ai_team_status` | Team health, stats, and live cost data |
+| `ai_team_costs` | Detailed cost reports (daily/weekly/monthly/per-model) |
+| `ai_team_benchmark` | Compare agents on standardized prompts, build routing table |
+| `ai_team_routing_table` | Show which agent is best for which task type |
+| `load_project_context` | Load project files and conventions for context-aware generation |
+| `verify_code` | Run syntax checks and build verification |
 
 ## Quick Start
 
@@ -223,7 +229,7 @@ FredAI/
 - **69,000+** lines of Python across **149** modules
 - **6** AI providers supported (ChatGPT, Gemini 2.5 Flash, Grok, Claude, Ollama, LlamaCloud)
 - **8** collaboration modes
-- **16** MCP tools (with auto memory injection)
+- **22** MCP tools (with auto memory injection, cost tracking, benchmarking)
 - **3** specialist agents
 - **219** tests passing
 - **19** domain knowledge bases

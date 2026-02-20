@@ -550,6 +550,50 @@ TOOLS = [
                 }
             }
         }
+    },
+    {
+        "name": "ai_team_benchmark",
+        "description": "Run benchmarks comparing all agents on standardized prompts. Scores each agent's output quality and builds a routing table of which agent is best at which task type.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_type": {
+                    "type": "string",
+                    "enum": ["coding", "debugging", "architecture", "security", "all"],
+                    "description": "Which task type to benchmark, or 'all' for comprehensive"
+                },
+                "agents": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Specific agent names to benchmark (default: all available)"
+                }
+            },
+            "required": ["task_type"]
+        }
+    },
+    {
+        "name": "ai_team_routing_table",
+        "description": "Show the current agent routing table — which agent is best for which task type, based on benchmarks and performance data.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "ai_team_costs",
+        "description": "Get detailed cost report: today's spend, weekly/monthly breakdown, per-model costs, and budget status.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "period": {
+                    "type": "string",
+                    "enum": ["today", "week", "month", "all"],
+                    "description": "Time period for the cost report",
+                    "default": "all"
+                }
+            }
+        }
     }
 ]
 
@@ -1069,6 +1113,66 @@ Think outside the box and explore unconventional approaches."""
                 "message": f"{'Would prune' if dry_run else 'Pruned'} {len(verbose_solutions)} verbose + {len(duplicates)} duplicate entries. "
                            f"Run with dry_run=false to apply.",
             }, indent=2)
+
+        elif name == "ai_team_benchmark":
+            team = get_team()
+            from ai_dev_team.routing.benchmark import BenchmarkRunner
+            runner = BenchmarkRunner(team)
+            task_type = arguments.get("task_type", "coding")
+            agent_names = arguments.get("agents")
+            suite = await runner.run_benchmark(task_type, agent_names=agent_names)
+            return json.dumps({
+                "success": True,
+                "suite_id": suite.suite_id,
+                "task_type": suite.task_type,
+                "total_results": len(suite.results),
+                "agent_rankings": suite.agent_rankings,
+                "best_agent": max(suite.agent_rankings, key=suite.agent_rankings.get) if suite.agent_rankings else None,
+                "details": [
+                    {
+                        "agent": r.agent_name,
+                        "prompt": r.prompt_id,
+                        "composite": r.composite_score,
+                        "keyword": r.keyword_score,
+                        "structure": r.structure_score,
+                        "eval": r.eval_score,
+                        "time": round(r.response_time, 2),
+                        "cost": r.cost,
+                    }
+                    for r in suite.results
+                ],
+            }, indent=2)
+
+        elif name == "ai_team_routing_table":
+            from ai_dev_team.routing.benchmark import BenchmarkRunner
+            team = get_team()
+            runner = BenchmarkRunner(team)
+            table = runner.get_routing_table()
+            if not table:
+                return json.dumps({
+                    "message": "No benchmark data yet. Run ai_team_benchmark first to build the routing table.",
+                    "routing_table": {}
+                }, indent=2)
+            return json.dumps({
+                "routing_table": table,
+                "summary": {
+                    task_type: data.get("best_agent", "unknown")
+                    for task_type, data in table.items()
+                },
+            }, indent=2)
+
+        elif name == "ai_team_costs":
+            from ai_dev_team.routing.cost_tracker import get_cost_tracker
+            tracker = get_cost_tracker()
+            period = arguments.get("period", "all")
+            if period == "today":
+                return json.dumps(tracker.get_daily_report(), indent=2)
+            elif period == "week":
+                return json.dumps(tracker.get_weekly_report(), indent=2)
+            elif period == "month":
+                return json.dumps(tracker.get_monthly_report(), indent=2)
+            else:
+                return json.dumps(tracker.get_statistics(), indent=2)
 
         else:
             return json.dumps({"error": f"Unknown tool: {name}"})

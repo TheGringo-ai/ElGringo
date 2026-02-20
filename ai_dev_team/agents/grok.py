@@ -122,15 +122,18 @@ class GrokAgent(AIAgent):
                         self.add_to_history("user", prompt)
                         self.add_to_history("assistant", content)
 
+                        usage = result.get("usage", {})
                         return AgentResponse(
                             agent_name=self.name,
                             model_type=self.config.model_type,
                             content=content,
                             confidence=0.87,
                             response_time=response_time,
+                            input_tokens=usage.get("prompt_tokens", 0) or 0,
+                            output_tokens=usage.get("completion_tokens", 0) or 0,
                             metadata={
                                 "model": self.config.model_name,
-                                "usage": result.get("usage", {})
+                                "usage": usage
                             }
                         )
                     else:

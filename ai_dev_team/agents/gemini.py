@@ -94,6 +94,13 @@ class GeminiAgent(AIAgent):
             content = response.text
             response_time = time.time() - start_time
 
+            # Extract token usage from Gemini response
+            input_tok = 0
+            output_tok = 0
+            if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                input_tok = getattr(response.usage_metadata, 'prompt_token_count', 0) or 0
+                output_tok = getattr(response.usage_metadata, 'candidates_token_count', 0) or 0
+
             self.update_stats(response_time, True)
             self.add_to_history("user", prompt)
             self.add_to_history("assistant", content)
@@ -104,6 +111,8 @@ class GeminiAgent(AIAgent):
                 content=content,
                 confidence=0.85,
                 response_time=response_time,
+                input_tokens=input_tok,
+                output_tokens=output_tok,
                 metadata={"model": self.config.model_name}
             )
 

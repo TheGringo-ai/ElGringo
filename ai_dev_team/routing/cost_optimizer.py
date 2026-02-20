@@ -33,6 +33,7 @@ MODEL_TIER_MAPPING: Dict[str, ModelTier] = {
     # Gemini models
     "gemini-1.5-flash": ModelTier.BUDGET,
     "gemini-2.0-flash": ModelTier.BUDGET,
+    "gemini-2.5-flash": ModelTier.BUDGET,
     "gemini-1.5-pro": ModelTier.STANDARD,
     "gemini-2.5-pro": ModelTier.PREMIUM,
     # Grok models
@@ -55,9 +56,19 @@ MODEL_COSTS: Dict[str, Tuple[float, float]] = {
     "gemini-1.5-flash": (0.075, 0.30),
     "gemini-2.0-flash": (0.10, 0.40),
     "gemini-1.5-pro": (1.25, 5.00),
+    # Gemini 2.5
+    "gemini-2.5-flash": (0.15, 0.60),
+    "gemini-2.5-pro": (1.25, 10.00),
     # Grok
     "grok-3-fast": (5.00, 25.00),
     "grok-3": (3.00, 15.00),
+    # Local Ollama (free)
+    "llama3.2:3b": (0.0, 0.0),
+    "qwen-coder-custom:latest": (0.0, 0.0),
+    "qwen2.5-coder:7b": (0.0, 0.0),
+    # Llama Cloud (Groq/Together)
+    "llama-3.3-70b-versatile": (0.59, 0.79),
+    "llama-3.1-8b-instant": (0.05, 0.08),
 }
 
 # Complexity to tier mapping

@@ -251,6 +251,8 @@ class OllamaAgent(AIAgent):
                             content=content,
                             confidence=0.75,  # Local models get slightly lower confidence
                             response_time=response_time,
+                            input_tokens=result.get("prompt_eval_count", 0) or 0,
+                            output_tokens=result.get("eval_count", 0) or 0,
                             metadata={
                                 "model": self.config.model_name,
                                 "eval_count": result.get("eval_count"),

@@ -102,6 +102,8 @@ class ClaudeAgent(AIAgent):
                 content=content,
                 confidence=0.85,
                 response_time=response_time,
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
                 metadata={
                     "model": self.config.model_name,
                     "input_tokens": response.usage.input_tokens,

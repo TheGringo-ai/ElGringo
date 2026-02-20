@@ -53,6 +53,8 @@ class AgentResponse:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
+    input_tokens: int = 0
+    output_tokens: int = 0
 
     @property
     def success(self) -> bool:

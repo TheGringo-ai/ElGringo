@@ -231,6 +231,8 @@ class LlamaCloudAgent(AIAgent):
                             content=content,
                             confidence=confidence,
                             response_time=response_time,
+                            input_tokens=usage.get("prompt_tokens", 0) or 0,
+                            output_tokens=usage.get("completion_tokens", 0) or 0,
                             metadata={
                                 "model": self.model_name,
                                 "provider": self.provider,

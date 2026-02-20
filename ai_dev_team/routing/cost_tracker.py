@@ -213,16 +213,16 @@ class CostTracker:
         status = self.get_budget_status()
 
         # Daily alert
-        if status.daily_percentage >= self.alert_threshold * 100:
+        if status["daily_percentage"] >= self.alert_threshold * 100:
             if self.on_budget_alert:
-                self.on_budget_alert("daily", status.daily_spent, status.daily_limit)
-            logger.warning(f"Daily budget alert: {status.daily_percentage:.1f}% used")
+                self.on_budget_alert("daily", status["daily_spent"], status["daily_limit"])
+            logger.warning(f"Daily budget alert: {status['daily_percentage']:.1f}% used")
 
         # Monthly alert
-        if status.monthly_percentage >= self.alert_threshold * 100:
+        if status["monthly_percentage"] >= self.alert_threshold * 100:
             if self.on_budget_alert:
-                self.on_budget_alert("monthly", status.monthly_spent, status.monthly_limit)
-            logger.warning(f"Monthly budget alert: {status.monthly_percentage:.1f}% used")
+                self.on_budget_alert("monthly", status["monthly_spent"], status["monthly_limit"])
+            logger.warning(f"Monthly budget alert: {status['monthly_percentage']:.1f}% used")
 
     def get_budget_status(self) -> Dict[str, Any]:
         """Get current budget status with alerts"""

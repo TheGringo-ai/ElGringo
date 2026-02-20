@@ -32,6 +32,7 @@ from .agents import (
 )
 from .agents.ollama import create_local_agent, create_local_coder, LOCAL_MODELS
 from .routing import TaskRouter, CostOptimizer, get_performance_tracker, RoutingDecision, get_decision_logger
+from .routing.cost_tracker import get_cost_tracker
 from .preferences import get_preference_store, DevConstraints
 from .monitoring import get_health_monitor
 from .failover import get_failover_manager, get_circuit_breaker
@@ -104,6 +105,7 @@ class AIDevTeam:
         self._cost_optimizer = CostOptimizer()
         self._weighted_consensus = WeightedConsensus()
         self._performance_tracker = get_performance_tracker()
+        self._cost_tracker = get_cost_tracker()
 
         # Initialize Apple Silicon smart router for local model optimization
         self._apple_router = None
@@ -919,6 +921,24 @@ class AIDevTeam:
                     )
                 collaboration_log.append(f"Recorded performance for {len(successful_responses)} agents")
 
+            # Record costs for each agent response
+            if self._cost_tracker:
+                total_cost = 0.0
+                for response in successful_responses:
+                    if response.input_tokens or response.output_tokens:
+                        model_name = response.metadata.get("model", "") or response.agent_name
+                        estimate = self._cost_tracker.record_usage(
+                            model=model_name,
+                            agent_name=response.agent_name,
+                            task_type=task_type,
+                            input_tokens=response.input_tokens,
+                            output_tokens=response.output_tokens,
+                            task_id=task_id,
+                        )
+                        total_cost += estimate.estimated_cost
+                if total_cost > 0:
+                    collaboration_log.append(f"Cost: ${total_cost:.4f} for {len(successful_responses)} agents")
+
             # Record session learning outcomes and persist
             if self.enable_session_learning and self._session_learner:
                 for response in successful_responses:
@@ -1309,15 +1329,9 @@ Provide a unified, synthesized response that follows all project conventions lis
         # Add teaching system stats
         status["knowledge"] = self._teaching_system.get_statistics()
 
-        # Add cost optimization stats
-        if self._cost_optimizer:
-            budget_status = self._cost_optimizer.get_budget_status()
-            status["cost_optimization"] = {
-                "daily_spent": budget_status.daily_spent,
-                "daily_remaining": budget_status.remaining_daily,
-                "monthly_spent": budget_status.monthly_spent,
-                "monthly_remaining": budget_status.remaining_monthly,
-            }
+        # Add cost tracking stats (from persistent CostTracker)
+        if self._cost_tracker:
+            status["costs"] = self._cost_tracker.get_statistics()
 
         # Add performance tracking stats
         if self._performance_tracker:

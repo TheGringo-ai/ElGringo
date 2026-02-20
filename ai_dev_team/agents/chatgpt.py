@@ -105,6 +105,8 @@ class ChatGPTAgent(AIAgent):
                 content=content,
                 confidence=0.92,
                 response_time=response_time,
+                input_tokens=response.usage.prompt_tokens,
+                output_tokens=response.usage.completion_tokens,
                 metadata={
                     "model": self.config.model_name,
                     "usage": {

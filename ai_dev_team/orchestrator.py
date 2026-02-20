@@ -830,10 +830,16 @@ class AIDevTeam:
             if self.enable_memory and self._memory_system:
                 await self._memory_system.capture_interaction(result, self.project_name)
 
-                # Learn from successful outcomes
+                # Learn from successful outcomes — use cheapest agent to extract patterns
                 if self.enable_learning and self._learning_engine and result.success:
+                    extractor = None
+                    for pref in ["gemini-creative", "ollama-local", "chatgpt-coder"]:
+                        if pref in self.agents:
+                            extractor = self.agents[pref]
+                            break
                     await self._learning_engine.learn_from_success(
-                        result, prompt, self.project_name
+                        result, prompt, self.project_name,
+                        extractor_agent=extractor,
                     )
 
             # Auto-learn from this interaction (extracts prompts, patterns, lessons)

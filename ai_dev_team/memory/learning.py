@@ -2,6 +2,7 @@
 Learning Engine - Continuous improvement from interactions
 """
 
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -228,9 +229,13 @@ class LearningEngine:
         result,  # CollaborationResult
         problem_description: str,
         project: str = "default",
+        extractor_agent=None,  # Optional AIAgent for intelligent extraction
     ) -> str:
         """
-        Learn from a successful interaction by capturing solution pattern.
+        Learn from a successful interaction by extracting reusable patterns.
+
+        If extractor_agent is provided, uses it to distill the actual lesson
+        from the AI responses instead of blindly truncating.
 
         Returns the solution ID for reference.
         """
@@ -251,27 +256,102 @@ class LearningEngine:
                 logger.debug(f"Near-duplicate found, bumped access on {sol.solution_id}")
                 return sol.solution_id
 
-        # Extract solution steps from agent responses
-        solution_steps = []
+        # Gather raw agent responses
+        raw_responses = []
         for response in result.agent_responses:
-            if response.success:
-                # Extract key points (simplified)
-                content = response.content
-                if len(content) > 100:
-                    solution_steps.append(f"{response.agent_name}: {content[:200]}...")
+            if response.success and response.content and len(response.content) > 50:
+                raw_responses.append(response.content[:1500])
+
+        if not raw_responses:
+            return ""
+
+        # Use LLM extraction if an agent is available, otherwise fallback
+        solution_steps = []
+        best_practices = []
+        tags = []
+
+        if extractor_agent and raw_responses:
+            extracted = await self._extract_patterns(
+                extractor_agent, problem_description, raw_responses
+            )
+            if extracted:
+                solution_steps = extracted.get("solution_steps", [])
+                best_practices = extracted.get("best_practices", [])
+                tags = extracted.get("tags", [])
+
+        # Fallback: summarize first 100 chars per response
+        if not solution_steps:
+            for response in result.agent_responses:
+                if response.success and response.content and len(response.content) > 50:
+                    solution_steps.append(response.content[:150].strip())
 
         if not solution_steps:
             return ""
 
         solution_id = await self.memory.capture_solution(
-            problem_pattern=problem_description,
-            solution_steps=solution_steps,
+            problem_pattern=problem_description[:300],
+            solution_steps=solution_steps[:5],
             success_rate=result.confidence_score,
             project=project,
+            best_practices=best_practices[:6],
+            tags=tags[:5],
         )
 
-        logger.info(f"Learned from success: {solution_id}")
+        logger.info(f"Learned from success: {solution_id} ({len(best_practices)} best practices)")
         return solution_id
+
+    async def _extract_patterns(
+        self,
+        agent,
+        problem: str,
+        responses: List[str],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Use an LLM agent to extract reusable patterns from raw responses.
+
+        Returns dict with solution_steps, best_practices, tags — or None on failure.
+        """
+        combined = "\n---\n".join(responses[:3])  # Cap at 3 responses
+
+        extraction_prompt = (
+            "Extract the reusable development patterns from this AI team interaction.\n\n"
+            f"PROBLEM: {problem[:300]}\n\n"
+            f"AI TEAM RESPONSES:\n{combined[:3000]}\n\n"
+            "Return ONLY a JSON object with these fields:\n"
+            '{\n'
+            '  "solution_steps": ["step 1", "step 2", ...],  // 2-5 concise steps (under 100 chars each)\n'
+            '  "best_practices": ["rule 1", "rule 2", ...],  // reusable rules/conventions (under 80 chars each)\n'
+            '  "tags": ["tag1", "tag2", ...]  // 2-5 searchable tags\n'
+            '}\n\n'
+            "Focus on REUSABLE patterns — things another developer would need to know. "
+            "Skip generic advice. Be specific about libraries, methods, and conventions used."
+        )
+
+        try:
+            response = await agent.generate_response(extraction_prompt)
+            if not response.success:
+                return None
+
+            # Parse JSON from response
+            text = response.content.strip()
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start >= 0 and end > start:
+                data = json.loads(text[start:end])
+                # Validate structure
+                steps = data.get("solution_steps", [])
+                practices = data.get("best_practices", [])
+                tags = data.get("tags", [])
+                if steps or practices:
+                    return {
+                        "solution_steps": [s for s in steps if isinstance(s, str) and len(s) < 200][:5],
+                        "best_practices": [p for p in practices if isinstance(p, str) and len(p) < 150][:6],
+                        "tags": [t for t in tags if isinstance(t, str) and len(t) < 30][:5],
+                    }
+        except (json.JSONDecodeError, Exception) as e:
+            logger.debug(f"Pattern extraction failed: {e}")
+
+        return None
 
     def get_learning_summary(self) -> Dict[str, Any]:
         """Get summary of all learning data"""

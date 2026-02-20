@@ -74,6 +74,14 @@ def get_team() -> AIDevTeam:
         memory = MemorySystem(use_firestore=has_firestore)
         if has_firestore:
             logger.info("Firestore memory enabled (persistent cross-session)")
+
+        # Share the MCP memory with the orchestrator so collaborate()
+        # auto-injects stored solution patterns into prompts
+        team._memory_system = memory
+        if team._prevention:
+            team._prevention.memory = memory
+        logger.info("Shared memory wired into orchestrator for auto-injection")
+
         fixer = FredFix(team=team, memory=memory)
         engine = ParallelCodingEngine(team)
         logger.info(f"AI Team ready with {len(team.agents)} agents: {list(team.agents.keys())}")
@@ -101,6 +109,11 @@ TOOLS = [
                 "context": {
                     "type": "string",
                     "description": "Additional context (code, docs, etc.)",
+                    "default": ""
+                },
+                "project": {
+                    "type": "string",
+                    "description": "Project name for memory lookup (e.g. 'managers-dashboard'). Pulls relevant patterns and conventions from past solutions.",
                     "default": ""
                 }
             },
@@ -467,6 +480,10 @@ async def handle_tool_call(name: str, arguments: Dict[str, Any]) -> str:
     try:
         if name == "ai_team_collaborate":
             team = get_team()
+            # If project specified, temporarily set it for memory lookup
+            project = arguments.get("project", "")
+            if project:
+                team.project_name = project
             result = await team.collaborate(
                 prompt=arguments["prompt"],
                 mode=arguments.get("mode", "parallel"),

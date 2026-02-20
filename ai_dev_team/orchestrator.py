@@ -626,6 +626,49 @@ class AIDevTeam:
                 enhanced_prompt = f"{prevention_context}\n\n{prompt}"
                 collaboration_log.append("Applied prevention context from past mistakes")
 
+        # Auto-inject relevant solution patterns from memory
+        if _needs_context and self._memory_system:
+            try:
+                # Two-pass search: (1) prompt-specific, (2) project-wide conventions
+                solutions = await self._memory_system.find_solution_patterns(prompt[:200], limit=6)
+                project_solutions = await self._memory_system.find_solution_patterns(
+                    self.project_name, limit=6
+                )
+                # Merge and deduplicate by solution_id
+                seen_ids = set()
+                all_solutions = []
+                for s in solutions + project_solutions:
+                    if s.solution_id not in seen_ids:
+                        seen_ids.add(s.solution_id)
+                        all_solutions.append(s)
+                # Prefer solutions with explicit best_practices (hand-curated patterns)
+                # over auto-captured interaction results (which have empty best_practices)
+                curated = [s for s in all_solutions if s.best_practices]
+                auto = [s for s in all_solutions if not s.best_practices]
+                # Take up to 3 curated, fill remainder with auto
+                selected = curated[:3] + auto[:max(0, 3 - len(curated))]
+                if selected:
+                    solution_lines = ["MANDATORY PROJECT CONVENTIONS — You MUST follow these rules:"]
+                    for sol in selected:
+                        solution_lines.append(f"\n## {sol.problem_pattern}")
+                        for step in sol.solution_steps:
+                            # Skip overly long auto-captured steps (full AI responses)
+                            if len(step) > 200:
+                                continue
+                            solution_lines.append(f"  - {step}")
+                        if sol.best_practices:
+                            solution_lines.append("  REQUIREMENTS (do not ignore):")
+                            for bp in sol.best_practices:
+                                solution_lines.append(f"    * {bp}")
+                    solution_context = "\n".join(solution_lines)
+                    # Cap to prevent prompt bloat
+                    if len(solution_context) > 3000:
+                        solution_context = solution_context[:3000] + "\n..."
+                    enhanced_prompt = f"{solution_context}\n\n{enhanced_prompt}"
+                    collaboration_log.append(f"Injected {len(selected)} solution patterns from memory ({len(curated)} curated)")
+            except Exception as e:
+                logger.debug(f"Memory solution search skipped: {e}")
+
         # Add domain knowledge context (only for complex/relevant tasks)
         domain_mapping = {
             "coding": ["backend", "frontend"],

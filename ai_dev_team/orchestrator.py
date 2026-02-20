@@ -68,6 +68,7 @@ class CollaborationResult:
     participating_agents: List[str]
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: Dict[str, Any] = field(default_factory=dict)
+    intelligence: Dict[str, Any] = field(default_factory=dict)
 
 
 class AIDevTeam:
@@ -482,6 +483,16 @@ class AIDevTeam:
         collaboration_log = []
         agent_responses = []
 
+        # Intelligence visibility dict — captures everything happening behind the scenes
+        intel = {
+            "routing": {},
+            "memory": {"patterns_injected": 0, "patterns": [], "prevention_applied": False},
+            "agents": [],
+            "consensus": {},
+            "learning": {},
+            "cost": {"total": 0.0, "breakdown": []},
+        }
+
         # Auto-benchmark check (once per session, non-blocking)
         if not self._benchmark_checked:
             self._benchmark_checked = True
@@ -493,6 +504,9 @@ class AIDevTeam:
             f"Task classified: {classification.primary_type.value} "
             f"(complexity: {classification.complexity}, confidence: {classification.confidence:.2f})"
         )
+        intel["routing"]["task_type"] = classification.primary_type.value
+        intel["routing"]["complexity"] = classification.complexity
+        intel["routing"]["classification_confidence"] = round(classification.confidence, 2)
 
         # Apple Silicon optimization: use smart router for local vs cloud decision
         prefer_local_models = False
@@ -569,6 +583,10 @@ class AIDevTeam:
                 collaboration_log.append(
                     f"Performance-based selection: {[(n, round(s, 2)) for n, s, _ in ranked[:3]]}"
                 )
+                intel["routing"]["selection_method"] = "performance-enhanced"
+                intel["routing"]["scores"] = [
+                    {"agent": n, "score": round(s, 3)} for n, s, _ in ranked[:5]
+                ]
             elif not agents:
                 # Fallback to router's recommendations
                 recommended = classification.recommended_agents
@@ -620,6 +638,9 @@ class AIDevTeam:
             mode = classification.recommended_mode
             collaboration_log.append(f"Auto-selected mode: {mode}")
 
+        intel["routing"]["selected_agents"] = agents
+        intel["routing"]["mode"] = mode
+
         # Get prevention context from memory system
         enhanced_prompt = prompt
         task_type = classification.primary_type.value
@@ -635,6 +656,8 @@ class AIDevTeam:
             if prevention_context:
                 enhanced_prompt = f"{prevention_context}\n\n{prompt}"
                 collaboration_log.append("Applied prevention context from past mistakes")
+                intel["memory"]["prevention_applied"] = True
+                intel["memory"]["prevention_summary"] = prevention_context[:200]
 
         # Auto-inject relevant solution patterns from memory
         if _needs_context and self._memory_system:
@@ -680,6 +703,16 @@ class AIDevTeam:
                     self._memory_system.track_injection(
                         task_id, [s.solution_id for s in selected]
                     )
+                    # Capture memory intelligence
+                    intel["memory"]["patterns_injected"] = len(selected)
+                    intel["memory"]["curated_count"] = len(curated)
+                    for sol in selected:
+                        intel["memory"]["patterns"].append({
+                            "name": sol.problem_pattern[:80],
+                            "quality": round(getattr(sol, 'quality_score', 0.5), 2),
+                            "times_used": getattr(sol, 'access_count', 0),
+                            "has_best_practices": bool(sol.best_practices),
+                        })
             except Exception as e:
                 logger.debug(f"Memory solution search skipped: {e}")
 
@@ -819,6 +852,43 @@ class AIDevTeam:
             total_time = time.time() - start_time
             collaboration_log.append(f"Completed in {total_time:.2f}s")
 
+            # Build agent perspectives for intelligence report
+            for resp in agent_responses:
+                perspective = {
+                    "name": resp.agent_name,
+                    "model": resp.metadata.get("model", resp.model_type.value) if resp.metadata else resp.model_type.value,
+                    "success": resp.success,
+                    "confidence": round(resp.confidence, 2),
+                    "response_time": round(resp.response_time, 2),
+                    "tokens": {"input": resp.input_tokens, "output": resp.output_tokens},
+                    "summary": (resp.content or "")[:200].replace("\n", " ").strip(),
+                }
+                intel["agents"].append(perspective)
+
+            # Detect agreement/disagreement among agents
+            if len(successful_responses) >= 2:
+                confidences = [r.confidence for r in successful_responses]
+                spread = max(confidences) - min(confidences)
+                avg_len = sum(len(r.content or "") for r in successful_responses) / len(successful_responses)
+                len_spread = max(abs(len(r.content or "") - avg_len) for r in successful_responses)
+
+                if spread < 0.15 and len_spread < avg_len * 0.5:
+                    intel["consensus"]["level"] = "high"
+                    intel["consensus"]["description"] = "Agents broadly agree"
+                elif spread < 0.3:
+                    intel["consensus"]["level"] = "moderate"
+                    intel["consensus"]["description"] = "Some variation in confidence — agents may have different approaches"
+                else:
+                    intel["consensus"]["level"] = "low"
+                    intel["consensus"]["description"] = "Significant disagreement — agents have divergent perspectives"
+                    # Identify the outlier
+                    for r in successful_responses:
+                        if abs(r.confidence - avg_confidence) > 0.2:
+                            intel["consensus"].setdefault("divergent_agents", []).append(r.agent_name)
+            elif len(successful_responses) == 1:
+                intel["consensus"]["level"] = "single-agent"
+                intel["consensus"]["description"] = "Only one agent responded"
+
             result = CollaborationResult(
                 task_id=task_id,
                 success=bool(successful_responses),
@@ -836,6 +906,7 @@ class AIDevTeam:
                     "task_type": classification.primary_type.value,
                     "complexity": classification.complexity,
                 },
+                intelligence=intel,
             )
 
             # Store in memory and learn from outcome
@@ -849,10 +920,18 @@ class AIDevTeam:
                         if pref in self.agents:
                             extractor = self.agents[pref]
                             break
-                    await self._learning_engine.learn_from_success(
+                    learn_result = await self._learning_engine.learn_from_success(
                         result, prompt, self.project_name,
                         extractor_agent=extractor,
                     )
+                    # Capture learning outcomes for intelligence report
+                    if learn_result and isinstance(learn_result, dict):
+                        intel["learning"]["patterns_extracted"] = len(learn_result.get("solution_steps", []))
+                        intel["learning"]["tags"] = learn_result.get("tags", [])
+                    elif learn_result:
+                        intel["learning"]["stored"] = True
+                    mem_stats = self._memory_system.get_statistics() if self._memory_system else {}
+                    intel["learning"]["total_patterns"] = mem_stats.get("total_solutions", 0)
 
             # Auto-learn from this interaction (extracts prompts, patterns, lessons)
             if self.enable_auto_learning and self._auto_learner:
@@ -954,6 +1033,12 @@ class AIDevTeam:
                             task_id=task_id,
                         )
                         total_cost += estimate.estimated_cost
+                        intel["cost"]["breakdown"].append({
+                            "agent": response.agent_name,
+                            "model": model_name,
+                            "cost": round(estimate.estimated_cost, 6),
+                        })
+                intel["cost"]["total"] = round(total_cost, 6)
                 if total_cost > 0:
                     collaboration_log.append(f"Cost: ${total_cost:.4f} for {len(successful_responses)} agents")
 

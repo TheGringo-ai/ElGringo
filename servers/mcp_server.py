@@ -631,6 +631,123 @@ TOOLS = [
 ]
 
 
+def format_intelligence_report(intel: Dict[str, Any], result) -> str:
+    """Format the intelligence visibility report — makes the invisible visible."""
+    if not intel:
+        return ""
+
+    lines = []
+    lines.append("=" * 50)
+    lines.append("INTELLIGENCE REPORT")
+    lines.append("=" * 50)
+
+    # --- Routing ---
+    routing = intel.get("routing", {})
+    if routing:
+        task_type = routing.get("task_type", "unknown")
+        complexity = routing.get("complexity", "unknown")
+        mode = routing.get("mode", "unknown")
+        lines.append("")
+        lines.append(f"ROUTING: {task_type} task ({complexity} complexity)")
+        lines.append(f"  Mode: {mode}")
+        if routing.get("scores"):
+            score_strs = [
+                f"{s['agent']} ({s['score']:.2f})" for s in routing["scores"][:5]
+            ]
+            lines.append(f"  Agent scores: {' > '.join(score_strs)}")
+        elif routing.get("selected_agents"):
+            lines.append(f"  Selected: {', '.join(routing['selected_agents'])}")
+        method = routing.get("selection_method", "")
+        if method:
+            lines.append(f"  Method: {method}")
+
+    # --- Memory ---
+    mem = intel.get("memory", {})
+    if mem.get("patterns_injected"):
+        lines.append("")
+        lines.append(f"MEMORY: {mem['patterns_injected']} patterns injected ({mem.get('curated_count', 0)} curated)")
+        for p in mem.get("patterns", []):
+            curated_tag = " [curated]" if p.get("has_best_practices") else ""
+            lines.append(
+                f'  - "{p["name"]}" (quality: {p["quality"]}, used {p["times_used"]}x){curated_tag}'
+            )
+    if mem.get("prevention_applied"):
+        lines.append("")
+        lines.append("  !! MISTAKE PREVENTION ACTIVE !!")
+        lines.append(f"  Blocked a known failure pattern from being repeated.")
+        summary = mem.get("prevention_summary", "")
+        if summary:
+            lines.append(f"  Context: {summary[:150]}")
+
+    # --- Agent Perspectives ---
+    agents = intel.get("agents", [])
+    if agents:
+        lines.append("")
+        lines.append(f"AGENT PERSPECTIVES ({len(agents)} agents):")
+        for a in agents:
+            status = "OK" if a.get("success") else "FAILED"
+            cost_entry = next(
+                (c for c in intel.get("cost", {}).get("breakdown", []) if c["agent"] == a["name"]),
+                None,
+            )
+            cost_str = f", ${cost_entry['cost']:.4f}" if cost_entry and cost_entry["cost"] > 0 else ""
+            tokens = a.get("tokens", {})
+            tok_str = ""
+            if tokens.get("input") or tokens.get("output"):
+                tok_str = f", {tokens.get('input', 0)}+{tokens.get('output', 0)} tok"
+            lines.append(
+                f"  {a['name']} ({a.get('model', '?')}) — "
+                f"confidence: {a['confidence']}, {a['response_time']}s{tok_str}{cost_str}"
+            )
+            summary = a.get("summary", "")
+            if summary and len(summary) > 10:
+                # Show first ~150 chars of their take
+                lines.append(f'    "{summary[:150]}..."')
+
+    # --- Consensus ---
+    consensus = intel.get("consensus", {})
+    if consensus.get("level"):
+        lines.append("")
+        level = consensus["level"].upper()
+        desc = consensus.get("description", "")
+        lines.append(f"CONSENSUS: {level}")
+        if desc:
+            lines.append(f"  {desc}")
+        if consensus.get("divergent_agents"):
+            lines.append(f"  Divergent: {', '.join(consensus['divergent_agents'])}")
+
+    # --- Learning ---
+    learning = intel.get("learning", {})
+    if learning:
+        lines.append("")
+        extracted = learning.get("patterns_extracted", 0)
+        tags = learning.get("tags", [])
+        total = learning.get("total_patterns", 0)
+        if extracted:
+            lines.append(f"LEARNED: {extracted} new pattern(s) extracted")
+            if tags:
+                lines.append(f"  Tags: {', '.join(tags)}")
+        elif learning.get("stored"):
+            lines.append("LEARNED: Pattern stored in memory")
+        if total:
+            lines.append(f"  Memory now has {total} solution patterns")
+
+    # --- Cost ---
+    cost = intel.get("cost", {})
+    if cost.get("total", 0) > 0:
+        lines.append("")
+        lines.append(f"COST: ${cost['total']:.4f} total")
+        if cost.get("breakdown"):
+            parts = [f"{c['agent']}: ${c['cost']:.4f}" for c in cost["breakdown"] if c["cost"] > 0]
+            if parts:
+                lines.append(f"  {' | '.join(parts)}")
+
+    lines.append("")
+    lines.append("=" * 50)
+
+    return "\n".join(lines)
+
+
 async def handle_tool_call(name: str, arguments: Dict[str, Any]) -> str:
     """Handle a tool call and return the result"""
     global engine, fixer, memory
@@ -658,10 +775,16 @@ async def handle_tool_call(name: str, arguments: Dict[str, Any]) -> str:
                 mode=arguments.get("mode", "parallel"),
                 context=context,
             )
+
+            # Build visible intelligence report
+            intel = getattr(result, 'intelligence', {})
+            intel_report = format_intelligence_report(intel, result)
+
             return json.dumps({
                 "success": result.success,
                 "task_id": result.task_id,
                 "response": result.final_answer,
+                "intelligence_report": intel_report,
                 "agents": result.participating_agents,
                 "confidence": result.confidence_score,
                 "time": result.total_time

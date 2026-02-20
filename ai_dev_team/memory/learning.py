@@ -230,14 +230,15 @@ class LearningEngine:
         problem_description: str,
         project: str = "default",
         extractor_agent=None,  # Optional AIAgent for intelligent extraction
-    ) -> str:
+    ) -> Optional[Dict[str, Any]]:
         """
         Learn from a successful interaction by extracting reusable patterns.
 
         If extractor_agent is provided, uses it to distill the actual lesson
         from the AI responses instead of blindly truncating.
 
-        Returns the solution ID for reference.
+        Returns dict with solution_id, solution_steps, best_practices, tags
+        or empty string on skip.
         """
         if not result.success or result.confidence_score < 0.7:
             return ""
@@ -298,7 +299,12 @@ class LearningEngine:
         )
 
         logger.info(f"Learned from success: {solution_id} ({len(best_practices)} best practices)")
-        return solution_id
+        return {
+            "solution_id": solution_id,
+            "solution_steps": solution_steps[:5],
+            "best_practices": best_practices[:6],
+            "tags": tags[:5],
+        }
 
     async def _extract_patterns(
         self,

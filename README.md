@@ -81,12 +81,20 @@ FredAI:
 - **Tiered storage**: hot (recent) / warm (proven valuable) / cold (compressed)
 - **Consolidation engine**: auto-deduplicates solutions, prunes trivial entries, compresses old data
 - **Mistake prevention**: past failures are injected into prompts before they happen again
+- **Auto-injection**: stored solution patterns and project conventions are automatically injected into every collaborate call — the team learns your codebase's rules and follows them
+- **Project-scoped memory**: pass `project: "my-app"` to pull only relevant patterns for that project
 - Dual persistence: local JSON + optional Firestore for cross-session memory
 
 ### Code RAG
 - Index any codebase for retrieval-augmented generation
 - Past solutions from memory are automatically included in context
 - Pattern detection for auth, API, database, and more
+
+### FredFix Security Scanner
+- Scans entire codebases for security vulnerabilities, bugs, and performance issues
+- Categorizes findings by severity (critical, high, medium, low)
+- Auto-fix mode applies safe patches with rollback support
+- Stores findings in memory to prevent reintroduction
 
 ### Specialist Agents
 - **SecurityAuditor** - OWASP/CWE pattern scanning, secret detection
@@ -103,7 +111,7 @@ Works directly with Claude Code, Cursor, or any MCP-compatible client:
 
 | Tool | What it does |
 |------|-------------|
-| `ai_team_collaborate` | Full multi-agent collaboration |
+| `ai_team_collaborate` | Full multi-agent collaboration (auto-injects memory patterns) |
 | `ai_team_ask` | Quick single-agent question |
 | `ai_team_review` | Multi-agent code review |
 | `ai_team_security_audit` | Security vulnerability scan |
@@ -213,12 +221,13 @@ FredAI/
 ## Stats
 
 - **69,000+** lines of Python across **149** modules
-- **6** AI providers supported (ChatGPT, Gemini, Grok, Claude, Ollama, LlamaCloud)
+- **6** AI providers supported (ChatGPT, Gemini 2.5 Flash, Grok, Claude, Ollama, LlamaCloud)
 - **8** collaboration modes
-- **16** MCP tools
+- **16** MCP tools (with auto memory injection)
 - **3** specialist agents
 - **219** tests passing
 - **19** domain knowledge bases
+- **150+** solution patterns in memory (and growing)
 
 ## How It Compares
 

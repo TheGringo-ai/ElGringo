@@ -1176,15 +1176,30 @@ class AIDevTeam:
             for r in successful_responses
         )
 
+        # Gather project conventions for the synthesizer
+        conventions_block = ""
+        if self._memory_system:
+            try:
+                curated = await self._memory_system.find_solution_patterns(prompt[:100], limit=3)
+                curated = [s for s in curated if s.best_practices]
+                if curated:
+                    rules = []
+                    for s in curated[:2]:
+                        rules.extend(s.best_practices)
+                    if rules:
+                        conventions_block = "\nProject conventions to enforce in the synthesis:\n" + "\n".join(f"- {r}" for r in rules[:8]) + "\n"
+            except Exception:
+                pass
+
         synthesis_prompt = f"""Synthesize these AI team responses into one comprehensive answer.
 Combine the best insights from each response. Be concise but complete.
-
+{conventions_block}
 Original Task: {prompt}
 
 Team Responses:
 {responses_text}
 
-Provide a unified, synthesized response:"""
+Provide a unified, synthesized response that follows all project conventions listed above:"""
 
         synthesis_response = await synthesis_agent.generate_response(
             synthesis_prompt, context

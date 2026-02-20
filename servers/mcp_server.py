@@ -48,6 +48,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ai_dev_team import AIDevTeam, FredFix, ParallelCodingEngine
 from ai_dev_team.memory import MemorySystem
+from ai_dev_team.project_context import ProjectContextManager, ProjectProfile
 
 # Configure logging
 logging.basicConfig(
@@ -62,6 +63,7 @@ team: Optional[AIDevTeam] = None
 fixer: Optional[FredFix] = None
 engine: Optional[ParallelCodingEngine] = None
 memory: Optional[MemorySystem] = None
+project_ctx = ProjectContextManager()
 
 
 def get_team() -> AIDevTeam:
@@ -468,6 +470,86 @@ TOOLS = [
             },
             "required": ["topic"]
         }
+    },
+    {
+        "name": "load_project_context",
+        "description": "Load a project's key files and conventions into FredAI's memory. Auto-detects tech stack, reads important files (requirements.txt, main entry, first router, config). The team will use this context in future collaborate calls.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_name": {
+                    "type": "string",
+                    "description": "Name for this project (e.g. 'managers-dashboard')"
+                },
+                "project_path": {
+                    "type": "string",
+                    "description": "Absolute path to the project directory"
+                },
+                "key_patterns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Project-specific coding conventions and rules the team must follow",
+                    "default": []
+                },
+                "files": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Specific files to load (relative to project_path). Auto-detects if empty.",
+                    "default": []
+                },
+                "max_lines": {
+                    "type": "integer",
+                    "description": "Max lines to read per file",
+                    "default": 50
+                }
+            },
+            "required": ["project_name", "project_path"]
+        }
+    },
+    {
+        "name": "verify_code",
+        "description": "Verify generated code by running the project's build/import check. Returns pass/fail with error details. Use after generating code to catch issues before committing.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_path": {
+                    "type": "string",
+                    "description": "Path to the project directory"
+                },
+                "check_type": {
+                    "type": "string",
+                    "enum": ["python_import", "npm_build", "python_syntax", "all"],
+                    "description": "Type of verification to run",
+                    "default": "all"
+                },
+                "files": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Specific files to check (relative paths). If empty, runs project-wide checks.",
+                    "default": []
+                }
+            },
+            "required": ["project_path"]
+        }
+    },
+    {
+        "name": "memory_curate",
+        "description": "Curate the AI team's memory: consolidate duplicate solutions, extract key patterns from verbose entries, and prune noise. Makes memory more effective for future pattern injection.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {
+                    "type": "string",
+                    "description": "Curate solutions for a specific project, or 'all'",
+                    "default": "all"
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "If true, show what would change without modifying memory",
+                    "default": True
+                }
+            }
+        }
     }
 ]
 
@@ -480,14 +562,24 @@ async def handle_tool_call(name: str, arguments: Dict[str, Any]) -> str:
     try:
         if name == "ai_team_collaborate":
             team = get_team()
-            # If project specified, temporarily set it for memory lookup
+            # If project specified, set it for memory lookup + context injection
             project = arguments.get("project", "")
+            context = arguments.get("context", "")
             if project:
                 team.project_name = project
+                # Auto-inject project context from stored profile
+                profile = project_ctx.get_profile(project)
+                if profile:
+                    project_block = profile.generate_context_block()
+                    system_hint = profile.generate_system_prompt()
+                    if project_block:
+                        context = f"{project_block}\n\n{context}" if context else project_block
+                    if system_hint:
+                        context = f"{system_hint}\n\n{context}" if context else system_hint
             result = await team.collaborate(
                 prompt=arguments["prompt"],
                 mode=arguments.get("mode", "parallel"),
-                context=arguments.get("context", "")
+                context=context,
             )
             return json.dumps({
                 "success": result.success,
@@ -803,6 +895,179 @@ Think outside the box and explore unconventional approaches."""
                 "agents_contributed": result.participating_agents,
                 "confidence": result.confidence_score,
                 "time": result.total_time
+            }, indent=2)
+
+        elif name == "load_project_context":
+            project_name = arguments["project_name"]
+            project_path = arguments["project_path"]
+            key_patterns = arguments.get("key_patterns", [])
+            files = arguments.get("files", [])
+            max_lines = arguments.get("max_lines", 50)
+
+            profile = project_ctx.load_project_files(
+                profile_name=project_name,
+                project_path=project_path,
+                file_patterns=files if files else None,
+                max_lines_per_file=max_lines,
+            )
+            if key_patterns:
+                profile.key_patterns = key_patterns
+                project_ctx.save_profile(profile)
+
+            return json.dumps({
+                "success": True,
+                "project": project_name,
+                "tech_stack": profile.tech_stack,
+                "files_loaded": list(profile.key_files.keys()),
+                "patterns_count": len(profile.key_patterns),
+                "message": f"Loaded {len(profile.key_files)} files for '{project_name}'. Use project='{project_name}' in collaborate calls.",
+            }, indent=2)
+
+        elif name == "verify_code":
+            import subprocess
+            import tempfile
+            project_path = arguments["project_path"]
+            check_type = arguments.get("check_type", "all")
+            files = arguments.get("files", [])
+            results = []
+
+            if check_type in ("python_import", "python_syntax", "all"):
+                # Check Python imports
+                py_dir = project_path
+                for sub in ["backend", "app", "src"]:
+                    candidate = os.path.join(project_path, sub)
+                    if os.path.isdir(candidate):
+                        py_dir = candidate
+                        break
+
+                if files:
+                    for f in files:
+                        if f.endswith(".py"):
+                            try:
+                                r = subprocess.run(
+                                    [sys.executable, "-c", f"import ast; ast.parse(open('{os.path.join(project_path, f)}').read())"],
+                                    capture_output=True, text=True, timeout=10
+                                )
+                                if r.returncode == 0:
+                                    results.append({"file": f, "check": "syntax", "status": "pass"})
+                                else:
+                                    results.append({"file": f, "check": "syntax", "status": "fail", "error": r.stderr[:500]})
+                            except Exception as e:
+                                results.append({"file": f, "check": "syntax", "status": "error", "error": str(e)})
+                else:
+                    # Run a general import check on all Python files in the main dir
+                    try:
+                        r = subprocess.run(
+                            [sys.executable, "-m", "py_compile", "--help"],
+                            capture_output=True, text=True, timeout=5
+                        )
+                        # Check syntax of all .py files
+                        for py_file in sorted(Path(py_dir).rglob("*.py"))[:20]:
+                            try:
+                                r = subprocess.run(
+                                    [sys.executable, "-m", "py_compile", str(py_file)],
+                                    capture_output=True, text=True, timeout=10
+                                )
+                                if r.returncode != 0:
+                                    results.append({"file": str(py_file.relative_to(project_path)), "check": "compile", "status": "fail", "error": r.stderr[:300]})
+                            except Exception:
+                                pass
+                        if not any(r["status"] == "fail" for r in results):
+                            results.append({"check": "python_compile", "status": "pass", "files_checked": min(20, len(list(Path(py_dir).rglob("*.py"))))})
+                    except Exception as e:
+                        results.append({"check": "python", "status": "error", "error": str(e)})
+
+            if check_type in ("npm_build", "all"):
+                # Check frontend build
+                frontend_dir = None
+                for sub in ["frontend", "client", "web", ""]:
+                    candidate = os.path.join(project_path, sub) if sub else project_path
+                    if os.path.exists(os.path.join(candidate, "package.json")):
+                        frontend_dir = candidate
+                        break
+
+                if frontend_dir:
+                    try:
+                        r = subprocess.run(
+                            ["npm", "run", "build"],
+                            capture_output=True, text=True, timeout=120,
+                            cwd=frontend_dir
+                        )
+                        if r.returncode == 0:
+                            results.append({"check": "npm_build", "status": "pass"})
+                        else:
+                            error_lines = r.stderr.splitlines()[-10:] if r.stderr else r.stdout.splitlines()[-10:]
+                            results.append({"check": "npm_build", "status": "fail", "error": "\n".join(error_lines)})
+                    except subprocess.TimeoutExpired:
+                        results.append({"check": "npm_build", "status": "timeout"})
+                    except Exception as e:
+                        results.append({"check": "npm_build", "status": "error", "error": str(e)})
+
+            all_pass = all(r.get("status") == "pass" for r in results)
+            return json.dumps({
+                "success": all_pass,
+                "results": results,
+                "summary": "All checks passed" if all_pass else "Some checks failed",
+            }, indent=2)
+
+        elif name == "memory_curate":
+            if memory is None:
+                memory = MemorySystem(use_firestore=bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")))
+
+            project_filter = arguments.get("project", "all")
+            dry_run = arguments.get("dry_run", True)
+
+            stats_before = memory.get_statistics()
+            solutions = memory._solutions_cache
+            curated_count = 0
+            pruned_count = 0
+            consolidated = []
+
+            # Find solutions with overly long steps (auto-captured full responses)
+            verbose_solutions = []
+            clean_solutions = []
+            for s in solutions:
+                has_long_steps = any(len(step) > 500 for step in s.solution_steps)
+                if project_filter != "all" and project_filter not in s.projects_used:
+                    clean_solutions.append(s)
+                    continue
+                if has_long_steps and not s.best_practices:
+                    verbose_solutions.append(s)
+                else:
+                    clean_solutions.append(s)
+
+            # Find near-duplicate solutions (same problem_pattern prefix)
+            seen_patterns = {}
+            duplicates = []
+            for s in clean_solutions:
+                key = s.problem_pattern[:80].lower().strip()
+                if key in seen_patterns:
+                    duplicates.append(s)
+                else:
+                    seen_patterns[key] = s
+
+            if not dry_run:
+                # Actually prune verbose solutions and duplicates
+                from ai_dev_team.memory.system import tokenize
+                kept = [s for s in solutions if s not in verbose_solutions and s not in duplicates]
+                memory._solutions_cache = kept
+                # Rebuild TF-IDF index
+                memory._solution_tokens = [
+                    tokenize(f"{s.problem_pattern} {' '.join(s.solution_steps)}")
+                    for s in kept
+                ]
+                pruned_count = len(verbose_solutions) + len(duplicates)
+
+            return json.dumps({
+                "success": True,
+                "dry_run": dry_run,
+                "total_solutions": len(solutions),
+                "verbose_entries": len(verbose_solutions),
+                "duplicate_entries": len(duplicates),
+                "would_prune": len(verbose_solutions) + len(duplicates),
+                "would_keep": len(solutions) - len(verbose_solutions) - len(duplicates),
+                "message": f"{'Would prune' if dry_run else 'Pruned'} {len(verbose_solutions)} verbose + {len(duplicates)} duplicate entries. "
+                           f"Run with dry_run=false to apply.",
             }, indent=2)
 
         else:

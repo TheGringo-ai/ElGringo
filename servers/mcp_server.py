@@ -594,6 +594,39 @@ TOOLS = [
                 }
             }
         }
+    },
+    {
+        "name": "ai_team_rate",
+        "description": "Rate a collaborate output as positive or negative. This feedback improves future pattern injection — good patterns get boosted, bad ones get demoted.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "The task_id from the collaborate result (shown in metadata)"
+                },
+                "rating": {
+                    "type": "string",
+                    "enum": ["positive", "negative"],
+                    "description": "Was the output helpful?"
+                },
+                "note": {
+                    "type": "string",
+                    "description": "Optional note about what was good/bad",
+                    "default": ""
+                }
+            },
+            "required": ["task_id", "rating"]
+        }
+    },
+    {
+        "name": "ai_team_quality_report",
+        "description": "Get a quality report on stored memory patterns — distribution of scores, top patterns, and user-rated solutions.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
     }
 ]
 
@@ -627,6 +660,7 @@ async def handle_tool_call(name: str, arguments: Dict[str, Any]) -> str:
             )
             return json.dumps({
                 "success": result.success,
+                "task_id": result.task_id,
                 "response": result.final_answer,
                 "agents": result.participating_agents,
                 "confidence": result.confidence_score,
@@ -1173,6 +1207,25 @@ Think outside the box and explore unconventional approaches."""
                 return json.dumps(tracker.get_monthly_report(), indent=2)
             else:
                 return json.dumps(tracker.get_statistics(), indent=2)
+
+        elif name == "ai_team_rate":
+            if memory is None:
+                memory = MemorySystem(use_firestore=bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")))
+            task_id = arguments["task_id"]
+            rating = arguments["rating"]
+            note = arguments.get("note", "")
+            result = memory.rate_interaction(task_id, rating, note)
+            # Also run decay and auto-prune opportunistically
+            decayed = memory.decay_old_patterns(days_threshold=30)
+            pruned = memory.auto_prune(min_quality=0.15, min_age_days=14)
+            result["maintenance"] = {"decayed": decayed, "pruned": pruned}
+            return json.dumps(result, indent=2)
+
+        elif name == "ai_team_quality_report":
+            if memory is None:
+                memory = MemorySystem(use_firestore=bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")))
+            report = memory.get_quality_report()
+            return json.dumps(report, indent=2)
 
         else:
             return json.dumps({"error": f"Unknown tool: {name}"})

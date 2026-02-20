@@ -82,6 +82,7 @@ FredAI:
 - **Consolidation engine**: auto-deduplicates solutions, prunes trivial entries, compresses old data
 - **Mistake prevention**: past failures are injected into prompts before they happen again
 - **Auto-injection**: stored solution patterns and project conventions are automatically injected into every collaborate call — the team learns your codebase's rules and follows them
+- **Quality feedback loop**: rate outcomes (thumbs up/down), patterns gain or lose quality score, low-quality patterns auto-decay and prune
 - **Project-scoped memory**: pass `project: "my-app"` to pull only relevant patterns for that project
 - Dual persistence: local JSON + optional Firestore for cross-session memory
 
@@ -106,7 +107,7 @@ FredAI:
 - GPU memory detection for optimal model selection
 - Core ML integration for on-device inference
 
-### MCP Server (22 tools)
+### MCP Server (24 tools)
 Works directly with Claude Code, Cursor, or any MCP-compatible client:
 
 | Tool | What it does |
@@ -131,6 +132,8 @@ Works directly with Claude Code, Cursor, or any MCP-compatible client:
 | `ai_team_costs` | Detailed cost reports (daily/weekly/monthly/per-model) |
 | `ai_team_benchmark` | Compare agents on standardized prompts, build routing table |
 | `ai_team_routing_table` | Show which agent is best for which task type |
+| `ai_team_rate` | Rate a collaboration outcome (thumbs up/down), triggers quality decay + prune |
+| `ai_team_quality_report` | Memory quality report — scores, top patterns, pruning stats |
 | `load_project_context` | Load project files and conventions for context-aware generation |
 | `verify_code` | Run syntax checks and build verification |
 
@@ -218,8 +221,9 @@ FredAI/
     tools/           # File, git, docker, deploy, database, browser tools
     cli.py           # Interactive REPL
     orchestrator.py  # Core orchestration engine (2,400+ lines)
+    dashboard_ui.py  # Gradio web dashboard (costs, quality, agents, routing)
   servers/
-    mcp_server.py    # MCP protocol server (16 tools)
+    mcp_server.py    # MCP protocol server (24 tools)
     api_server.py    # REST API
   tests/             # 219 tests, all passing
 ```
@@ -229,7 +233,7 @@ FredAI/
 - **69,000+** lines of Python across **149** modules
 - **6** AI providers supported (ChatGPT, Gemini 2.5 Flash, Grok, Claude, Ollama, LlamaCloud)
 - **8** collaboration modes
-- **22** MCP tools (with auto memory injection, cost tracking, benchmarking)
+- **24** MCP tools (with auto memory injection, cost tracking, benchmarking, quality feedback)
 - **3** specialist agents
 - **219** tests passing
 - **19** domain knowledge bases

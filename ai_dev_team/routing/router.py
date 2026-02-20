@@ -51,6 +51,25 @@ class TaskRouter:
     def __init__(self):
         self.classification_patterns = self._build_patterns()
         self.agent_strengths = self._build_agent_strengths()
+        self._benchmark_data = self._load_benchmark_data()
+
+    def _load_benchmark_data(self) -> Dict[str, Dict[str, float]]:
+        """Load benchmark routing table if it exists."""
+        try:
+            from .benchmark import STORAGE_DIR
+            import json
+            table_path = STORAGE_DIR / "routing_table.json"
+            if table_path.exists():
+                table = json.loads(table_path.read_text())
+                # Convert to {task_type: {agent_name: score}}
+                result = {}
+                for task_type, data in table.items():
+                    if "rankings" in data:
+                        result[task_type] = data["rankings"]
+                return result
+        except Exception:
+            pass
+        return {}
 
     def _build_patterns(self) -> Dict[TaskType, Dict]:
         """Build classification patterns for each task type"""
@@ -427,27 +446,41 @@ class TaskRouter:
             )
             # perf_score is 0.5 if no data, otherwise based on history
 
-            # Combine scores: 40% static, 60% performance (trust data more)
-            # If no performance data, fall back to static
+            # Benchmark score from standardized tests
+            benchmark_score = 0.5  # Default neutral
+            has_benchmark = False
+            if self._benchmark_data and task_type_str in self._benchmark_data:
+                if agent_name in self._benchmark_data[task_type_str]:
+                    benchmark_score = self._benchmark_data[task_type_str][agent_name]
+                    has_benchmark = True
+
+            # Combine scores using available data
             model_rankings = tracker.get_model_ranking([agent_name], task_type_str)
-            if model_rankings and model_rankings[0][2].get("status") != "no_data":
-                # We have performance data
+            has_perf = model_rankings and model_rankings[0][2].get("status") != "no_data"
+
+            if has_perf and has_benchmark:
+                # All three signals: 25% static, 40% performance, 35% benchmark
+                perf_val = model_rankings[0][1]
+                combined_score = (static_score * 0.25) + (perf_val * 0.40) + (benchmark_score * 0.35)
+            elif has_perf:
+                # Static + performance only
                 combined_score = (static_score * 0.4) + (model_rankings[0][1] * 0.6)
-                details = {
-                    "static_score": round(static_score, 3),
-                    "performance_score": round(model_rankings[0][1], 3),
-                    "has_performance_data": True,
-                    **model_rankings[0][2],
-                }
+            elif has_benchmark:
+                # Static + benchmark only
+                combined_score = (static_score * 0.4) + (benchmark_score * 0.6)
             else:
-                # No performance data - use static score
+                # Static only
                 combined_score = static_score
-                details = {
-                    "static_score": round(static_score, 3),
-                    "performance_score": 0.5,
-                    "has_performance_data": False,
-                    "status": "using_static_strengths",
-                }
+
+            details = {
+                "static_score": round(static_score, 3),
+                "performance_score": round(model_rankings[0][1] if has_perf else 0.5, 3),
+                "benchmark_score": round(benchmark_score, 3),
+                "has_performance_data": has_perf,
+                "has_benchmark_data": has_benchmark,
+            }
+            if has_perf:
+                details.update(model_rankings[0][2])
 
             ranked_agents.append((agent_name, combined_score, details))
 

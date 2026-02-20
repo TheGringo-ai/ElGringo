@@ -189,6 +189,9 @@ class AIDevTeam:
         self.autonomous_executor = AutonomousExecutor(self)
         self.framework_facade = FrameworkFacade(self)
 
+        # Auto-benchmark flag — run once per session if stale
+        self._benchmark_checked = False
+
         if auto_setup:
             self.setup_agents()
 
@@ -479,6 +482,11 @@ class AIDevTeam:
         collaboration_log = []
         agent_responses = []
 
+        # Auto-benchmark check (once per session, non-blocking)
+        if not self._benchmark_checked:
+            self._benchmark_checked = True
+            asyncio.ensure_future(self._auto_benchmark_if_stale())
+
         # Use task router for intelligent agent selection and mode
         classification = self._task_router.classify(prompt, context)
         collaboration_log.append(
@@ -668,6 +676,10 @@ class AIDevTeam:
                         solution_context = solution_context[:3000] + "\n..."
                     enhanced_prompt = f"{solution_context}\n\n{enhanced_prompt}"
                     collaboration_log.append(f"Injected {len(selected)} solution patterns from memory ({len(curated)} curated)")
+                    # Track which solutions were injected for this task (for feedback loop)
+                    self._memory_system.track_injection(
+                        task_id, [s.solution_id for s in selected]
+                    )
             except Exception as e:
                 logger.debug(f"Memory solution search skipped: {e}")
 
@@ -1365,6 +1377,45 @@ Provide a unified, synthesized response that follows all project conventions lis
         if self._cost_optimizer:
             return self._cost_optimizer.get_cost_report()
         return {"error": "Cost optimizer not enabled"}
+
+    async def _auto_benchmark_if_stale(self):
+        """Run benchmarks in the background if routing table is stale or missing."""
+        try:
+            from .routing.benchmark import BenchmarkRunner, STORAGE_DIR
+            table_path = STORAGE_DIR / "routing_table.json"
+
+            # Skip if benchmarked within the last 7 days
+            if table_path.exists():
+                import json
+                table = json.loads(table_path.read_text())
+                for task_type, data in table.items():
+                    updated = data.get("updated", "")
+                    if updated:
+                        from datetime import datetime, timezone, timedelta
+                        try:
+                            last_update = datetime.fromisoformat(updated)
+                            if datetime.now(timezone.utc) - last_update < timedelta(days=7):
+                                logger.debug("Benchmark data is fresh, skipping auto-benchmark")
+                                # Reload into router
+                                self._task_router._benchmark_data = self._task_router._load_benchmark_data()
+                                return
+                        except Exception:
+                            pass
+
+            # Run a quick benchmark (coding only — most common task type)
+            if len(self.agents) < 2:
+                return
+
+            logger.info("Running auto-benchmark (coding) in background...")
+            runner = BenchmarkRunner(self)
+            suite = await runner.run_benchmark("coding")
+            logger.info(f"Auto-benchmark complete: {suite.agent_rankings}")
+
+            # Reload benchmark data into router
+            self._task_router._benchmark_data = self._task_router._load_benchmark_data()
+
+        except Exception as e:
+            logger.debug(f"Auto-benchmark skipped: {e}")
 
     def set_budget(self, daily: float = None, monthly: float = None):
         """Set cost budgets"""

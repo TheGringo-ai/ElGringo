@@ -11,7 +11,7 @@ import re
 import time
 from collections import Counter
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -123,6 +123,11 @@ class SolutionRecord:
     access_count: int = 0
     last_accessed: str = ""
     merged_from: List[str] = field(default_factory=list)
+    # Quality scoring fields
+    quality_score: float = 0.5  # 0-1, starts neutral
+    injection_count: int = 0  # times injected into a collaborate call
+    positive_ratings: int = 0  # thumbs up from user
+    negative_ratings: int = 0  # thumbs down from user
 
 
 class MemorySystem:
@@ -263,6 +268,8 @@ class MemorySystem:
     def _bump_access(record):
         """Increment access count and update last_accessed timestamp"""
         record.access_count += 1
+        if hasattr(record, 'injection_count'):
+            record.injection_count += 1
         record.last_accessed = datetime.now(timezone.utc).isoformat()
 
     @staticmethod
@@ -544,8 +551,12 @@ class MemorySystem:
             # Weight by success rate
             score *= solution.success_rate
 
-            # Boost by access count (up to 2x for frequently accessed)
-            access_boost = min(1.0 + (solution.access_count * 0.1), 2.0)
+            # Boost by quality score (0.5-1.5x range, neutral at 1.0)
+            quality_boost = 0.5 + solution.quality_score
+            score *= quality_boost
+
+            # Boost by access count (up to 1.5x for frequently accessed)
+            access_boost = min(1.0 + (solution.access_count * 0.05), 1.5)
             score *= access_boost
 
             if score > 0:
@@ -556,6 +567,168 @@ class MemorySystem:
         for r in results:
             self._bump_access(r)
         return results
+
+    # --- Feedback & Quality Scoring ---
+
+    # Maps task_id -> list of solution_ids that were injected for that task
+    _injection_map: Dict[str, List[str]] = {}
+
+    def track_injection(self, task_id: str, solution_ids: List[str]):
+        """Record which solutions were injected for a given task."""
+        self._injection_map[task_id] = solution_ids
+        # Keep map bounded (last 200 tasks)
+        if len(self._injection_map) > 200:
+            oldest = list(self._injection_map.keys())[0]
+            del self._injection_map[oldest]
+
+    def rate_interaction(
+        self,
+        task_id: str,
+        rating: str,  # "positive" or "negative"
+        note: str = "",
+    ) -> Dict[str, Any]:
+        """
+        Rate a collaborate output. Propagates rating to all solutions
+        that were injected for that task.
+
+        Returns summary of which solutions were affected.
+        """
+        solution_ids = self._injection_map.get(task_id, [])
+        affected = []
+
+        for sol in self._solutions_cache:
+            if sol.solution_id in solution_ids:
+                if rating == "positive":
+                    sol.positive_ratings += 1
+                else:
+                    sol.negative_ratings += 1
+                # Recalculate quality score
+                sol.quality_score = self._compute_quality_score(sol)
+                affected.append({
+                    "solution_id": sol.solution_id,
+                    "pattern": sol.problem_pattern[:80],
+                    "new_quality": round(sol.quality_score, 3),
+                })
+
+        if affected:
+            self.mark_dirty()
+            self._save_to_disk()
+
+        return {
+            "task_id": task_id,
+            "rating": rating,
+            "note": note,
+            "solutions_affected": len(affected),
+            "details": affected,
+        }
+
+    @staticmethod
+    def _compute_quality_score(sol: SolutionRecord) -> float:
+        """
+        Compute quality score (0-1) for a solution based on:
+        - User ratings (50%): positive / (positive + negative)
+        - Usage signal (30%): injection count normalized
+        - Content quality (20%): has best_practices, tags, reasonable steps
+        """
+        # Rating component
+        total_ratings = sol.positive_ratings + sol.negative_ratings
+        if total_ratings > 0:
+            rating_score = sol.positive_ratings / total_ratings
+        else:
+            rating_score = 0.5  # Neutral if no ratings
+
+        # Usage component (more injections = more trusted, caps at 1.0)
+        usage_score = min(sol.injection_count / 10.0, 1.0) if sol.injection_count > 0 else 0.3
+
+        # Content quality component
+        content_score = 0.0
+        if sol.best_practices:
+            content_score += 0.5
+        if sol.tags:
+            content_score += 0.2
+        if 1 <= len(sol.solution_steps) <= 6:
+            content_score += 0.3
+
+        return (rating_score * 0.5) + (usage_score * 0.3) + (content_score * 0.2)
+
+    def decay_old_patterns(self, days_threshold: int = 30) -> int:
+        """
+        Decay quality scores for patterns not accessed in N days.
+        Returns count of decayed patterns.
+        """
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days_threshold)).isoformat()
+        decayed = 0
+
+        for sol in self._solutions_cache:
+            if sol.last_accessed and sol.last_accessed < cutoff:
+                # Decay by 10% per cycle
+                sol.quality_score = max(0.1, sol.quality_score * 0.9)
+                decayed += 1
+
+        if decayed:
+            self.mark_dirty()
+            self._save_to_disk()
+
+        return decayed
+
+    def auto_prune(self, min_quality: float = 0.15, min_age_days: int = 14) -> int:
+        """
+        Remove solutions that are old AND have very low quality scores.
+        Never removes solutions with positive ratings or best_practices.
+        Returns count of pruned solutions.
+        """
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=min_age_days)).isoformat()
+        keep = []
+        pruned = 0
+
+        for sol in self._solutions_cache:
+            # Never prune curated or positively-rated solutions
+            if sol.positive_ratings > 0 or sol.best_practices:
+                keep.append(sol)
+            elif sol.quality_score < min_quality and sol.timestamp < cutoff:
+                pruned += 1
+            else:
+                keep.append(sol)
+
+        if pruned:
+            self._solutions_cache = keep
+            # Rebuild TF-IDF index
+            self._solution_tokens = [
+                tokenize(f"{s.problem_pattern} {' '.join(s.solution_steps)} {' '.join(s.tags)}")
+                for s in keep
+            ]
+            self.mark_dirty()
+            self._save_to_disk()
+
+        return pruned
+
+    def get_quality_report(self) -> Dict[str, Any]:
+        """Get quality distribution of stored solutions."""
+        if not self._solutions_cache:
+            return {"total": 0}
+
+        scores = [s.quality_score for s in self._solutions_cache]
+        rated = [s for s in self._solutions_cache if s.positive_ratings + s.negative_ratings > 0]
+        curated = [s for s in self._solutions_cache if s.best_practices]
+
+        return {
+            "total": len(self._solutions_cache),
+            "avg_quality": round(sum(scores) / len(scores), 3),
+            "high_quality": len([s for s in scores if s >= 0.7]),
+            "medium_quality": len([s for s in scores if 0.4 <= s < 0.7]),
+            "low_quality": len([s for s in scores if s < 0.4]),
+            "user_rated": len(rated),
+            "curated_with_practices": len(curated),
+            "top_5": [
+                {
+                    "pattern": s.problem_pattern[:60],
+                    "quality": round(s.quality_score, 3),
+                    "ratings": f"+{s.positive_ratings}/-{s.negative_ratings}",
+                    "injections": s.injection_count,
+                }
+                for s in sorted(self._solutions_cache, key=lambda x: x.quality_score, reverse=True)[:5]
+            ],
+        }
 
     async def search_all(
         self,

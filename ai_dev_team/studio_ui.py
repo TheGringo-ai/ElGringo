@@ -3333,12 +3333,18 @@ def main():
     print("=" * 60 + "\n")
 
     ui = create_studio_ui()
+    # Gradio auth — set GRADIO_USERNAME and GRADIO_PASSWORD env vars to enable
+    auth_user = os.environ.get("GRADIO_USERNAME")
+    auth_pass = os.environ.get("GRADIO_PASSWORD")
+    auth_config = [(auth_user, auth_pass)] if auth_user and auth_pass else None
+
     ui.launch(
         server_name="0.0.0.0",
         server_port=int(os.environ.get("PORT", 7861)),
         share=False,
         show_error=True,
         favicon_path=None,
+        auth=auth_config,
     )
 
 

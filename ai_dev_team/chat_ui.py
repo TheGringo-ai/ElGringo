@@ -1221,11 +1221,17 @@ def main():
 
     # Create and launch UI
     ui = create_ui()
+    # Gradio auth — set GRADIO_USERNAME and GRADIO_PASSWORD env vars to enable
+    auth_user = os.environ.get("GRADIO_USERNAME")
+    auth_pass = os.environ.get("GRADIO_PASSWORD")
+    auth_config = [(auth_user, auth_pass)] if auth_user and auth_pass else None
+
     ui.launch(
         server_name="0.0.0.0",
         server_port=int(os.environ.get("PORT", 7860)),
         share=False,
         show_error=True,
+        auth=auth_config,
     )
 
 

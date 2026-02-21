@@ -4,7 +4,7 @@
       "command": "/bin/zsh",
       "args": [
         "-c",
-        "source ~/.ai_secrets && python3 /Users/fredtaylor/Development/Projects/FredAI/servers/mcp_server.py"
+        "source ~/.ai_secrets && cd /Users/fredtaylor/Development/Projects/FredAI && python3 servers/mcp_server.py"
       ],
       "env": {
         "PYTHONPATH": "/Users/fredtaylor/Development/Projects/FredAI"

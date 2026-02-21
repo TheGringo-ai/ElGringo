@@ -245,6 +245,11 @@ def create_dashboard():
         # Auto-load on open
         app.load(fn=fetch_cost_summary, outputs=[cost_summary, cost_table])
 
+        # Auto-refresh every 30 seconds
+        timer = gr.Timer(value=30)
+        timer.tick(fn=fetch_cost_summary, outputs=[cost_summary, cost_table])
+        timer.tick(fn=fetch_agent_status, outputs=[agent_summary, agent_table])
+
     return app
 
 

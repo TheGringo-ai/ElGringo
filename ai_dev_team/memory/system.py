@@ -19,6 +19,107 @@ from typing import Any, Dict, List, Optional, Set
 logger = logging.getLogger(__name__)
 
 
+# ── Embedding Search (optional, uses Ollama) ─────────────────────────
+
+class EmbeddingSearch:
+    """Vector-based semantic search using Ollama's embedding endpoint.
+
+    Falls back to TF-IDF if Ollama is unavailable or the embedding model
+    is not pulled.  Uses cosine similarity over nomic-embed-text vectors.
+    """
+
+    MODEL = "nomic-embed-text"
+    OLLAMA_URL = "http://localhost:11434/api/embed"
+
+    def __init__(self):
+        self._available: Optional[bool] = None
+        self._cache: Dict[str, List[float]] = {}
+
+    async def is_available(self) -> bool:
+        """Check if Ollama is running and the embedding model is pulled."""
+        if self._available is not None:
+            return self._available
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.post(
+                    self.OLLAMA_URL,
+                    json={"model": self.MODEL, "input": "test"},
+                )
+                self._available = resp.status_code == 200
+        except Exception:
+            self._available = False
+        logger.info(f"EmbeddingSearch available: {self._available}")
+        return self._available
+
+    async def embed(self, text: str) -> Optional[List[float]]:
+        """Get embedding vector for a text string."""
+        if text in self._cache:
+            return self._cache[text]
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    self.OLLAMA_URL,
+                    json={"model": self.MODEL, "input": text[:2000]},
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    embeddings = data.get("embeddings", [])
+                    if embeddings:
+                        vec = embeddings[0]
+                        self._cache[text] = vec
+                        return vec
+        except Exception as e:
+            logger.debug(f"Embedding failed: {e}")
+        return None
+
+    @staticmethod
+    def cosine_similarity(a: List[float], b: List[float]) -> float:
+        """Compute cosine similarity between two vectors."""
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = sum(x * x for x in a) ** 0.5
+        norm_b = sum(x * x for x in b) ** 0.5
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+
+    async def rank(
+        self,
+        query: str,
+        documents: List[str],
+        top_k: int = 10,
+    ) -> List[tuple]:
+        """Rank documents by semantic similarity to query.
+
+        Returns list of (index, score) tuples sorted by score descending.
+        """
+        query_vec = await self.embed(query)
+        if query_vec is None:
+            return []
+
+        scored = []
+        for i, doc in enumerate(documents):
+            doc_vec = await self.embed(doc[:500])  # Truncate for speed
+            if doc_vec is not None:
+                score = self.cosine_similarity(query_vec, doc_vec)
+                scored.append((i, score))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:top_k]
+
+
+# Global embedding search instance (lazy)
+_embedding_search: Optional[EmbeddingSearch] = None
+
+
+def get_embedding_search() -> EmbeddingSearch:
+    global _embedding_search
+    if _embedding_search is None:
+        _embedding_search = EmbeddingSearch()
+    return _embedding_search
+
+
 def tokenize(text: str) -> List[str]:
     """Simple tokenizer for text matching"""
     # Convert to lowercase and split on non-alphanumeric characters
@@ -738,6 +839,9 @@ class MemorySystem:
         """
         Search across all memory stores (mistakes, solutions, interactions).
 
+        Uses embedding-based search (Ollama nomic-embed-text) when available,
+        falls back to TF-IDF otherwise.
+
         Args:
             query: Search query
             limit: Maximum results per category
@@ -748,18 +852,35 @@ class MemorySystem:
         mistakes = await self.find_similar_mistakes({"query": query}, limit=limit)
         solutions = await self.find_solution_patterns(query, limit=limit)
 
-        # Also search interactions
-        query_tokens = tokenize(query)
+        # Search interactions using embeddings if available, else TF-IDF
+        search_method = "tf-idf"
         scored_interactions = []
 
-        for interaction in self._interactions_cache:
-            doc_tokens = tokenize(f"{interaction.prompt} {interaction.final_answer}")
-            score = compute_tf_idf_score(query_tokens, doc_tokens, [])
-            if score > 0:
-                # Tier-based boost: warm = proven valuable, cold = less relevant
-                tier_boost = {"hot": 1.0, "warm": 1.3, "cold": 0.7}
-                score *= tier_boost.get(interaction.tier, 1.0)
-                scored_interactions.append((score, interaction))
+        embedder = get_embedding_search()
+        use_embeddings = await embedder.is_available()
+
+        if use_embeddings and self._interactions_cache:
+            search_method = "embedding"
+            docs = [
+                f"{i.prompt} {i.final_answer}" for i in self._interactions_cache
+            ]
+            ranked = await embedder.rank(query, docs, top_k=limit)
+            for idx, score in ranked:
+                if score > 0.3:  # Cosine similarity threshold
+                    interaction = self._interactions_cache[idx]
+                    tier_boost = {"hot": 1.0, "warm": 1.1, "cold": 0.9}
+                    boosted = score * tier_boost.get(interaction.tier, 1.0)
+                    scored_interactions.append((boosted, interaction))
+        else:
+            # Fallback to TF-IDF
+            query_tokens = tokenize(query)
+            for interaction in self._interactions_cache:
+                doc_tokens = tokenize(f"{interaction.prompt} {interaction.final_answer}")
+                score = compute_tf_idf_score(query_tokens, doc_tokens, [])
+                if score > 0:
+                    tier_boost = {"hot": 1.0, "warm": 1.3, "cold": 0.7}
+                    score *= tier_boost.get(interaction.tier, 1.0)
+                    scored_interactions.append((score, interaction))
 
         scored_interactions.sort(key=lambda x: x[0], reverse=True)
         top_interactions = [i for _, i in scored_interactions[:limit]]
@@ -771,6 +892,7 @@ class MemorySystem:
             "solutions": solutions,
             "interactions": top_interactions,
             "query": query,
+            "search_method": search_method,
             "total_results": len(mistakes) + len(solutions) + len(top_interactions),
         }
 

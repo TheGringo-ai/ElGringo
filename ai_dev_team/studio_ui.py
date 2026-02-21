@@ -538,14 +538,23 @@ def generate_preview(code, language):
         """
     elif language == 'python':
         try:
-            result = subprocess.run(
-                ['python', '-c', code],
-                capture_output=True, text=True, timeout=10
-            )
+            from ai_dev_team.sandbox import get_code_executor
+            import asyncio
+
+            executor = get_code_executor()
+
+            def _run():
+                loop = asyncio.new_event_loop()
+                try:
+                    return loop.run_until_complete(executor.execute(code, "python", timeout=10))
+                finally:
+                    loop.close()
+
+            result = _run()
             output = result.stdout or result.stderr or "(no output)"
+            if not result.success:
+                return f"<pre style='background:#1e1e1e;color:#ff6b6b;padding:1rem;border-radius:8px;overflow-x:auto;'>{output}</pre>"
             return f"<pre style='background:#1e1e1e;color:#d4d4d4;padding:1rem;border-radius:8px;overflow-x:auto;'>{output}</pre>"
-        except subprocess.TimeoutExpired:
-            return "<pre style='color:red'>Execution timed out</pre>"
         except Exception as e:
             return f"<pre style='color:red'>Error: {e}</pre>"
     else:
@@ -588,28 +597,27 @@ class ProcessManager:
             return f"Cannot run {language} files directly", "*Not supported*", ""
 
     def _run_python_script(self, code, file_path, current_dir):
-        """Run a Python script."""
+        """Run a Python script using the sandboxed executor."""
         try:
-            # Save to temp file if no path
-            if not file_path or not os.path.exists(file_path):
-                temp_file = os.path.join(current_dir, "_temp_run.py")
-                with open(temp_file, 'w') as f:
-                    f.write(code)
-                file_path = temp_file
+            from ai_dev_team.sandbox import get_code_executor
+            import asyncio
 
-            result = subprocess.run(
-                ['python', file_path],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                cwd=current_dir
-            )
+            executor = get_code_executor()
+
+            def _run():
+                loop = asyncio.new_event_loop()
+                try:
+                    return loop.run_until_complete(executor.execute(code, "python", timeout=30))
+                finally:
+                    loop.close()
+
+            result = _run()
             output = result.stdout
             if result.stderr:
                 output += f"\n[stderr]\n{result.stderr}"
+            if result.timed_out:
+                return "Execution timed out (30s limit)", "*Timed out*", ""
             return output or "(no output)", "*Completed*", ""
-        except subprocess.TimeoutExpired:
-            return "Execution timed out (30s limit)", "*Timed out*", ""
         except Exception as e:
             return f"Error: {e}", "*Error*", ""
 
@@ -2759,8 +2767,8 @@ def create_studio_ui():
             try:
                 pm = get_project_manager()
                 pm.add_project(project_dir, safe_name, f"New {proj_type} project")
-            except:
-                pass
+            except Exception:
+                logger.debug("Failed to add project to project memory: %s", safe_name)
 
             return f"✅ Created project: **{safe_name}**\n\nLocation: `{project_dir}`\n\n→ Now go to **Step 2** and tell the AI what to build!", project_dir
 
@@ -3326,8 +3334,8 @@ def main():
 
     ui = create_studio_ui()
     ui.launch(
-        server_name="127.0.0.1",
-        server_port=7861,
+        server_name="0.0.0.0",
+        server_port=int(os.environ.get("PORT", 7861)),
         share=False,
         show_error=True,
         favicon_path=None,

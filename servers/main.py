@@ -38,10 +38,11 @@ app = FastAPI(
 )
 
 # CORS middleware
+_cors_origins = os.getenv("FREDAI_CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:8000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True, 
+    allow_origins=[o.strip() for o in _cors_origins],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -49,7 +50,7 @@ app.add_middleware(
 # Static files and templates
 try:
     app.mount("/static", StaticFiles(directory="static"), name="static")
-except:
+except Exception:
     logger.warning("Static directory not found, creating placeholder")
 
 templates = Jinja2Templates(directory="templates")
@@ -325,8 +326,12 @@ async def ceo_dashboard(request: Request):
     CEO Dashboard - Command center for the entire platform
     """
     try:
-        # Load the CEO dashboard template we created earlier
-        with open("/Users/fredtaylor/ChatterFix/app/templates/ceo_dashboard.html", "r") as f:
+        # Load the CEO dashboard template
+        dashboard_path = os.getenv(
+            "CEO_DASHBOARD_HTML",
+            os.path.join(os.path.dirname(__file__), "..", "templates", "ceo_dashboard.html")
+        )
+        with open(dashboard_path, "r") as f:
             dashboard_html = f.read()
             
         # Update title and branding for standalone platform

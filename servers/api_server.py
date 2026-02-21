@@ -54,6 +54,72 @@ CORS(app, origins=[
     "https://fredfix.web.app",    # FredFix production
 ])
 
+# API Authentication
+FREDAI_API_TOKEN = os.getenv("FREDAI_API_TOKEN")
+
+# Paths that don't require authentication
+PUBLIC_PATHS = {"/", "/health", "/api/health"}
+
+
+def _is_localhost(remote_addr: str) -> bool:
+    """Check if request is from localhost (same-VM dashboard)."""
+    return remote_addr in ("127.0.0.1", "::1", "localhost")
+
+
+def require_auth(f):
+    """Decorator to require Bearer token authentication.
+
+    Skips auth for:
+    - Localhost requests (Dashboard running on same VM)
+    - PUBLIC_PATHS (health checks, root)
+    """
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        # Skip auth for localhost
+        if _is_localhost(request.remote_addr):
+            return f(*args, **kwargs)
+
+        # Check Bearer token
+        if not FREDAI_API_TOKEN:
+            # No token configured = auth disabled (dev mode)
+            return f(*args, **kwargs)
+
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return jsonify({"error": "Missing Authorization header"}), 401
+
+        token = auth_header[7:]
+        if token != FREDAI_API_TOKEN:
+            logger.warning(f"Invalid API token from {request.remote_addr}")
+            return jsonify({"error": "Invalid API token"}), 401
+
+        return f(*args, **kwargs)
+    return wrapper
+
+
+@app.before_request
+def check_auth():
+    """Global auth check for all /api/* routes except public paths."""
+    if request.path in PUBLIC_PATHS:
+        return None
+    if not request.path.startswith("/api/"):
+        return None
+    if _is_localhost(request.remote_addr):
+        return None
+    if not FREDAI_API_TOKEN:
+        return None
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return jsonify({"error": "Missing Authorization header"}), 401
+
+    token = auth_header[7:]
+    if token != FREDAI_API_TOKEN:
+        logger.warning(f"Invalid API token from {request.remote_addr}")
+        return jsonify({"error": "Invalid API token"}), 401
+
+    return None
+
 # Global team instance
 team: Optional[AIDevTeam] = None
 engine: Optional[ParallelCodingEngine] = None
@@ -224,6 +290,7 @@ def root():
 
 
 @app.route('/api/health', methods=['GET'])
+@app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
     return jsonify({
@@ -2490,6 +2557,6 @@ if __name__ == '__main__':
 
     app.run(
         host='0.0.0.0',
-        port=5050,
-        debug=True
+        port=int(os.environ.get('PORT', 5050)),
+        debug=os.environ.get('AI_PLATFORM_ENV') != 'production'
     )

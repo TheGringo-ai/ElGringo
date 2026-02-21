@@ -26,6 +26,37 @@ logger = logging.getLogger(__name__)
 # Global team instance
 team = None
 
+# Chat history persistence
+_CHAT_HISTORY_DIR = os.path.join(os.path.expanduser("~"), ".ai-dev-team", "chat_history")
+_CHAT_HISTORY_FILE = os.path.join(_CHAT_HISTORY_DIR, "last_session.json")
+_MAX_PERSISTED_MESSAGES = 20
+
+
+def _save_chat_history(history: list):
+    """Persist chat history to disk."""
+    try:
+        os.makedirs(_CHAT_HISTORY_DIR, exist_ok=True)
+        # Keep only recent messages
+        trimmed = history[-_MAX_PERSISTED_MESSAGES * 2:]  # Each exchange = 2 entries
+        with open(_CHAT_HISTORY_FILE, "w") as f:
+            import json
+            json.dump(trimmed, f, indent=2)
+    except Exception as e:
+        logger.debug(f"Could not save chat history: {e}")
+
+
+def _load_chat_history() -> list:
+    """Load persisted chat history from disk."""
+    try:
+        if os.path.exists(_CHAT_HISTORY_FILE):
+            with open(_CHAT_HISTORY_FILE, "r") as f:
+                import json
+                history = json.load(f)
+                return history[-_MAX_PERSISTED_MESSAGES * 2:]
+    except Exception as e:
+        logger.debug(f"Could not load chat history: {e}")
+    return []
+
 
 def get_team():
     """Get or create the AI Team instance."""
@@ -336,8 +367,17 @@ async def _handle_smart_commit(message: str) -> str:
         modified = sum(1 for l in lines if l.startswith('M'))
         deleted = sum(1 for l in lines if l.startswith('D'))
 
-        # Stage all changes
+        # Stage changes selectively (exclude secrets)
+        SECRET_PATTERNS = [".env", ".env.*", "*.pem", "*.key", "*.p12",
+                           "credentials.*", "*secret*", "*.pfx", "*.crt",
+                           "firebase-admin*.json", "service-account*.json"]
+        # Add all, then unstage anything matching secret patterns
         subprocess.run(["git", "add", "-A"], cwd=cwd, timeout=30)
+        for pattern in SECRET_PATTERNS:
+            subprocess.run(
+                ["git", "reset", "HEAD", "--", pattern],
+                cwd=cwd, capture_output=True, timeout=10
+            )
 
         # Generate commit message if not provided
         if not message:
@@ -374,8 +414,39 @@ async def _handle_smart_commit(message: str) -> str:
         return f"Commit error: {str(e)}"
 
 
+def _validate_write_path(filepath: str) -> str | None:
+    """Validate a file path for safety. Returns error message or None if safe."""
+    import os
+
+    abs_path = os.path.abspath(filepath)
+
+    # Block path traversal
+    if ".." in filepath:
+        return "Path traversal (`..`) is not allowed."
+
+    # Block dotfiles/directories (e.g. .env, .ssh, .git)
+    parts = abs_path.split(os.sep)
+    sensitive_dotfiles = {".env", ".ssh", ".aws", ".git", ".gnupg", ".config"}
+    for part in parts:
+        if part in sensitive_dotfiles:
+            return f"Writing to `{part}` is not allowed for security reasons."
+
+    # Block system directories
+    blocked_prefixes = ["/etc", "/usr", "/bin", "/sbin", "/var", "/tmp", "/dev", "/proc", "/sys"]
+    for prefix in blocked_prefixes:
+        if abs_path.startswith(prefix):
+            return f"Writing to `{prefix}` is not allowed."
+
+    # Block sensitive file extensions
+    _, ext = os.path.splitext(abs_path)
+    if ext.lower() in {".pem", ".key", ".crt", ".p12", ".pfx"}:
+        return f"Writing `{ext}` files is not allowed for security reasons."
+
+    return None
+
+
 async def _handle_write_file(args: str) -> str:
-    """Write content to a file."""
+    """Write content to a file with path validation."""
     import os
 
     if not args:
@@ -394,6 +465,11 @@ Examples:
 
     filepath = os.path.expanduser(parts[0])
     content = parts[1]
+
+    # Validate path before writing
+    path_error = _validate_write_path(filepath)
+    if path_error:
+        return f"**Write Blocked:** {path_error}"
 
     try:
         # Create directory if needed
@@ -832,11 +908,104 @@ def process_message_sync(message: str) -> str:
     return run_async(_process_message_async(message))
 
 
+def _is_command(message: str) -> bool:
+    """Check if message is a slash command (non-streaming)."""
+    return message.strip().startswith("/")
+
+
 def respond(message: str, history: list) -> str:
     """Chat response function for gr.ChatInterface."""
     if not message.strip():
         return "Please enter a message."
     return process_message_sync(message)
+
+
+def respond_stream(message: str, history: list):
+    """Streaming chat response generator for Gradio.
+
+    Yields partial responses for natural language queries.
+    Falls back to blocking for slash commands.
+    """
+    if not message.strip():
+        yield "Please enter a message."
+        return
+
+    # Slash commands are non-streaming (they do subprocess/tool work)
+    if _is_command(message):
+        yield process_message_sync(message)
+        return
+
+    # Stream from the best agent for natural language input
+    t = get_team()
+    try:
+        import concurrent.futures
+        import threading
+        import queue as queue_mod
+
+        token_queue = queue_mod.Queue()
+        error_holder = [None]
+
+        async def _stream_worker():
+            try:
+                # Classify and pick the best agent
+                classification = t._task_router.classify(message)
+                agents_list = list(t.agents.values())
+                if not agents_list:
+                    token_queue.put(("ERROR", "No agents available."))
+                    return
+
+                best_agent = agents_list[0]
+                # Try to find the router-recommended agent
+                recommended = classification.recommended_agents
+                for rec_name in recommended:
+                    if rec_name in t.agents:
+                        best_agent = t.agents[rec_name]
+                        break
+
+                header = f"**{best_agent.name}** | Streaming...\n\n"
+                token_queue.put(("TOKEN", header))
+
+                async for token in best_agent.generate_stream(message):
+                    token_queue.put(("TOKEN", token))
+
+                token_queue.put(("DONE", None))
+            except Exception as e:
+                token_queue.put(("ERROR", str(e)))
+
+        def _run_stream():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(_stream_worker())
+            finally:
+                loop.close()
+
+        thread = threading.Thread(target=_run_stream, daemon=True)
+        thread.start()
+
+        accumulated = ""
+        while True:
+            try:
+                msg_type, data = token_queue.get(timeout=120)
+                if msg_type == "DONE":
+                    break
+                elif msg_type == "ERROR":
+                    accumulated += f"\n\nError: {data}"
+                    yield accumulated
+                    break
+                elif msg_type == "TOKEN":
+                    accumulated += data
+                    yield accumulated
+            except queue_mod.Empty:
+                accumulated += "\n\n(Timed out waiting for response)"
+                yield accumulated
+                break
+
+        thread.join(timeout=5)
+
+    except Exception as e:
+        logger.error(f"Streaming error: {e}")
+        yield f"Error: {str(e)}"
 
 
 def create_ui():
@@ -862,20 +1031,29 @@ Click any example below or type your own request.
             )
             submit = gr.Button("Send", variant="primary", scale=1)
 
-        # Chat functions - using Gradio 6 message format
+        # Chat functions - using Gradio 6 message format with streaming
         def send_message(message, history):
-            """Process a message and return response."""
+            """Process a message with streaming for natural language."""
             if not message.strip():
-                return "", history
-            response = process_message_sync(message)
+                yield "", history
+                return
+
+            # Add user message immediately
             history = history + [
                 {"role": "user", "content": message},
-                {"role": "assistant", "content": response}
+                {"role": "assistant", "content": ""}
             ]
-            return "", history
+
+            # Stream the response
+            for partial in respond_stream(message, history):
+                history[-1]["content"] = partial
+                yield "", history
+
+            # Persist after streaming completes
+            _save_chat_history(history)
 
         def set_and_send(cmd, history):
-            """Set command and send it."""
+            """Set command and send it (non-streaming for commands)."""
             if not cmd.strip():
                 return "", history
             response = process_message_sync(cmd)
@@ -883,6 +1061,7 @@ Click any example below or type your own request.
                 {"role": "user", "content": cmd},
                 {"role": "assistant", "content": response}
             ]
+            _save_chat_history(history)
             return "", history
 
         # Quick action buttons
@@ -986,6 +1165,27 @@ Click any example below or type your own request.
         submit.click(send_message, [msg, chatbot], [msg, chatbot])
         clear.click(fn=lambda: [], outputs=[chatbot])
 
+        # Feedback thumbs up/down via Gradio's built-in like button
+        def handle_like(evt: gr.LikeData):
+            """Handle thumbs up/down feedback from chat messages."""
+            try:
+                from ai_dev_team.feedback.feedback_collector import FeedbackCollector
+                collector = FeedbackCollector()
+                task_id = f"chat-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                model_name = "ai-team"  # Generic since we may not know which agent
+                if evt.liked:
+                    collector.submit_thumbs_up(task_id, model_name)
+                else:
+                    collector.submit_thumbs_down(task_id, model_name)
+                logger.info(f"Feedback recorded: {'positive' if evt.liked else 'negative'}")
+            except Exception as e:
+                logger.warning(f"Could not record feedback: {e}")
+
+        chatbot.like(handle_like, None, None)
+
+        # Load persisted history on page open
+        demo.load(fn=_load_chat_history, outputs=[chatbot])
+
         gr.Markdown("""
 ---
 *Powered by Fred's AI Team Platform - Claude, ChatGPT, Gemini, Grok, and Local Models*
@@ -1022,8 +1222,8 @@ def main():
     # Create and launch UI
     ui = create_ui()
     ui.launch(
-        server_name="127.0.0.1",
-        server_port=7860,
+        server_name="0.0.0.0",
+        server_port=int(os.environ.get("PORT", 7860)),
         share=False,
         show_error=True,
     )

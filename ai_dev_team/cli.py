@@ -45,6 +45,44 @@ class Colors:
     RESET = '\033[0m'
 
 
+# CLI Commands for tab completion
+CLI_COMMANDS = [
+    "/help", "/agents", "/status", "/index", "/search", "/history",
+    "/clear", "/project", "/validate", "/mode", "/exit", "/quit",
+    "/react", "/reason", "/plan", "/git", "/commit", "/run", "/exec",
+    "/new", "/create", "/templates", "/analyze", "/screenshot",
+    "/voice", "/listen",
+]
+
+CLI_MODES = ["parallel", "sequential", "consensus"]
+CLI_GIT_SUBCMDS = ["status", "log", "diff", "branch"]
+
+
+def _cli_completer(text, state):
+    """Readline completer for CLI commands and subcommands."""
+    line = readline.get_line_buffer().lstrip()
+
+    if line.startswith("/git "):
+        sub = line[5:]
+        options = [s for s in CLI_GIT_SUBCMDS if s.startswith(sub)]
+    elif line.startswith("/mode "):
+        sub = line[6:]
+        options = [m for m in CLI_MODES if m.startswith(sub)]
+    elif line.startswith("/"):
+        options = [c for c in CLI_COMMANDS if c.startswith(text)]
+    else:
+        options = []
+
+    if state < len(options):
+        return options[state]
+    return None
+
+
+readline.set_completer(_cli_completer)
+readline.set_completer_delims(" \t")
+readline.parse_and_bind("tab: complete")
+
+
 class AITeamCLI:
     """Interactive CLI for the AI Team Platform."""
 
@@ -142,7 +180,7 @@ class AITeamCLI:
                     agents.append("Qwen-Local")
                 if "llama" in result.stdout.lower():
                     agents.append("Llama-Local")
-        except:
+        except Exception:
             pass
 
         return agents if agents else ["None configured"]
@@ -1365,6 +1403,19 @@ async def run_single_task(team, prompt: str, mode: str = "parallel"):
 
 def main():
     """Main CLI entry point"""
+    # Intercept "products" subcommand before argparse (avoids conflict with positional prompt)
+    if len(sys.argv) > 1 and sys.argv[1] == "products":
+        from products.cli import handle_products_command
+
+        class _Args:
+            pass
+
+        args = _Args()
+        args.products_action = sys.argv[2] if len(sys.argv) > 2 else "list"
+        args.product_name = sys.argv[3] if len(sys.argv) > 3 else ""
+        handle_products_command(args)
+        sys.exit(0)
+
     parser = argparse.ArgumentParser(
         description="AI Team - Multi-Model AI Development Platform",
         formatter_class=argparse.RawDescriptionHelpFormatter,

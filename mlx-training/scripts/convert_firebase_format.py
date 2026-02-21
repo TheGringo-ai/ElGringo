@@ -40,7 +40,7 @@ def convert_file(input_path: str, output_path: str):
     return len(converted)
 
 def main():
-    base_dir = Path("/Users/fredtaylor/Development/Projects/AITeamPlatform/mlx-training")
+    base_dir = Path(__file__).resolve().parent.parent
 
     # Convert Firebase data to text format
     firebase_dir = base_dir / "data/firebase"

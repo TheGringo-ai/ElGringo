@@ -169,7 +169,7 @@ def main():
         examples = []
 
     if examples:
-        output_dir = Path("/Users/fredtaylor/Development/Projects/AITeamPlatform/mlx-training/data/firebase_stack")
+        output_dir = Path(__file__).resolve().parent.parent / "data" / "firebase_stack"
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Split 90/10

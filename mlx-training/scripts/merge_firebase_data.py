@@ -42,7 +42,7 @@ def validate_example(example: dict) -> bool:
     return True
 
 def main():
-    base_dir = Path("/Users/fredtaylor/Development/Projects/AITeamPlatform/mlx-training")
+    base_dir = Path(__file__).resolve().parent.parent
 
     # Load existing training data
     print("Loading existing training data...")

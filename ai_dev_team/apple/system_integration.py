@@ -448,7 +448,7 @@ class AppleIntelligenceHub:
         try:
             loop = asyncio.get_event_loop()
             info["coreml_available"] = loop.run_until_complete(self.coreml.is_available())
-        except:
+        except Exception:
             info["coreml_available"] = False
 
         # Check MLX

@@ -219,8 +219,8 @@ class FeedbackCapture:
                             data = json.loads(line)
                             cat = data.get('category', 'unknown')
                             categories[cat] = categories.get(cat, 0) + 1
-                        except:
-                            pass
+                        except Exception:
+                            logger.debug("Failed to parse feedback line: %s", line.strip())
         
         return {
             'total_captured': total,

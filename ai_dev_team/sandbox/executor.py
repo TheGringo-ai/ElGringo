@@ -273,8 +273,8 @@ class CodeExecutor:
             # Clean up temp file
             try:
                 os.unlink(code_file)
-            except:
-                pass
+            except Exception:
+                logger.debug("Failed to clean up temp file: %s", code_file)
 
     async def _execute_docker(
         self,

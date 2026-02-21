@@ -419,15 +419,21 @@ class AIDevTeam:
         import time
         from .routing import AgentScore
 
-        # Build candidate scores
+        # Build candidate scores using actual router data
+        ranked = self._task_router.get_performance_enhanced_agents(
+            classification.primary_type, candidates
+        )
+        ranked_scores = {name: (score, details) for name, score, details in ranked}
+
         agent_scores = []
         for name in candidates:
             is_local = "local" in name.lower() or "ollama" in name.lower()
             allowed, reason = self._constraints.should_use_agent(name, is_local, 0)
+            score, details = ranked_scores.get(name, (0.5, {}))
             agent_scores.append(AgentScore(
                 agent_name=name,
-                total_score=0.8 if name == selected else 0.5,
-                breakdown={"task_match": 0.6, "performance": 0.2},
+                total_score=round(score, 3),
+                breakdown=details if details else {"task_match": round(score, 3)},
                 eligible=allowed,
                 rejection_reason=None if allowed else reason,
             ))
@@ -545,7 +551,7 @@ class AIDevTeam:
 
             routing_decision = self._apple_router.route(
                 task_type=apple_task_type,
-                prompt_length=len(prompt) + len(context),
+                prompt_length=len(prompt) + len(context or ""),
             )
             # Only prefer local models for truly simple/fast tasks
             # For medium+ tasks, let cloud agents participate for better quality

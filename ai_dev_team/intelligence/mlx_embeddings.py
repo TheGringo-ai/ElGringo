@@ -567,8 +567,8 @@ def check_mlx_status() -> Dict[str, Any]:
         import platform
         if platform.machine() == "arm64" and platform.system() == "Darwin":
             status["apple_silicon"] = True
-    except:
-        pass
+    except Exception:
+        logger.debug("Failed to detect Apple Silicon status")
 
     # Check for models
     mlx_dir = Path(__file__).parent.parent.parent / "mlx-training" / "models"

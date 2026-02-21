@@ -9461,7 +9461,7 @@ def main():
     train_examples = examples[:split_idx]
     valid_examples = examples[split_idx:]
 
-    output_dir = Path("/Users/fredtaylor/Development/Projects/AITeamPlatform/mlx-training/data/firebase")
+    output_dir = Path(__file__).resolve().parent.parent / "data" / "firebase"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Write training data

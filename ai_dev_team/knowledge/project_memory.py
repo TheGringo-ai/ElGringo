@@ -220,8 +220,8 @@ class ProjectMemoryManager:
                         techs.append('Express')
                     if 'typescript' in deps:
                         techs.append('TypeScript')
-            except:
-                pass
+            except Exception:
+                logger.debug("Failed to parse package.json at %s", path)
 
         if (path / 'requirements.txt').exists() or (path / 'pyproject.toml').exists():
             techs.append('Python')
@@ -238,8 +238,8 @@ class ProjectMemoryManager:
                         techs.append('Django')
                     if 'firebase' in content:
                         techs.append('Firebase')
-                except:
-                    pass
+                except Exception:
+                    logger.debug("Failed to parse requirements.txt at %s", path)
 
         if (path / 'firebase.json').exists():
             techs.append('Firebase')

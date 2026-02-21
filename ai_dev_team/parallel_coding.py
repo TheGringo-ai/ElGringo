@@ -384,8 +384,8 @@ class ParallelCodingEngine:
         for f in files[:20]:  # Limit files
             try:
                 file_contents[str(f)] = f.read_text()[:5000]  # Truncate
-            except:
-                pass
+            except Exception:
+                logger.debug("Failed to read file for review: %s", f)
 
         # Create specialized review tasks
         task_configs = [
@@ -598,8 +598,8 @@ class ParallelCodingEngine:
             try:
                 text = f.read_text()[:3000]
                 content_parts.append(f"# File: {f.name}\n{text}")
-            except:
-                pass
+            except Exception:
+                logger.debug("Failed to read file for summary: %s", f)
         return "\n\n---\n\n".join(content_parts)
 
     def _generate_summary(

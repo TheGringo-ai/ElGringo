@@ -223,7 +223,7 @@ Important:
                 try:
                     fixed = input_match.group(1).replace("'", '"')
                     action_input = json.loads(fixed)
-                except:
+                except Exception:
                     action_input = {"raw": input_match.group(1)}
 
         return thought, thought_type, action, action_input

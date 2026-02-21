@@ -300,8 +300,8 @@ class PythonValidator:
                     if isinstance(node, ast.Expr) and not isinstance(node.value, ast.Constant):
                         has_standalone_code = True
                         break
-            except:
-                pass
+            except Exception:
+                logger.debug("Failed to parse code for standalone expression check")
 
             if has_standalone_code:
                 result.suggestions.append(

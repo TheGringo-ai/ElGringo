@@ -59,6 +59,36 @@ class PRReviewer:
     def __init__(self, max_diff_lines: int = 5000):
         self._max_diff_lines = max_diff_lines
 
+    async def review_diff(
+        self,
+        diff: str,
+        pr_title: str = "Code Review",
+        pr_author: str = "unknown",
+        description: str = "",
+    ) -> ReviewResult:
+        """Convenience method: review a raw diff string without a full PRInfo object.
+
+        Args:
+            diff: Unified diff text or raw code to review.
+            pr_title: Title for the review context.
+            pr_author: Author name.
+            description: Optional description of the change.
+
+        Returns:
+            ReviewResult with verdict, summary, and inline comments.
+        """
+        pr = PRInfo(
+            owner="local",
+            repo="local",
+            number=0,
+            title=pr_title,
+            author=pr_author,
+            head_sha="local",
+            diff=diff,
+            description=description,
+        )
+        return await self.review(pr)
+
     async def review(self, pr: PRInfo) -> ReviewResult:
         """Run a multi-agent review on a PR."""
         start = time.time()

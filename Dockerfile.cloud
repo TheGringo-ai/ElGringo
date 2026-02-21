@@ -27,7 +27,7 @@ RUN python -m venv /opt/venv && \
 
 # Install the project itself
 COPY . .
-RUN /opt/venv/bin/pip install --no-cache-dir -e .
+RUN /opt/venv/bin/pip install --no-cache-dir .
 
 # --- Stage 2: Production ---
 FROM python:3.11-slim AS production

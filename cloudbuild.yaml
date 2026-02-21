@@ -39,6 +39,7 @@ steps:
       - '--max-instances=10'
       - '--timeout=600'
       - '--set-env-vars=AI_PLATFORM_ENV=production'
+      - '--set-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,XAI_API_KEY=XAI_API_KEY:latest,GITHUB_APP_ID=GITHUB_APP_ID:latest,GITHUB_PRIVATE_KEY=GITHUB_PRIVATE_KEY:latest,GITHUB_WEBHOOK_SECRET=GITHUB_WEBHOOK_SECRET:latest'
       - '--allow-unauthenticated'
       - '--quiet'
 
@@ -58,6 +59,7 @@ steps:
       - '--max-instances=20'
       - '--timeout=600'
       - '--set-env-vars=AI_PLATFORM_ENV=production'
+      - '--set-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,XAI_API_KEY=XAI_API_KEY:latest'
       - '--allow-unauthenticated'
       - '--quiet'
 
@@ -77,6 +79,7 @@ steps:
       - '--max-instances=5'
       - '--timeout=600'
       - '--set-env-vars=AI_PLATFORM_ENV=production'
+      - '--set-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,XAI_API_KEY=XAI_API_KEY:latest'
       - '--allow-unauthenticated'
       - '--quiet'
 
@@ -96,6 +99,7 @@ steps:
       - '--max-instances=5'
       - '--timeout=600'
       - '--set-env-vars=AI_PLATFORM_ENV=production'
+      - '--set-secrets=OPENAI_API_KEY=OPENAI_API_KEY:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,XAI_API_KEY=XAI_API_KEY:latest'
       - '--allow-unauthenticated'
       - '--quiet'
 

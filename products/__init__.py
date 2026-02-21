@@ -62,3 +62,8 @@ def reload_products() -> List[ProductConfig]:
     global _registry
     _registry = None
     return list_products()
+
+
+def discover_products() -> List[ProductConfig]:
+    """Public alias for list_products() -- discovers and returns all products."""
+    return list_products()

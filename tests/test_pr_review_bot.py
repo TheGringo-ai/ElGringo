@@ -46,12 +46,11 @@ class TestProductRegistry:
         assert p.status == "active"
         assert p.is_active
 
-    def test_placeholders_are_not_active(self):
-        for name in ("maintenance-advisor",):
-            p = get_product(name)
-            assert p is not None
-            assert p.status == "placeholder"
-            assert not p.is_active
+    def test_maintenance_advisor_is_active(self):
+        p = get_product("maintenance-advisor")
+        assert p is not None
+        assert p.status == "active"
+        assert p.is_active
 
     def test_unknown_product_returns_none(self):
         assert get_product("nonexistent") is None

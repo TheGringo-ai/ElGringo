@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Team Platform - CEO Command Center</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary: #667eea;
+            --secondary: #764ba2;
+            --accent: #f093fb;
+            --bg: #0f0f1a;
+            --surface: #1a1a2e;
+            --card: #16213e;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --green: #10b981;
+            --yellow: #fbbf24;
+            --red: #ef4444;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        /* Layout */
+        .sidebar {
+            position: fixed; top: 0; left: 0;
+            width: 240px; height: 100vh;
+            background: var(--surface);
+            border-right: 1px solid rgba(255,255,255,0.05);
+            padding: 1.5rem 1rem;
+            display: flex; flex-direction: column;
+            z-index: 100;
+        }
+        .sidebar-logo {
+            font-size: 1.4rem; font-weight: 800;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            margin-bottom: 2rem; padding: 0 0.5rem;
+        }
+        .nav-item {
+            display: flex; align-items: center; gap: 0.75rem;
+            padding: 0.75rem 0.75rem; border-radius: 10px;
+            color: var(--muted); text-decoration: none;
+            font-size: 0.9rem; font-weight: 500;
+            cursor: pointer; transition: all 0.2s;
+            margin-bottom: 0.25rem; border: none; background: none; width: 100%;
+        }
+        .nav-item:hover, .nav-item.active {
+            background: rgba(102,126,234,0.15);
+            color: var(--primary);
+        }
+        .nav-icon { font-size: 1.1rem; width: 1.5rem; text-align: center; }
+        .main { margin-left: 240px; padding: 2rem; }
+        .topbar {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 2rem;
+        }
+        .topbar h1 { font-size: 1.6rem; font-weight: 700; }
+        .topbar-actions { display: flex; gap: 0.75rem; }
+        .btn {
+            padding: 0.6rem 1.25rem; border-radius: 8px;
+            font-size: 0.875rem; font-weight: 600; cursor: pointer;
+            text-decoration: none; border: none; transition: all 0.2s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+        }
+        .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.15);
+            color: var(--text);
+        }
+        .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+        /* Stat Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.25rem; margin-bottom: 2rem;
+        }
+        .stat-card {
+            background: var(--card);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 14px; padding: 1.5rem;
+        }
+        .stat-label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+        .stat-value { font-size: 2rem; font-weight: 700; margin-bottom: 0.25rem; }
+        .stat-change { font-size: 0.8rem; color: var(--green); }
+        .stat-icon { font-size: 1.75rem; float: right; margin-top: -2.5rem; opacity: 0.7; }
+        /* Sections */
+        .section { margin-bottom: 2rem; }
+        .section-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 1rem;
+        }
+        .section-title { font-size: 1.1rem; font-weight: 600; }
+        /* AI Team Grid */
+        .team-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+        .team-card {
+            background: var(--card);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 14px; padding: 1.25rem;
+            transition: border-color 0.2s;
+        }
+        .team-card:hover { border-color: var(--primary); }
+        .team-card-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+        .team-avatar {
+            width: 42px; height: 42px; border-radius: 12px;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.25rem;
+        }
+        .team-name { font-weight: 600; font-size: 0.95rem; }
+        .team-role { font-size: 0.78rem; color: var(--muted); }
+        .status-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--green); display: inline-block;
+            margin-right: 4px; animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+        }
+        .team-status { font-size: 0.78rem; color: var(--green); margin-bottom: 0.75rem; }
+        .capabilities { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+        .cap-tag {
+            font-size: 0.72rem; padding: 0.2rem 0.6rem;
+            background: rgba(102,126,234,0.15); color: var(--primary);
+            border-radius: 20px; font-weight: 500;
+        }
+        /* Two-col layout */
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+        /* Portfolio Table */
+        .table-card {
+            background: var(--card);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 14px; overflow: hidden;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th {
+            text-align: left; padding: 0.9rem 1.25rem;
+            font-size: 0.75rem; text-transform: uppercase;
+            letter-spacing: 0.05em; color: var(--muted);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        td {
+            padding: 0.9rem 1.25rem;
+            font-size: 0.875rem;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: rgba(255,255,255,0.02); }
+        .badge {
+            padding: 0.2rem 0.65rem; border-radius: 20px;
+            font-size: 0.72rem; font-weight: 600;
+        }
+        .badge-green { background: rgba(16,185,129,0.15); color: var(--green); }
+        .badge-yellow { background: rgba(251,191,36,0.15); color: var(--yellow); }
+        /* Templates Grid */
+        .templates-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+        }
+        .template-card {
+            background: var(--card);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 14px; padding: 1.25rem;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .template-card:hover {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+        }
+        .template-icon { font-size: 1.75rem; margin-bottom: 0.75rem; }
+        .template-name { font-weight: 600; margin-bottom: 0.25rem; }
+        .template-desc { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.75rem; }
+        .template-meta { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); }
+        .template-meta span { color: var(--green); font-weight: 500; }
+        /* Activity Feed */
+        .activity-card {
+            background: var(--card);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 14px; padding: 1.25rem;
+        }
+        .activity-item {
+            display: flex; align-items: flex-start; gap: 0.75rem;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+        .activity-item:last-child { border-bottom: none; }
+        .activity-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            margin-top: 0.35rem; flex-shrink: 0;
+        }
+        .activity-text { font-size: 0.85rem; }
+        .activity-time { font-size: 0.75rem; color: var(--muted); margin-top: 0.2rem; }
+        /* Tab navigation */
+        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+        .tab {
+            padding: 0.5rem 1rem; border-radius: 8px;
+            font-size: 0.875rem; font-weight: 500; cursor: pointer;
+            border: 1px solid rgba(255,255,255,0.1); background: none;
+            color: var(--muted); transition: all 0.2s;
+        }
+        .tab.active {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white; border-color: transparent;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        /* Loading state */
+        .loading { color: var(--muted); font-size: 0.875rem; padding: 1rem; }
+    </style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav class="sidebar">
+    <div class="sidebar-logo">🤖 FredAI</div>
+    <button class="nav-item active" onclick="showTab('overview')">
+        <span class="nav-icon">📊</span> Overview
+    </button>
+    <button class="nav-item" onclick="showTab('team')">
+        <span class="nav-icon">🤖</span> AI Team
+    </button>
+    <button class="nav-item" onclick="showTab('portfolio')">
+        <span class="nav-icon">🗂️</span> Portfolio
+    </button>
+    <button class="nav-item" onclick="showTab('generator')">
+        <span class="nav-icon">⚡</span> Generator
+    </button>
+    <div style="margin-top:auto; padding-top:1rem; border-top: 1px solid rgba(255,255,255,0.05);">
+        <a href="/docs" target="_blank" class="nav-item">
+            <span class="nav-icon">📖</span> API Docs
+        </a>
+        <a href="/health" target="_blank" class="nav-item">
+            <span class="nav-icon">💚</span> Health
+        </a>
+    </div>
+</nav>
+
+<!-- Main Content -->
+<main class="main">
+
+    <!-- Overview Tab -->
+    <div id="tab-overview" class="tab-content active">
+        <div class="topbar">
+            <div>
+                <div style="font-size:0.8rem; color:var(--muted); margin-bottom:0.25rem;">CEO Command Center</div>
+                <h1>Platform Overview</h1>
+            </div>
+            <div class="topbar-actions">
+                <a href="/generator" class="btn btn-primary">⚡ Create App</a>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid" id="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">💰</div>
+                <div class="stat-label">Platform Value</div>
+                <div class="stat-value" style="background:linear-gradient(135deg,#fbbf24,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">$250M+</div>
+                <div class="stat-change">↑ Est. market potential</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">👥</div>
+                <div class="stat-label">Total Users</div>
+                <div class="stat-value" id="stat-users">—</div>
+                <div class="stat-change" id="stat-users-sub">Loading...</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🚀</div>
+                <div class="stat-label">Applications</div>
+                <div class="stat-value" id="stat-apps">—</div>
+                <div class="stat-change" id="stat-apps-sub">Loading...</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🤖</div>
+                <div class="stat-label">AI Team Status</div>
+                <div class="stat-value" style="color:var(--green);" id="stat-team">—</div>
+                <div class="stat-change" id="stat-team-sub">Loading...</div>
+            </div>
+        </div>
+
+        <!-- Two-col: Activity + Quick Actions -->
+        <div class="two-col">
+            <div class="section">
+                <div class="section-header">
+                    <div class="section-title">Recent Activity</div>
+                </div>
+                <div class="activity-card">
+                    <div class="activity-item">
+                        <div class="activity-dot" style="background:var(--green)"></div>
+                        <div>
+                            <div class="activity-text">Platform initialized — all systems operational</div>
+                            <div class="activity-time">Just now</div>
+                        </div>
+                    </div>
+                    <div class="activity-item">
+                        <div class="activity-dot" style="background:var(--primary)"></div>
+                        <div>
+                            <div class="activity-text">AI team loaded: Claude, ChatGPT, Gemini, Grok, Fix-it-Fred</div>
+                            <div class="activity-time">Just now</div>
+                        </div>
+                    </div>
+                    <div class="activity-item">
+                        <div class="activity-dot" style="background:var(--yellow)"></div>
+                        <div>
+                            <div class="activity-text">ChatterFix CMMS — last deployment 2024-12-13</div>
+                            <div class="activity-time">Last activity</div>
+                        </div>
+                    </div>
+                    <div id="activity-apps"></div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header">
+                    <div class="section-title">Quick Actions</div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:0.75rem;">
+                    <a href="/generator" class="btn btn-primary" style="text-align:center;padding:1rem;">⚡ Generate New Application</a>
+                    <a href="/docs" target="_blank" class="btn btn-outline" style="text-align:center;padding:1rem;">📖 API Documentation</a>
+                    <a href="/health" target="_blank" class="btn btn-outline" style="text-align:center;padding:1rem;">💚 Health Check</a>
+                    <button class="btn btn-outline" style="padding:1rem;" onclick="refreshData()">🔄 Refresh Dashboard</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Team Tab -->
+    <div id="tab-team" class="tab-content">
+        <div class="topbar">
+            <div>
+                <div style="font-size:0.8rem; color:var(--muted); margin-bottom:0.25rem;">CEO Command Center</div>
+                <h1>AI Team</h1>
+            </div>
+        </div>
+        <div class="team-grid" id="team-grid">
+            <div class="loading">Loading team...</div>
+        </div>
+    </div>
+
+    <!-- Portfolio Tab -->
+    <div id="tab-portfolio" class="tab-content">
+        <div class="topbar">
+            <div>
+                <div style="font-size:0.8rem; color:var(--muted); margin-bottom:0.25rem;">CEO Command Center</div>
+                <h1>Application Portfolio</h1>
+            </div>
+            <a href="/generator" class="btn btn-primary">⚡ New Application</a>
+        </div>
+        <div class="table-card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Application</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Users</th>
+                        <th>Revenue</th>
+                        <th>Last Deploy</th>
+                    </tr>
+                </thead>
+                <tbody id="portfolio-table">
+                    <tr><td colspan="6" class="loading">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Generator Tab -->
+    <div id="tab-generator" class="tab-content">
+        <div class="topbar">
+            <div>
+                <div style="font-size:0.8rem; color:var(--muted); margin-bottom:0.25rem;">CEO Command Center</div>
+                <h1>App Generator</h1>
+            </div>
+        </div>
+        <div class="templates-grid" id="templates-grid">
+            <div class="loading">Loading templates...</div>
+        </div>
+    </div>
+
+</main>
+
+<script>
+    const AI_AVATARS = {
+        claude_sonnet_4: '🧠',
+        chatgpt_4: '💡',
+        gemini_2_5: '✨',
+        grok_3: '🔭',
+        autonomous_ai: '🤖'
+    };
+
+    async function loadData() {
+        try {
+            const [teamRes, portfolioRes, templatesRes] = await Promise.all([
+                fetch('/api/ai-team'),
+                fetch('/api/portfolio'),
+                fetch('/api/templates')
+            ]);
+            const teamData = await teamRes.json();
+            const portfolioData = await portfolioRes.json();
+            const templatesData = await templatesRes.json();
+
+            renderStats(portfolioData, teamData);
+            renderTeam(teamData);
+            renderPortfolio(portfolioData);
+            renderTemplates(templatesData);
+        } catch (e) {
+            console.error('Failed to load data:', e);
+        }
+    }
+
+    function renderStats(portfolio, team) {
+        document.getElementById('stat-users').textContent = (portfolio.portfolio.total_users || 0).toLocaleString();
+        document.getElementById('stat-users-sub').textContent = `Across ${portfolio.portfolio.total_applications} app(s)`;
+        document.getElementById('stat-apps').textContent = portfolio.portfolio.total_applications;
+        document.getElementById('stat-apps-sub').textContent = `$${(portfolio.portfolio.total_revenue || 0).toLocaleString()} MRR`;
+
+        const teamMembers = Object.values(team.ai_team);
+        const online = teamMembers.filter(m => m.status === 'online').length;
+        document.getElementById('stat-team').textContent = `${online}/${teamMembers.length}`;
+        document.getElementById('stat-team-sub').textContent = 'All systems operational';
+    }
+
+    function renderTeam(data) {
+        const grid = document.getElementById('team-grid');
+        const members = Object.entries(data.ai_team);
+        grid.innerHTML = members.map(([key, m]) => `
+            <div class="team-card">
+                <div class="team-card-header">
+                    <div class="team-avatar">${AI_AVATARS[key] || '🤖'}</div>
+                    <div>
+                        <div class="team-name">${m.name}</div>
+                        <div class="team-role">${m.role}</div>
+                    </div>
+                </div>
+                <div class="team-status"><span class="status-dot"></span> ${m.status}</div>
+                <div class="capabilities">
+                    ${m.capabilities.map(c => `<span class="cap-tag">${c}</span>`).join('')}
+                </div>
+                <div style="font-size:0.78rem;color:var(--muted);margin-top:0.75rem;">${m.specialization}</div>
+            </div>
+        `).join('');
+    }
+
+    function renderPortfolio(data) {
+        const tbody = document.getElementById('portfolio-table');
+        const apps = data.portfolio.applications;
+        if (!apps || !apps.length) {
+            tbody.innerHTML = '<tr><td colspan="6" style="color:var(--muted);padding:1.5rem;">No applications yet. <a href="/generator" style="color:var(--primary)">Create one →</a></td></tr>';
+            return;
+        }
+        tbody.innerHTML = apps.map(app => `
+            <tr>
+                <td><strong>${app.name}</strong></td>
+                <td style="color:var(--muted);text-transform:capitalize;">${app.type}</td>
+                <td><span class="badge badge-green">${app.status}</span></td>
+                <td>${(app.users || 0).toLocaleString()}</td>
+                <td>$${(app.revenue || 0).toLocaleString()}</td>
+                <td style="color:var(--muted);">${app.last_deployment}</td>
+            </tr>
+        `).join('');
+    }
+
+    function renderTemplates(data) {
+        const ICONS = { cmms:'🔧', ecommerce:'🛒', saas:'☁️', cms:'📝', analytics:'📊', custom:'✨' };
+        const grid = document.getElementById('templates-grid');
+        const templates = Object.entries(data.templates);
+        grid.innerHTML = templates.map(([key, t]) => `
+            <div class="template-card" onclick="window.location='/generator'">
+                <div class="template-icon">${ICONS[key] || '⚡'}</div>
+                <div class="template-name">${t.name}</div>
+                <div class="template-desc">${t.description}</div>
+                <div class="template-meta">
+                    <div>⏱ ${t.deployment_time}</div>
+                    <span>${t.estimated_cost}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function showTab(name) {
+        document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+        document.getElementById('tab-' + name).classList.add('active');
+        event.currentTarget.classList.add('active');
+    }
+
+    function refreshData() { loadData(); }
+
+    loadData();
+</script>
+</body>
+</html>

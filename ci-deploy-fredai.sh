@@ -242,18 +242,76 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
+# --- fredai-test-gen: Test Generator (port 8082) ---
+cat > /etc/systemd/system/fredai-test-gen.service << 'EOF'
+[Unit]
+Description=FredAI Test Generator (FastAPI)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fredai
+Group=fredai
+WorkingDirectory=/opt/fredai
+Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/fredai
+Environment=PORT=8082
+EnvironmentFile=/opt/fredai/.env
+ExecStart=/opt/fredai/venv/bin/uvicorn products.test_generator.server:app --host 0.0.0.0 --port 8082 --log-level info
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/fredai/logs/test-gen.log
+StandardError=append:/opt/fredai/logs/test-gen-error.log
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# --- fredai-doc-gen: Doc Generator (port 8083) ---
+cat > /etc/systemd/system/fredai-doc-gen.service << 'EOF'
+[Unit]
+Description=FredAI Doc Generator (FastAPI)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fredai
+Group=fredai
+WorkingDirectory=/opt/fredai
+Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/fredai
+Environment=PORT=8083
+EnvironmentFile=/opt/fredai/.env
+ExecStart=/opt/fredai/venv/bin/uvicorn products.doc_generator.server:app --host 0.0.0.0 --port 8083 --log-level info
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/fredai/logs/doc-gen.log
+StandardError=append:/opt/fredai/logs/doc-gen-error.log
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 # ----------------------------------------------------------
 # 8. Reload and start services
 # ----------------------------------------------------------
 echo "=== Starting services ==="
 systemctl daemon-reload
-systemctl enable fredai-api fredai-pr-bot fredai-chat fredai-studio fredai-fred-api fredai-code-audit
+systemctl enable fredai-api fredai-pr-bot fredai-chat fredai-studio fredai-fred-api fredai-code-audit fredai-test-gen fredai-doc-gen
 systemctl restart fredai-api
 systemctl restart fredai-pr-bot
 systemctl restart fredai-chat
 systemctl restart fredai-studio
 systemctl restart fredai-fred-api
 systemctl restart fredai-code-audit
+systemctl restart fredai-test-gen
+systemctl restart fredai-doc-gen
 
 # ----------------------------------------------------------
 # 9. Verify
@@ -266,6 +324,8 @@ systemctl is-active fredai-chat && echo "  fredai-chat:       RUNNING (port 7860
 systemctl is-active fredai-studio && echo "  fredai-studio:     RUNNING (port 7861)" || echo "  fredai-studio:     FAILED"
 systemctl is-active fredai-fred-api && echo "  fredai-fred-api:   RUNNING (port 8080)" || echo "  fredai-fred-api:   FAILED"
 systemctl is-active fredai-code-audit && echo "  fredai-code-audit: RUNNING (port 8081)" || echo "  fredai-code-audit: FAILED"
+systemctl is-active fredai-test-gen && echo "  fredai-test-gen:   RUNNING (port 8082)" || echo "  fredai-test-gen:   FAILED"
+systemctl is-active fredai-doc-gen && echo "  fredai-doc-gen:    RUNNING (port 8083)" || echo "  fredai-doc-gen:    FAILED"
 
 echo ""
 echo "=== Deploy complete ==="
@@ -275,3 +335,5 @@ echo "Chat:       http://localhost:7860"
 echo "Studio:     http://localhost:7861"
 echo "Fred API:   http://localhost:8080/v1/health"
 echo "Code Audit: http://localhost:8081/audit/health"
+echo "Test Gen:   http://localhost:8082/tests/health"
+echo "Doc Gen:    http://localhost:8083/docs/health"

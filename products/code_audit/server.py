@@ -48,6 +48,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── Usage Analytics ──────────────────────────────────────────────────
+from middleware.analytics import UsageAnalyticsMiddleware, get_analytics_store
+from middleware.analytics_api import analytics_router
+
+app.add_middleware(UsageAnalyticsMiddleware, store=get_analytics_store())
+app.include_router(analytics_router)
+
 # ── Auth ─────────────────────────────────────────────────────────────
 
 AUDIT_API_KEYS: set = set()

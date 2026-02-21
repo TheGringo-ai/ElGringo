@@ -41,6 +41,14 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# ── Usage Analytics ──────────────────────────────────────────────────
+from middleware.analytics import flask_analytics_hooks, get_analytics_store
+from middleware.analytics_api import register_flask_analytics_routes
+
+_analytics_store = get_analytics_store()
+flask_analytics_hooks(app, store=_analytics_store)
+register_flask_analytics_routes(app, store=_analytics_store)
+
 # Enable CORS for FreddyMac IDE
 CORS(app, origins=[
     "http://localhost:5173",      # Vite dev server

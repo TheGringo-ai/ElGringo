@@ -58,6 +58,12 @@ grok = ["openai>=1.50.0"]  # Grok uses OpenAI-compatible API
 firestore = ["firebase-admin>=6.0.0"]
 github = ["PyGithub>=2.0.0"]
 flask = ["flask>=3.0.0", "flask-cors>=4.0.0"]
+pr-bot = [
+    "PyJWT>=2.8.0",
+    "cryptography>=42.0.0",
+    "httpx>=0.27.0",
+    "pydantic-settings>=2.0.0",
+]
 all = [
     "anthropic>=0.40.0",
     "openai>=1.50.0",
@@ -80,6 +86,7 @@ fred = "ai_dev_team.cli:main"
 fred-chat = "ai_dev_team.chat_ui:main"
 fred-studio = "ai_dev_team.studio_ui:main"
 fred-launch = "ai_dev_team.launcher:main"
+fred-pr-bot = "products.pr_review_bot.server:main"
 
 [project.urls]
 Homepage = "https://github.com/TheGringo-ai/FredAI"
@@ -88,7 +95,7 @@ Repository = "https://github.com/TheGringo-ai/FredAI"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["ai_dev_team*"]
+include = ["ai_dev_team*", "products*"]
 
 [tool.black]
 line-length = 100

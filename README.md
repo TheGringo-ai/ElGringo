@@ -1,10 +1,16 @@
-# FredAI
+<p align="center">
+  <img src="assets/fredai-logo.png" alt="Fred AI" width="200">
+</p>
 
-[![CI](https://github.com/TheGringo-ai/FredAI/actions/workflows/ci.yml/badge.svg)](https://github.com/TheGringo-ai/FredAI/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+<h1 align="center">FredAI</h1>
 
-**Multi-agent AI orchestration platform that makes your AI models work as a team.**
+<p align="center">
+  <a href="https://github.com/TheGringo-ai/FredAI/actions/workflows/ci.yml"><img src="https://github.com/TheGringo-ai/FredAI/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="Python 3.9+"></a>
+</p>
+
+<p align="center"><strong>Multi-agent AI orchestration platform that makes your AI models work as a team.</strong></p>
 
 FredAI connects ChatGPT, Gemini, Grok, Claude, Ollama, and LlamaCloud into a single intelligent workforce. Instead of chatting with one model at a time, FredAI routes tasks to the right model, runs them in parallel, synthesizes their responses, learns from every interaction, and never repeats mistakes.
 

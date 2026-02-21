@@ -69,19 +69,18 @@ class GrokAgent(AIAgent):
 
         try:
             # Build system prompt
-            system_prompt = system_override or self.config.system_prompt
-            if not system_prompt:
-                if "coder" in self.name.lower():
-                    system_prompt = (
-                        "You are a highly efficient coding specialist. "
-                        "Focus on clean, optimized, production-ready code solutions. "
-                        "Be concise and practical."
-                    )
-                else:
-                    system_prompt = (
-                        f"You are {self.name}, a {self.role}. "
-                        "Provide thoughtful strategic analysis and insights."
-                    )
+            if "coder" in self.name.lower():
+                default = (
+                    "You are a highly efficient coding specialist. "
+                    "Focus on clean, optimized, production-ready code solutions. "
+                    "Be concise and practical."
+                )
+            else:
+                default = (
+                    f"You are {self.name}, a {self.role}. "
+                    "Provide thoughtful strategic analysis and insights."
+                )
+            system_prompt = self.get_system_prompt(system_override, default_prompt=default)
 
             # Build user content
             user_content = prompt
@@ -168,19 +167,18 @@ class GrokAgent(AIAgent):
 
         try:
             # Build system prompt
-            system_prompt = system_override or self.config.system_prompt
-            if not system_prompt:
-                if "coder" in self.name.lower():
-                    system_prompt = (
-                        "You are a highly efficient coding specialist. "
-                        "Focus on clean, optimized, production-ready code solutions. "
-                        "Be concise and practical."
-                    )
-                else:
-                    system_prompt = (
-                        f"You are {self.name}, a {self.role}. "
-                        "Provide thoughtful strategic analysis and insights."
-                    )
+            if "coder" in self.name.lower():
+                default = (
+                    "You are a highly efficient coding specialist. "
+                    "Focus on clean, optimized, production-ready code solutions. "
+                    "Be concise and practical."
+                )
+            else:
+                default = (
+                    f"You are {self.name}, a {self.role}. "
+                    "Provide thoughtful strategic analysis and insights."
+                )
+            system_prompt = self.get_system_prompt(system_override, default_prompt=default)
 
             # Build user content
             user_content = prompt

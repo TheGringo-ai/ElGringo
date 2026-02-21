@@ -71,10 +71,13 @@ class GeminiAgent(AIAgent):
 
             from google.genai import types
 
-            system_instruction = system_override or self.config.system_prompt or (
-                f"You are {self.name}, a {self.role}. "
-                f"Your capabilities include: {', '.join(self.config.capabilities)}. "
-                "Provide creative, innovative, and forward-thinking responses."
+            system_instruction = self.get_system_prompt(
+                system_override,
+                default_prompt=(
+                    f"You are {self.name}, a {self.role}. "
+                    f"Your capabilities include: {', '.join(self.config.capabilities)}. "
+                    "Provide creative, innovative, and forward-thinking responses."
+                ),
             )
 
             user_content = prompt
@@ -144,10 +147,13 @@ class GeminiAgent(AIAgent):
 
             from google.genai import types
 
-            system_instruction = system_override or self.config.system_prompt or (
-                f"You are {self.name}, a {self.role}. "
-                f"Your capabilities include: {', '.join(self.config.capabilities)}. "
-                "Provide creative, innovative, and forward-thinking responses."
+            system_instruction = self.get_system_prompt(
+                system_override,
+                default_prompt=(
+                    f"You are {self.name}, a {self.role}. "
+                    f"Your capabilities include: {', '.join(self.config.capabilities)}. "
+                    "Provide creative, innovative, and forward-thinking responses."
+                ),
             )
 
             user_content = prompt

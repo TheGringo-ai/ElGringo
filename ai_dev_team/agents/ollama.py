@@ -178,9 +178,9 @@ class OllamaAgent(AIAgent):
                 )
 
             # Build system prompt with knowledge enhancement
-            system_prompt = system_override or self.config.system_prompt
+            computed_prompt = system_override or self.config.system_prompt
 
-            if not system_prompt and use_knowledge:
+            if not computed_prompt and use_knowledge:
                 kb = _get_knowledge_base()
                 if kb:
                     # Auto-detect domains from prompt if not specified
@@ -191,24 +191,27 @@ class OllamaAgent(AIAgent):
                     if task_type == "general":
                         task_type = self._detect_task_type(prompt)
 
-                    system_prompt = kb.get_system_prompt(
+                    computed_prompt = kb.get_system_prompt(
                         task_type=task_type,
                         domains=domains,
                         include_tools=True,
                         project_context=context if context and len(context) < 500 else None
                     )
 
-            if not system_prompt:
+            if not computed_prompt:
                 if "coder" in self.name.lower():
-                    system_prompt = (
+                    computed_prompt = (
                         "You are a skilled coding assistant running locally. "
                         "Provide clean, efficient code solutions. Be concise."
                     )
                 else:
-                    system_prompt = (
+                    computed_prompt = (
                         f"You are {self.name}, a {self.role}. "
                         "Provide helpful and accurate responses."
                     )
+
+            # Prepend platform identity to whatever prompt was resolved
+            system_prompt = self.get_system_prompt(default_prompt=computed_prompt)
 
             # Build full prompt
             full_prompt = prompt
@@ -357,8 +360,9 @@ class OllamaAgent(AIAgent):
             return
 
         try:
-            system_prompt = system_override or self.config.system_prompt or (
-                f"You are {self.name}, a helpful local AI assistant."
+            system_prompt = self.get_system_prompt(
+                system_override,
+                default_prompt=f"You are {self.name}, a helpful local AI assistant.",
             )
 
             full_prompt = prompt

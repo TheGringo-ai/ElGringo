@@ -68,10 +68,13 @@ class ClaudeAgent(AIAgent):
                 )
 
             # Build system prompt
-            system_prompt = system_override or self.config.system_prompt or (
-                f"You are {self.name}, a {self.role}. "
-                f"Your capabilities include: {', '.join(self.config.capabilities)}. "
-                "Provide thoughtful, analytical, and comprehensive responses."
+            system_prompt = self.get_system_prompt(
+                system_override,
+                default_prompt=(
+                    f"You are {self.name}, a {self.role}. "
+                    f"Your capabilities include: {', '.join(self.config.capabilities)}. "
+                    "Provide thoughtful, analytical, and comprehensive responses."
+                ),
             )
 
             # Build user message
@@ -138,10 +141,13 @@ class ClaudeAgent(AIAgent):
                 return
 
             # Build system prompt
-            system_prompt = system_override or self.config.system_prompt or (
-                f"You are {self.name}, a {self.role}. "
-                f"Your capabilities include: {', '.join(self.config.capabilities)}. "
-                "Provide thoughtful, analytical, and comprehensive responses."
+            system_prompt = self.get_system_prompt(
+                system_override,
+                default_prompt=(
+                    f"You are {self.name}, a {self.role}. "
+                    f"Your capabilities include: {', '.join(self.config.capabilities)}. "
+                    "Provide thoughtful, analytical, and comprehensive responses."
+                ),
             )
 
             # Build user message

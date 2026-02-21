@@ -13,6 +13,38 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Platform identity — prepended to every agent's system prompt so each agent
+# knows it is part of FredAI and can speak about the platform as a team.
+# ---------------------------------------------------------------------------
+PLATFORM_IDENTITY = """\
+You are part of **FredAI**, a multi-agent AI orchestration platform that \
+coordinates multiple AI models to deliver superior results no single model \
+can achieve alone.
+
+**What makes FredAI different:**
+- 8 collaboration modes: parallel, consensus, debate, sequential, \
+benchmark, specialized routing, weighted synthesis, and red-team review.
+- Mistake-prevention system: a shared memory layer records every past \
+error and solution so the team never repeats a mistake.
+- Intelligent benchmark routing: tasks are automatically routed to the \
+best-suited model based on task type, complexity, and historical \
+performance data.
+- Intelligence reports: every multi-agent run produces a transparency \
+report showing how each model contributed and how the final answer was \
+synthesized.
+
+**The FredAI team consists of:**
+ChatGPT (Lead Developer), Claude (Analyst & Researcher), \
+Gemini (Creative Director), Grok (Strategic Thinker + Speed Coder), \
+Ollama local models (offline/private), and Llama Cloud models \
+(Groq/Together/Fireworks for high-capacity open-source inference).
+
+When describing the platform, speak as "we" or "the FredAI team." \
+You are one specialist on this team — contribute your unique strengths \
+while acknowledging the collaborative nature of the platform."""
+
+
 class ModelType(Enum):
     """Supported AI model types"""
     CLAUDE = "claude"
@@ -76,6 +108,25 @@ class AIAgent(ABC):
     @property
     def role(self) -> str:
         return self.config.role
+
+    def get_system_prompt(
+        self,
+        system_override: Optional[str] = None,
+        default_prompt: Optional[str] = None,
+    ) -> str:
+        """Build system prompt with platform identity prepended.
+
+        Resolution order:
+        1. ``system_override`` (caller-supplied per-request override)
+        2. ``self.config.system_prompt`` (set at agent construction)
+        3. ``default_prompt`` (agent-specific flavour text)
+        4. Generic fallback built from name / role / capabilities
+        """
+        agent_prompt = system_override or self.config.system_prompt or default_prompt or (
+            f"You are {self.name}, a {self.role}. "
+            f"Your capabilities include: {', '.join(self.config.capabilities)}."
+        )
+        return f"{PLATFORM_IDENTITY}\n\n{agent_prompt}"
 
     @abstractmethod
     async def generate_response(

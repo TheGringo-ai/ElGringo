@@ -68,10 +68,13 @@ class ChatGPTAgent(AIAgent):
                 )
 
             # Build system message
-            system_prompt = system_override or self.config.system_prompt or (
-                f"You are {self.name}, a {self.role}. "
-                f"Your capabilities include: {', '.join(self.config.capabilities)}. "
-                "Be practical, comprehensive, and code-focused in your responses."
+            system_prompt = self.get_system_prompt(
+                system_override,
+                default_prompt=(
+                    f"You are {self.name}, a {self.role}. "
+                    f"Your capabilities include: {', '.join(self.config.capabilities)}. "
+                    "Be practical, comprehensive, and code-focused in your responses."
+                ),
             )
 
             # Build messages
@@ -143,10 +146,13 @@ class ChatGPTAgent(AIAgent):
                 return
 
             # Build messages
-            system_prompt = system_override or self.config.system_prompt or (
-                f"You are {self.name}, a {self.role}. "
-                f"Your capabilities include: {', '.join(self.config.capabilities)}. "
-                "Provide practical, well-structured solutions."
+            system_prompt = self.get_system_prompt(
+                system_override,
+                default_prompt=(
+                    f"You are {self.name}, a {self.role}. "
+                    f"Your capabilities include: {', '.join(self.config.capabilities)}. "
+                    "Provide practical, well-structured solutions."
+                ),
             )
 
             user_content = prompt

@@ -172,9 +172,10 @@ class LlamaCloudAgent(AIAgent):
 
         try:
             # Build system prompt
-            system_prompt = system_override or self.config.system_prompt
-            if not system_prompt:
-                system_prompt = self._build_system_prompt(task_type, domains)
+            system_prompt = self.get_system_prompt(
+                system_override,
+                default_prompt=self._build_system_prompt(task_type, domains),
+            )
 
             # Build messages
             messages = [{"role": "system", "content": system_prompt}]
@@ -285,8 +286,9 @@ class LlamaCloudAgent(AIAgent):
             return
 
         try:
-            system_prompt = system_override or self.config.system_prompt or (
-                f"You are {self.name}, a helpful Llama AI assistant."
+            system_prompt = self.get_system_prompt(
+                system_override,
+                default_prompt=f"You are {self.name}, a helpful Llama AI assistant.",
             )
 
             messages = [{"role": "system", "content": system_prompt}]

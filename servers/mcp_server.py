@@ -117,6 +117,11 @@ TOOLS = [
                     "type": "string",
                     "description": "Project name for memory lookup (e.g. 'managers-dashboard'). Pulls relevant patterns and conventions from past solutions.",
                     "default": ""
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID for multi-turn conversations. Agents remember previous exchanges in the same session. Use any string (e.g. 'auth-refactor', 'debug-session-1').",
+                    "default": ""
                 }
             },
             "required": ["prompt"]
@@ -627,6 +632,85 @@ TOOLS = [
             "properties": {},
             "required": []
         }
+    },
+    {
+        "name": "ai_team_sessions",
+        "description": "List active conversation sessions or get details of a specific session. Sessions enable multi-turn conversations where agents remember context.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Get details for a specific session. If omitted, lists all sessions.",
+                    "default": ""
+                },
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "get", "delete"],
+                    "description": "Action to perform",
+                    "default": "list"
+                }
+            }
+        }
+    },
+    {
+        "name": "ai_team_review_pr",
+        "description": "Review a GitHub PR with the full AI team. Pulls the diff, runs multi-agent review from security/performance/architecture angles. Returns structured review.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pr": {
+                    "type": "string",
+                    "description": "PR number or URL (e.g. '123' or 'owner/repo#123')"
+                },
+                "repo": {
+                    "type": "string",
+                    "description": "Repository in owner/repo format. Optional if PR URL includes it.",
+                    "default": ""
+                },
+                "focus": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Areas to focus on: security, performance, architecture, bugs, style",
+                    "default": ["security", "bugs", "performance"]
+                }
+            },
+            "required": ["pr"]
+        }
+    },
+    {
+        "name": "ai_team_create_persona",
+        "description": "Create a custom AI agent persona with specialized knowledge and behavior. The persona persists and can be used in future collaborate calls.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Unique name for the persona (e.g. 'django-expert', 'security-auditor')"
+                },
+                "role": {
+                    "type": "string",
+                    "description": "Role description (e.g. 'Senior Django Developer')"
+                },
+                "system_prompt": {
+                    "type": "string",
+                    "description": "Custom system prompt defining the persona's expertise, style, and rules"
+                },
+                "model": {
+                    "type": "string",
+                    "enum": ["chatgpt", "gemini", "grok", "grok-fast", "ollama"],
+                    "description": "Which AI model backs this persona",
+                    "default": "chatgpt"
+                },
+                "capabilities": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of capabilities (e.g. ['django', 'postgresql', 'rest-api'])",
+                    "default": []
+                }
+            },
+            "required": ["name", "role", "system_prompt"]
+        }
     }
 ]
 
@@ -742,6 +826,14 @@ def format_intelligence_report(intel: Dict[str, Any], result) -> str:
             if parts:
                 lines.append(f"  {' | '.join(parts)}")
 
+    # --- Session ---
+    session = intel.get("session", {})
+    if session:
+        lines.append("")
+        lines.append(f"SESSION: {session.get('id', '?')} ({session.get('turns', 0)} turns)")
+        if session.get("has_summary"):
+            lines.append("  Older turns summarized for context efficiency")
+
     lines.append("")
     lines.append("=" * 50)
 
@@ -770,10 +862,12 @@ async def handle_tool_call(name: str, arguments: Dict[str, Any]) -> str:
                         context = f"{project_block}\n\n{context}" if context else project_block
                     if system_hint:
                         context = f"{system_hint}\n\n{context}" if context else system_hint
+            session_id = arguments.get("session_id", "") or None
             result = await team.collaborate(
                 prompt=arguments["prompt"],
                 mode=arguments.get("mode", "parallel"),
                 context=context,
+                session_id=session_id,
             )
 
             # Build visible intelligence report
@@ -1349,6 +1443,139 @@ Think outside the box and explore unconventional approaches."""
                 memory = MemorySystem(use_firestore=bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS")))
             report = memory.get_quality_report()
             return json.dumps(report, indent=2)
+
+        elif name == "ai_team_sessions":
+            from ai_dev_team.sessions import get_session_manager
+            sm = get_session_manager()
+            action = arguments.get("action", "list")
+            sid = arguments.get("session_id", "")
+
+            if action == "delete" and sid:
+                sm.delete(sid)
+                return json.dumps({"success": True, "message": f"Deleted session {sid}"})
+            elif action == "get" and sid:
+                session = sm.get_or_create(sid)
+                return json.dumps({
+                    "session_id": session.session_id,
+                    "project": session.project,
+                    "turns": session.turn_count,
+                    "created": session.created,
+                    "updated": session.updated,
+                    "summary": session.summary,
+                    "recent_turns": [
+                        {"role": t.role, "content": t.content[:200], "agents": t.agents}
+                        for t in session.turns[-10:]
+                    ],
+                }, indent=2)
+            else:
+                sessions = sm.list_sessions()
+                return json.dumps({"sessions": sessions, "total": len(sessions)}, indent=2)
+
+        elif name == "ai_team_review_pr":
+            team = get_team()
+            pr = arguments["pr"]
+            repo = arguments.get("repo", "")
+            focus = arguments.get("focus", ["security", "bugs", "performance"])
+
+            # Pull PR diff via gh CLI
+            import subprocess
+            gh_args = ["gh", "pr", "diff", str(pr)]
+            if repo:
+                gh_args.extend(["-R", repo])
+            try:
+                diff_result = subprocess.run(
+                    gh_args, capture_output=True, text=True, timeout=30
+                )
+                if diff_result.returncode != 0:
+                    return json.dumps({"error": f"gh pr diff failed: {diff_result.stderr[:500]}"})
+                diff_text = diff_result.stdout
+            except FileNotFoundError:
+                return json.dumps({"error": "gh CLI not installed. Install: https://cli.github.com"})
+            except subprocess.TimeoutExpired:
+                return json.dumps({"error": "gh pr diff timed out"})
+
+            # Also get PR info
+            info_args = ["gh", "pr", "view", str(pr), "--json", "title,body,author,files"]
+            if repo:
+                info_args.extend(["-R", repo])
+            try:
+                info_result = subprocess.run(
+                    info_args, capture_output=True, text=True, timeout=15
+                )
+                pr_info = json.loads(info_result.stdout) if info_result.returncode == 0 else {}
+            except Exception:
+                pr_info = {}
+
+            # Cap diff size
+            if len(diff_text) > 15000:
+                diff_text = diff_text[:15000] + "\n... (diff truncated)"
+
+            focus_str = ", ".join(focus)
+            pr_title = pr_info.get("title", f"PR #{pr}")
+
+            review_prompt = f"""REVIEW THIS PULL REQUEST
+
+Title: {pr_title}
+Author: {pr_info.get('author', {}).get('login', 'unknown')}
+Files changed: {len(pr_info.get('files', []))}
+
+Focus areas: {focus_str}
+
+For each issue found, provide:
+- Severity (critical/high/medium/low)
+- File and line context
+- What's wrong
+- How to fix it
+
+Also provide an overall assessment: APPROVE, REQUEST_CHANGES, or COMMENT.
+
+DIFF:
+```diff
+{diff_text}
+```"""
+
+            result = await team.collaborate(
+                prompt=review_prompt,
+                mode="parallel",
+            )
+
+            return json.dumps({
+                "success": result.success,
+                "pr": pr_title,
+                "review": result.final_answer,
+                "agents": result.participating_agents,
+                "confidence": result.confidence_score,
+                "intelligence_report": format_intelligence_report(
+                    getattr(result, 'intelligence', {}), result
+                ),
+            }, indent=2)
+
+        elif name == "ai_team_create_persona":
+            from ai_dev_team.personas import get_persona_manager
+            pm = get_persona_manager()
+            team = get_team()
+
+            persona = pm.create_persona(
+                name=arguments["name"],
+                role=arguments["role"],
+                system_prompt=arguments["system_prompt"],
+                model_backend=arguments.get("model", "chatgpt"),
+                capabilities=arguments.get("capabilities", []),
+            )
+
+            # Register as a real agent
+            agent = pm.create_agent(persona)
+            if agent:
+                team.register_agent(agent)
+
+            return json.dumps({
+                "success": True,
+                "persona": persona.name,
+                "role": persona.role,
+                "model": persona.model_backend,
+                "message": f"Created persona '{persona.name}' and registered as agent. Use in collaborate calls.",
+                "total_personas": len(pm.list_personas()),
+            }, indent=2)
 
         else:
             return json.dumps({"error": f"Unknown tool: {name}"})

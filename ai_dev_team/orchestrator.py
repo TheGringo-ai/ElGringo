@@ -40,6 +40,8 @@ from .memory import MemorySystem, LearningEngine, MistakePrevention
 from .collaboration import WeightedConsensus
 from .knowledge import TeachingSystem, get_domain_context, AutoLearner, get_coding_hub, get_rag
 from .tools import FileSystemTools, BrowserTools, ShellTools, PermissionManager
+from .sessions import get_session_manager
+from .personas import get_persona_manager
 from .validation import get_validator
 from .autonomous import (
     SelfCorrector,
@@ -236,6 +238,13 @@ class AIDevTeam:
 
         # Local models via Ollama (free, private, offline)
         self._setup_local_agents()
+
+        # Custom personas (user-defined specialist agents)
+        try:
+            pm = get_persona_manager()
+            pm.register_all(self)
+        except Exception as e:
+            logger.debug(f"Persona registration skipped: {e}")
 
         if not self.agents:
             logger.warning(
@@ -464,6 +473,7 @@ class AIDevTeam:
         agents: Optional[List[str]] = None,
         mode: Optional[str] = None,
         max_iterations: int = 2,
+        session_id: Optional[str] = None,
     ) -> CollaborationResult:
         """
         Execute a collaborative task with the AI team.
@@ -482,6 +492,17 @@ class AIDevTeam:
         start_time = time.time()
         collaboration_log = []
         agent_responses = []
+
+        # Session support — inject conversation history
+        session = None
+        if session_id:
+            sm = get_session_manager()
+            session = sm.get_or_create(session_id, project=self.project_name)
+            session.add_user_turn(prompt)
+            session_context = session.get_context_block()
+            if session_context:
+                context = f"{session_context}\n{context}" if context else session_context
+                collaboration_log.append(f"Session {session_id}: injected {session.turn_count} turns of history")
 
         # Intelligence visibility dict — captures everything happening behind the scenes
         intel = {
@@ -716,6 +737,22 @@ class AIDevTeam:
             except Exception as e:
                 logger.debug(f"Memory solution search skipped: {e}")
 
+        # Live codebase awareness: auto-index project if path is available
+        if _needs_context and self._rag and self.project_name != "default":
+            try:
+                from .project_context import ProjectContextManager
+                pctx = ProjectContextManager()
+                profile = pctx.get_profile(self.project_name)
+                if profile and profile.project_path:
+                    indexed = self._rag.index_project_if_stale(
+                        project_name=self.project_name,
+                        project_path=profile.project_path,
+                    )
+                    if indexed:
+                        collaboration_log.append(f"Auto-indexed project '{self.project_name}' for RAG")
+            except Exception as e:
+                logger.debug(f"Auto-index skipped: {e}")
+
         # Add domain knowledge context (only for complex/relevant tasks)
         domain_mapping = {
             "coding": ["backend", "frontend"],
@@ -908,6 +945,23 @@ class AIDevTeam:
                 },
                 intelligence=intel,
             )
+
+            # Save team response to session
+            if session:
+                session.add_team_turn(
+                    content=final_answer[:2000],
+                    agents=result.participating_agents,
+                    task_type=task_type,
+                    confidence=avg_confidence,
+                    task_id=task_id,
+                )
+                sm = get_session_manager()
+                sm.save(session)
+                intel["session"] = {
+                    "id": session_id,
+                    "turns": session.turn_count,
+                    "has_summary": bool(session.summary),
+                }
 
             # Store in memory and learn from outcome
             if self.enable_memory and self._memory_system:
@@ -1181,6 +1235,125 @@ class AIDevTeam:
             log.append(f"Step {i + 1}/{len(agents)} - {agent.name}: {status}")
 
         return agent_responses
+
+    async def stream_collaborate(
+        self,
+        prompt: str,
+        context: str = "",
+        agents: Optional[List[str]] = None,
+        session_id: Optional[str] = None,
+    ):
+        """
+        Streaming collaboration — yields agent responses as they arrive.
+
+        Yields dicts with:
+            {"type": "agent_start", "agent": name}
+            {"type": "agent_chunk", "agent": name, "text": chunk}
+            {"type": "agent_done", "agent": name, "time": seconds}
+            {"type": "synthesis", "text": final_answer}
+            {"type": "intelligence", "report": intel_dict}
+
+        Usage:
+            async for event in team.stream_collaborate("Review this code"):
+                if event["type"] == "agent_chunk":
+                    print(event["text"], end="", flush=True)
+        """
+        # Use task router to select agents
+        classification = self._task_router.classify(prompt, context)
+        task_type = classification.primary_type.value
+
+        if not agents:
+            available = [n for n in self.agents.keys()
+                         if 'local' not in n.lower() and 'ollama' not in n.lower()]
+            if not available:
+                available = list(self.agents.keys())
+            agents = available[:3]
+
+        active_agents = [self.agents[n] for n in agents if n in self.agents]
+        if not active_agents:
+            yield {"type": "error", "text": "No agents available"}
+            return
+
+        # Session support
+        if session_id:
+            sm = get_session_manager()
+            session = sm.get_or_create(session_id, project=self.project_name)
+            session.add_user_turn(prompt)
+            session_context = session.get_context_block()
+            if session_context:
+                context = f"{session_context}\n{context}" if context else session_context
+
+        yield {"type": "start", "agents": [a.name for a in active_agents], "task_type": task_type}
+
+        # Stream responses from all agents concurrently
+        import time as _time
+        agent_contents = {}
+
+        async def stream_agent(agent):
+            agent_contents[agent.name] = []
+            yield_start = {"type": "agent_start", "agent": agent.name}
+            start = _time.time()
+            try:
+                async for chunk in agent.generate_stream(prompt, context):
+                    agent_contents[agent.name].append(chunk)
+                    yield {"type": "agent_chunk", "agent": agent.name, "text": chunk}
+            except Exception as e:
+                yield {"type": "agent_error", "agent": agent.name, "error": str(e)}
+            elapsed = _time.time() - start
+            yield {"type": "agent_done", "agent": agent.name, "time": round(elapsed, 2)}
+
+        # Run all streams concurrently using asyncio.Queue
+        queue = asyncio.Queue()
+
+        async def stream_to_queue(agent):
+            await queue.put({"type": "agent_start", "agent": agent.name})
+            start = _time.time()
+            try:
+                async for chunk in agent.generate_stream(prompt, context):
+                    agent_contents[agent.name] = agent_contents.get(agent.name, "") + chunk
+                    await queue.put({"type": "agent_chunk", "agent": agent.name, "text": chunk})
+            except Exception as e:
+                await queue.put({"type": "agent_error", "agent": agent.name, "error": str(e)})
+            elapsed = _time.time() - start
+            await queue.put({"type": "agent_done", "agent": agent.name, "time": round(elapsed, 2)})
+
+        async def run_all():
+            tasks = [stream_to_queue(a) for a in active_agents]
+            await asyncio.gather(*tasks)
+            await queue.put(None)  # Sentinel
+
+        asyncio.ensure_future(run_all())
+
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            yield event
+
+        # Synthesize
+        all_content = "\n\n".join(
+            f"[{name}]: {content}" for name, content in agent_contents.items() if content
+        )
+        if all_content:
+            yield {"type": "synthesis_start"}
+            # Use first agent to synthesize
+            synth_prompt = f"Synthesize these perspectives into one answer:\n{all_content[:6000]}\n\nOriginal task: {prompt}"
+            synth_agent = active_agents[0]
+            async for chunk in synth_agent.generate_stream(synth_prompt, ""):
+                yield {"type": "synthesis_chunk", "text": chunk}
+            yield {"type": "synthesis_done"}
+
+        # Save to session if applicable
+        if session_id:
+            full_content = "".join(str(v) for v in agent_contents.values())
+            session.add_team_turn(
+                content=full_content[:2000],
+                agents=[a.name for a in active_agents],
+                task_type=task_type,
+            )
+            sm.save(session)
+
+        yield {"type": "done"}
 
     async def _consensus_collaboration(
         self,

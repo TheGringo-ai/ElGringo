@@ -858,6 +858,29 @@ class UniversalRAG:
         self._save_index()
         logger.info("RAG index cleared")
 
+    def index_project_if_stale(
+        self,
+        project_name: str,
+        project_path: str,
+        max_age_hours: int = 24,
+    ) -> bool:
+        """Index a project if not indexed recently. Returns True if indexing occurred."""
+        import time as _time
+
+        marker_file = self.storage_dir / f"indexed_{project_name}.marker"
+        if marker_file.exists():
+            age_hours = (_time.time() - marker_file.stat().st_mtime) / 3600
+            if age_hours < max_age_hours:
+                return False
+
+        # Index the project
+        count = self.index_project_files(project_path)
+        if count > 0:
+            marker_file.write_text(f"{project_name}:{count}:{_time.time()}")
+            logger.info(f"Auto-indexed project '{project_name}': {count} files")
+            return True
+        return False
+
 
 # Global instance
 _rag_instance: Optional[UniversalRAG] = None

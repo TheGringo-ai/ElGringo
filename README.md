@@ -76,6 +76,26 @@ FredAI:
 - **Intelligent routing**: tasks go to the best model based on type, complexity, and cost
 - **Weighted synthesis**: responses are merged using confidence scores, not just concatenated
 
+### Multi-Turn Sessions
+- **Conversation continuity**: agents remember what was discussed across calls using session IDs
+- **Auto-summarization**: long sessions get compressed so agents stay focused
+- **Persistent**: sessions survive restarts, stored on disk
+
+### Custom Personas
+- Define your own specialist agents with custom system prompts and behavior
+- Backed by any provider (ChatGPT, Gemini, Grok, Ollama)
+- Auto-register on startup — create once, use everywhere
+
+### GitHub PR Review
+- `ai_team_review_pr 123` — multi-agent PR review with structured output
+- Agents analyze from security, performance, and architecture angles
+- Returns severity-ranked findings with fix suggestions
+
+### Intelligence Reports
+- Every collaborate() call shows what's happening behind the scenes
+- Routing decisions, memory injections, agent perspectives, cost breakdown
+- Agreement/disagreement detection between agents
+
 ### Smart Memory
 - Every interaction is captured, scored, and searchable via TF-IDF
 - **Tiered storage**: hot (recent) / warm (proven valuable) / cold (compressed)
@@ -107,7 +127,7 @@ FredAI:
 - GPU memory detection for optimal model selection
 - Core ML integration for on-device inference
 
-### MCP Server (24 tools)
+### MCP Server (28 tools)
 Works directly with Claude Code, Cursor, or any MCP-compatible client:
 
 | Tool | What it does |
@@ -134,6 +154,9 @@ Works directly with Claude Code, Cursor, or any MCP-compatible client:
 | `ai_team_routing_table` | Show which agent is best for which task type |
 | `ai_team_rate` | Rate a collaboration outcome (thumbs up/down), triggers quality decay + prune |
 | `ai_team_quality_report` | Memory quality report — scores, top patterns, pruning stats |
+| `ai_team_sessions` | List, view, or delete multi-turn conversation sessions |
+| `ai_team_review_pr` | Multi-agent GitHub PR review (security, performance, architecture) |
+| `ai_team_create_persona` | Create custom agent personas with specialized knowledge |
 | `load_project_context` | Load project files and conventions for context-aware generation |
 | `verify_code` | Run syntax checks and build verification |
 
@@ -221,9 +244,11 @@ FredAI/
     tools/           # File, git, docker, deploy, database, browser tools
     cli.py           # Interactive REPL
     orchestrator.py  # Core orchestration engine (2,400+ lines)
+    sessions.py      # Multi-turn conversation sessions with persistence
+    personas.py      # Custom agent personas — user-defined specialists
     dashboard_ui.py  # Gradio web dashboard (costs, quality, agents, routing)
   servers/
-    mcp_server.py    # MCP protocol server (24 tools)
+    mcp_server.py    # MCP protocol server (28 tools)
     api_server.py    # REST API
   tests/             # 219 tests, all passing
 ```
@@ -233,7 +258,7 @@ FredAI/
 - **69,000+** lines of Python across **149** modules
 - **6** AI providers supported (ChatGPT, Gemini 2.5 Flash, Grok, Claude, Ollama, LlamaCloud)
 - **8** collaboration modes
-- **24** MCP tools (with auto memory injection, cost tracking, benchmarking, quality feedback)
+- **28** MCP tools (sessions, PR review, personas, intelligence reports, cost tracking, benchmarking)
 - **3** specialist agents
 - **219** tests passing
 - **19** domain knowledge bases

@@ -186,30 +186,92 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
+# --- fredai-fred-api: Fred API (port 8080) ---
+cat > /etc/systemd/system/fredai-fred-api.service << 'EOF'
+[Unit]
+Description=FredAI Fred API (FastAPI)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fredai
+Group=fredai
+WorkingDirectory=/opt/fredai
+Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/fredai
+Environment=PORT=8080
+EnvironmentFile=/opt/fredai/.env
+ExecStart=/opt/fredai/venv/bin/uvicorn products.fred_api.server:app --host 0.0.0.0 --port 8080 --log-level info
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/fredai/logs/fred-api.log
+StandardError=append:/opt/fredai/logs/fred-api-error.log
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# --- fredai-code-audit: Code Audit (port 8081) ---
+cat > /etc/systemd/system/fredai-code-audit.service << 'EOF'
+[Unit]
+Description=FredAI Code Audit Service (FastAPI)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fredai
+Group=fredai
+WorkingDirectory=/opt/fredai
+Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/fredai
+Environment=PORT=8081
+EnvironmentFile=/opt/fredai/.env
+ExecStart=/opt/fredai/venv/bin/uvicorn products.code_audit.server:app --host 0.0.0.0 --port 8081 --log-level info
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/fredai/logs/code-audit.log
+StandardError=append:/opt/fredai/logs/code-audit-error.log
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 # ----------------------------------------------------------
 # 8. Reload and start services
 # ----------------------------------------------------------
 echo "=== Starting services ==="
 systemctl daemon-reload
-systemctl enable fredai-api fredai-pr-bot fredai-chat fredai-studio
+systemctl enable fredai-api fredai-pr-bot fredai-chat fredai-studio fredai-fred-api fredai-code-audit
 systemctl restart fredai-api
 systemctl restart fredai-pr-bot
 systemctl restart fredai-chat
 systemctl restart fredai-studio
+systemctl restart fredai-fred-api
+systemctl restart fredai-code-audit
 
 # ----------------------------------------------------------
 # 9. Verify
 # ----------------------------------------------------------
 echo ""
 echo "=== Service Status ==="
-systemctl is-active fredai-api && echo "  fredai-api:     RUNNING (port 5050)" || echo "  fredai-api:     FAILED"
-systemctl is-active fredai-pr-bot && echo "  fredai-pr-bot:  RUNNING (port 8001)" || echo "  fredai-pr-bot:  FAILED"
-systemctl is-active fredai-chat && echo "  fredai-chat:    RUNNING (port 7860)" || echo "  fredai-chat:    FAILED"
-systemctl is-active fredai-studio && echo "  fredai-studio:  RUNNING (port 7861)" || echo "  fredai-studio:  FAILED"
+systemctl is-active fredai-api && echo "  fredai-api:        RUNNING (port 5050)" || echo "  fredai-api:        FAILED"
+systemctl is-active fredai-pr-bot && echo "  fredai-pr-bot:     RUNNING (port 8001)" || echo "  fredai-pr-bot:     FAILED"
+systemctl is-active fredai-chat && echo "  fredai-chat:       RUNNING (port 7860)" || echo "  fredai-chat:       FAILED"
+systemctl is-active fredai-studio && echo "  fredai-studio:     RUNNING (port 7861)" || echo "  fredai-studio:     FAILED"
+systemctl is-active fredai-fred-api && echo "  fredai-fred-api:   RUNNING (port 8080)" || echo "  fredai-fred-api:   FAILED"
+systemctl is-active fredai-code-audit && echo "  fredai-code-audit: RUNNING (port 8081)" || echo "  fredai-code-audit: FAILED"
 
 echo ""
 echo "=== Deploy complete ==="
-echo "API:    http://localhost:5050/api/health"
-echo "PR Bot: http://localhost:8001/health"
-echo "Chat:   http://localhost:7860"
-echo "Studio: http://localhost:7861"
+echo "API:        http://localhost:5050/api/health"
+echo "PR Bot:     http://localhost:8001/health"
+echo "Chat:       http://localhost:7860"
+echo "Studio:     http://localhost:7861"
+echo "Fred API:   http://localhost:8080/v1/health"
+echo "Code Audit: http://localhost:8081/audit/health"

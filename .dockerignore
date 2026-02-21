@@ -1,0 +1,56 @@
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment & secrets
+.env
+.env.*
+!.env.template
+*.pem
+
+# Infrastructure (not needed in image)
+terraform/
+k8s/
+scripts/
+mlx-training/
+
+# Tests & dev tools
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Docs & misc
+*.md
+LICENSE
+docs/
+
+# Existing Docker files (not needed inside image)
+Dockerfile
+Dockerfile.cloud
+docker-compose.yml
+.dockerignore
+
+# MCP config
+.mcp.json

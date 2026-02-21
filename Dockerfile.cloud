@@ -1,0 +1,71 @@
+# ============================================================
+# FredAI Cloud Run Production Image
+# Single image → 4 services (different entry points)
+# ============================================================
+
+# --- Stage 1: Builder ---
+FROM python:3.11-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ git && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Install dependencies first (layer caching)
+COPY requirements.txt pyproject.toml ./
+RUN python -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    /opt/venv/bin/pip install --no-cache-dir \
+        -r requirements.txt \
+        gradio>=4.0.0 \
+        gunicorn>=21.2.0 \
+        PyJWT>=2.8.0 \
+        cryptography>=42.0.0 \
+        httpx>=0.27.0 \
+        pydantic-settings>=2.0.0
+
+# Install the project itself
+COPY . .
+RUN /opt/venv/bin/pip install --no-cache-dir -e .
+
+# --- Stage 2: Production ---
+FROM python:3.11-slim AS production
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Non-root user
+RUN groupadd -r fredai && useradd -r -g fredai -d /app -s /sbin/nologin fredai
+
+WORKDIR /app
+
+# Copy venv from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONPATH="/app"
+ENV PYTHONUNBUFFERED=1
+ENV AI_PLATFORM_ENV=production
+ENV PORT=8080
+
+# Copy application code
+COPY ai_dev_team/ ./ai_dev_team/
+COPY products/ ./products/
+COPY servers/ ./servers/
+COPY config/ ./config/
+COPY templates/ ./templates/
+COPY pyproject.toml ./
+
+# Own everything by fredai
+RUN chown -R fredai:fredai /app
+
+USER fredai
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Default: run the API server
+CMD ["gunicorn", "servers.api_server:app", "--bind", "0.0.0.0:8080", "--workers", "2", "--timeout", "600"]

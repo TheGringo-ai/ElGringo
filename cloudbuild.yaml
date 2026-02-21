@@ -1,0 +1,113 @@
+# ============================================================
+# FredAI Cloud Build CI/CD Pipeline
+# Triggered on push to master → build image → deploy 4 services
+# ============================================================
+
+steps:
+  # Step 1: Build Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'Dockerfile.cloud'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:${SHORT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:latest'
+      - '.'
+
+  # Step 2: Push image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai'
+
+  # Step 3: Deploy fredai-pr-bot
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'fredai-pr-bot'
+      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:${SHORT_SHA}'
+      - '--region=${_REGION}'
+      - '--command=/bin/sh'
+      - '--args=-c,uvicorn products.pr_review_bot.server:app --host 0.0.0.0 --port $$PORT'
+      - '--memory=1Gi'
+      - '--cpu=1'
+      - '--min-instances=0'
+      - '--max-instances=10'
+      - '--timeout=600'
+      - '--set-env-vars=AI_PLATFORM_ENV=production'
+      - '--allow-unauthenticated'
+      - '--quiet'
+
+  # Step 4: Deploy fredai-api
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'fredai-api'
+      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:${SHORT_SHA}'
+      - '--region=${_REGION}'
+      - '--command=/bin/sh'
+      - '--args=-c,gunicorn servers.api_server:app --bind 0.0.0.0:$$PORT --workers 2 --timeout 600'
+      - '--memory=2Gi'
+      - '--cpu=2'
+      - '--min-instances=0'
+      - '--max-instances=20'
+      - '--timeout=600'
+      - '--set-env-vars=AI_PLATFORM_ENV=production'
+      - '--allow-unauthenticated'
+      - '--quiet'
+
+  # Step 5: Deploy fredai-chat
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'fredai-chat'
+      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:${SHORT_SHA}'
+      - '--region=${_REGION}'
+      - '--command=/bin/sh'
+      - '--args=-c,python -m ai_dev_team.chat_ui'
+      - '--memory=1Gi'
+      - '--cpu=1'
+      - '--min-instances=0'
+      - '--max-instances=5'
+      - '--timeout=600'
+      - '--set-env-vars=AI_PLATFORM_ENV=production'
+      - '--allow-unauthenticated'
+      - '--quiet'
+
+  # Step 6: Deploy fredai-studio
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'fredai-studio'
+      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:${SHORT_SHA}'
+      - '--region=${_REGION}'
+      - '--command=/bin/sh'
+      - '--args=-c,python -m ai_dev_team.studio_ui'
+      - '--memory=1Gi'
+      - '--cpu=1'
+      - '--min-instances=0'
+      - '--max-instances=5'
+      - '--timeout=600'
+      - '--set-env-vars=AI_PLATFORM_ENV=production'
+      - '--allow-unauthenticated'
+      - '--quiet'
+
+substitutions:
+  _REGION: us-central1
+  _REPO: fredai
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: '1800s'
+
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:${SHORT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:latest'

@@ -571,7 +571,32 @@ def _register_builtin_tools(registry: ToolRegistry):
             async with session.get(url, timeout=30) as response:
                 return await response.text()
 
+    # Web search
+    @create_tool(
+        name="web_search",
+        description="Search the web for current information. Returns titles, URLs, and snippets.",
+        category="web",
+    )
+    async def web_search(query: str, max_results: int = 5) -> List[Dict]:
+        try:
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                from duckduckgo_search import DDGS
+            results = []
+            for r in DDGS().text(query, max_results=max_results):
+                results.append({
+                    "title": r.get("title", ""),
+                    "url": r.get("href", ""),
+                    "snippet": r.get("body", ""),
+                })
+            return results
+        except ImportError:
+            return [{"error": "ddgs not installed: pip install ddgs"}]
+        except Exception as e:
+            return [{"error": str(e)}]
+
     # Register all tools
     for tool in [read_file, write_file, list_directory, run_python,
-                 run_shell, search_files, search_content, fetch_url]:
+                 run_shell, search_files, search_content, fetch_url, web_search]:
         registry.register(tool)

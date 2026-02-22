@@ -17,6 +17,7 @@ from .chatgpt import ChatGPTAgent
 from .gemini import GeminiAgent
 from .grok import GrokAgent
 from .ollama import OllamaAgent
+from .mlx_agent import MLXAgent, create_mlx_coder, create_mlx_general
 from .llama_cloud import (
     LlamaCloudAgent,
     create_llama_70b,
@@ -56,6 +57,10 @@ __all__ = [
     "GeminiAgent",
     "GrokAgent",
     "OllamaAgent",
+    # MLX agents
+    "MLXAgent",
+    "create_mlx_coder",
+    "create_mlx_general",
     # Llama Cloud agents
     "LlamaCloudAgent",
     "create_llama_70b",

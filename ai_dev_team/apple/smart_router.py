@@ -212,7 +212,7 @@ class SmartAppleRouter:
         logger.info(f"Cloud models: {list(self._cloud_models.keys())}")
 
     def _detect_local_models(self) -> Dict[str, Dict]:
-        """Detect available local MLX/Ollama models."""
+        """Detect available local MLX/Ollama models. Auto-starts Ollama if needed."""
         models = {}
 
         # Check Ollama models
@@ -221,6 +221,16 @@ class SmartAppleRouter:
                 ["ollama", "list"],
                 capture_output=True, text=True, timeout=5
             )
+            if result.returncode != 0:
+                # Ollama installed but not running — auto-start it
+                self._auto_start_ollama()
+                # Retry after starting
+                time.sleep(2)
+                result = subprocess.run(
+                    ["ollama", "list"],
+                    capture_output=True, text=True, timeout=5
+                )
+
             if result.returncode == 0:
                 for line in result.stdout.strip().split('\n')[1:]:
                     parts = line.split()
@@ -232,10 +242,49 @@ class SmartAppleRouter:
                             "size": size,
                             "tier": self._classify_model_tier(name, size)
                         }
+        except FileNotFoundError:
+            logger.debug("Ollama not installed")
         except Exception:
-            pass
+            # Ollama might not be running, try to start it
+            self._auto_start_ollama()
+            try:
+                time.sleep(2)
+                result = subprocess.run(
+                    ["ollama", "list"],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.strip().split('\n')[1:]:
+                        parts = line.split()
+                        if parts:
+                            name = parts[0]
+                            size = parts[1] if len(parts) > 1 else "unknown"
+                            models[name] = {
+                                "type": "ollama",
+                                "size": size,
+                                "tier": self._classify_model_tier(name, size)
+                            }
+            except Exception:
+                pass
 
         return models
+
+    def _auto_start_ollama(self):
+        """Auto-start Ollama serve if it's installed but not running."""
+        try:
+            # Check if ollama binary exists
+            which_result = subprocess.run(
+                ["which", "ollama"], capture_output=True, text=True, timeout=3
+            )
+            if which_result.returncode == 0:
+                logger.info("Auto-starting Ollama serve...")
+                subprocess.Popen(
+                    ["ollama", "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        except Exception as e:
+            logger.debug(f"Could not auto-start Ollama: {e}")
 
     def _detect_cloud_models(self) -> Dict[str, Dict]:
         """Detect available cloud models based on API keys."""
@@ -324,7 +373,40 @@ class SmartAppleRouter:
         return True
 
     def _select_local_model(self, complexity: TaskComplexity) -> Optional[RoutingDecision]:
-        """Select best local model for complexity."""
+        """
+        Select best local model for complexity.
+
+        Prefers MLX models when available (faster than Ollama on Apple Silicon
+        due to native Metal optimization and zero-copy unified memory):
+        - SIMPLE → MLX Llama-3.2-3B (fastest first-token latency)
+        - MEDIUM → MLX Qwen2.5-Coder-7B (best code quality at this size)
+        - COMPLEX → Ollama deepseek-coder-v2:16b (largest context window)
+        """
+        # Check if MLX is available
+        mlx_available = self._check_mlx_available()
+
+        if mlx_available:
+            if complexity == TaskComplexity.SIMPLE:
+                return RoutingDecision(
+                    tier=ModelTier.LOCAL_FAST,
+                    model_name="mlx-community/Llama-3.2-3B-Instruct-4bit",
+                    reason="MLX Llama 3.2 3B — fastest local for simple tasks",
+                    estimated_latency_ms=300,
+                    use_neural_engine=True,
+                    fallback_tier=ModelTier.CLOUD_FAST,
+                )
+            elif complexity == TaskComplexity.MEDIUM:
+                return RoutingDecision(
+                    tier=ModelTier.LOCAL_SMART,
+                    model_name="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+                    reason="MLX Qwen 2.5 Coder 7B — best code quality for medium tasks",
+                    estimated_latency_ms=1200,
+                    use_neural_engine=True,
+                    fallback_tier=ModelTier.CLOUD_FAST,
+                )
+            # COMPLEX falls through to Ollama (deepseek needs more context)
+
+        # Ollama fallback or COMPLEX tasks
         target_tier = (
             ModelTier.LOCAL_SMART if complexity in [TaskComplexity.MEDIUM, TaskComplexity.COMPLEX]
             else ModelTier.LOCAL_FAST
@@ -336,7 +418,7 @@ class SmartAppleRouter:
                 return RoutingDecision(
                     tier=target_tier,
                     model_name=name,
-                    reason=f"Local {target_tier.value} for {complexity.value} task",
+                    reason=f"Ollama {target_tier.value} for {complexity.value} task",
                     estimated_latency_ms=500 if target_tier == ModelTier.LOCAL_FAST else 2000,
                     use_neural_engine=True,
                     fallback_tier=ModelTier.CLOUD_FAST,
@@ -355,6 +437,14 @@ class SmartAppleRouter:
             )
 
         return None
+
+    def _check_mlx_available(self) -> bool:
+        """Check if MLX inference is available on this system."""
+        try:
+            import mlx.core as mx
+            return mx.metal.is_available()
+        except ImportError:
+            return False
 
     def _select_cloud_model(self, complexity: TaskComplexity, urgency: str) -> RoutingDecision:
         """Select best cloud model."""

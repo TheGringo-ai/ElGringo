@@ -31,6 +31,7 @@ from .agents import (
     create_llama_fast,
 )
 from .agents.ollama import create_local_agent, create_local_coder, LOCAL_MODELS
+from .apple.smart_router import ModelTier
 from .routing import TaskRouter, CostOptimizer, get_performance_tracker, RoutingDecision, get_decision_logger
 from .routing.cost_tracker import get_cost_tracker
 from .preferences import get_preference_store, DevConstraints
@@ -345,6 +346,22 @@ class AIDevTeam:
             if any("llama-coder-custom" in m.lower() for m in models):
                 self.register_agent(create_local_agent("llama-coder-custom"))
                 logger.info("Registered local agent: Llama Coder Custom (Fine-tuned)")
+
+        # Register MLX agents (faster than Ollama on Apple Silicon)
+        try:
+            from .agents.mlx_agent import create_mlx_coder, create_mlx_general
+
+            mlx_coder = create_mlx_coder()
+            if mlx_coder:
+                self.register_agent(mlx_coder)
+                logger.info("Registered MLX agent: Qwen 2.5 Coder 7B (native Metal)")
+
+            mlx_general = create_mlx_general()
+            if mlx_general:
+                self.register_agent(mlx_general)
+                logger.info("Registered MLX agent: Llama 3.2 3B (native Metal)")
+        except Exception as e:
+            logger.debug(f"MLX agents not available: {e}")
 
     def register_agent(self, agent: AIAgent):
         """Register an AI agent with the team"""
@@ -1521,7 +1538,7 @@ Provide a unified, synthesized response that follows all project conventions lis
         context: str = "",
     ) -> AgentResponse:
         """
-        Quick single-agent query.
+        Quick single-agent query with local-first routing.
 
         Args:
             prompt: Question or task
@@ -1531,32 +1548,60 @@ Provide a unified, synthesized response that follows all project conventions lis
         Returns:
             AgentResponse from the selected agent
         """
+        start_time = time.time()
+        routed_local = False
+
         if agent and agent in self.agents:
             selected_agent = self.agents[agent]
         elif self.agents:
-            # Use task router to select best agent for the task
+            # Use task router to classify the task
             classification = self._task_router.classify(prompt, context)
-            recommended = classification.recommended_agents
 
-            # Find first available recommended agent
+            # LOCAL-FIRST ROUTING: check if Apple router can handle locally
             selected_agent = None
-            for agent_name in recommended:
-                if agent_name in self.agents:
-                    selected_agent = self.agents[agent_name]
-                    break
+            if self._apple_router and not agent:
+                try:
+                    task_type = classification.primary_type.value if hasattr(classification, 'primary_type') else "code_generation"
+                    routing = self._apple_router.route(
+                        task_type=task_type,
+                        prompt_length=len(prompt),
+                    )
+                    # If routing says local, find a local agent
+                    if routing.tier in (ModelTier.LOCAL_FAST, ModelTier.LOCAL_SMART):
+                        for aname, ag in self.agents.items():
+                            if ag.config.model_type == ModelType.LOCAL:
+                                selected_agent = ag
+                                routed_local = True
+                                logger.info(
+                                    f"Local-first routing: {routing.model_name} "
+                                    f"({routing.reason})"
+                                )
+                                break
+                except Exception as e:
+                    logger.debug(f"Apple router check failed, falling back to cloud: {e}")
 
-            # Fallback to best available agent
+            # If not routed locally, use cloud routing
             if not selected_agent:
-                for pattern in ["claude", "chatgpt", "gpt", "grok-reasoner", "grok", "gemini"]:
-                    for agent_name, agent in self.agents.items():
-                        if pattern in agent_name.lower():
-                            selected_agent = agent
-                            break
-                    if selected_agent:
+                recommended = classification.recommended_agents
+
+                # Find first available recommended agent
+                for agent_name in recommended:
+                    if agent_name in self.agents:
+                        selected_agent = self.agents[agent_name]
                         break
 
-            if not selected_agent:
-                selected_agent = next(iter(self.agents.values()), None)
+                # Fallback to best available agent
+                if not selected_agent:
+                    for pattern in ["claude", "chatgpt", "gpt", "grok-reasoner", "grok", "gemini"]:
+                        for agent_name, ag in self.agents.items():
+                            if pattern in agent_name.lower():
+                                selected_agent = ag
+                                break
+                        if selected_agent:
+                            break
+
+                if not selected_agent:
+                    selected_agent = next(iter(self.agents.values()), None)
         else:
             return AgentResponse(
                 agent_name="none",
@@ -1567,12 +1612,57 @@ Provide a unified, synthesized response that follows all project conventions lis
                 error="No agents available",
             )
 
-        start_time = time.time()
-        response = await selected_agent.generate_response(prompt, context)
+        # Set timeout for local models (10s simple, 30s medium)
+        timeout = 30 if not routed_local else 10
+        response = None
+
+        if routed_local:
+            try:
+                response = await asyncio.wait_for(
+                    selected_agent.generate_response(prompt, context),
+                    timeout=timeout,
+                )
+                # If local failed, fall back to cloud
+                if not response.success:
+                    logger.info(f"Local model failed ({response.error}), falling back to cloud")
+                    response = None
+                    routed_local = False
+            except asyncio.TimeoutError:
+                logger.info(f"Local model timed out after {timeout}s, falling back to cloud")
+                response = None
+                routed_local = False
+            except Exception as e:
+                logger.info(f"Local model error ({e}), falling back to cloud")
+                response = None
+                routed_local = False
+
+            # Cloud fallback
+            if response is None:
+                cloud_agent = None
+                for pattern in ["claude", "chatgpt", "gpt", "grok-reasoner", "grok", "gemini"]:
+                    for aname, ag in self.agents.items():
+                        if pattern in aname.lower() and ag.config.model_type != ModelType.LOCAL:
+                            cloud_agent = ag
+                            break
+                    if cloud_agent:
+                        break
+                if cloud_agent:
+                    response = await cloud_agent.generate_response(prompt, context)
+                else:
+                    # No cloud agents, try any agent
+                    selected_agent = next(iter(self.agents.values()), None)
+                    if selected_agent:
+                        response = await selected_agent.generate_response(prompt, context)
+
+        if response is None:
+            response = await selected_agent.generate_response(prompt, context)
+
+        # Track cost savings when local model handled the request
+        if routed_local and response.success:
+            self._track_local_savings(prompt, response)
 
         # Auto-learn from single-agent queries too
         if self.enable_auto_learning and self._auto_learner:
-            # Detect task type for single queries
             classification = self._task_router.classify(prompt, context)
             await self._auto_learner.capture_interaction(
                 user_prompt=prompt,
@@ -1592,6 +1682,27 @@ Provide a unified, synthesized response that follows all project conventions lis
             )
 
         return response
+
+    def _track_local_savings(self, prompt: str, response: AgentResponse):
+        """Track estimated cloud API cost savings from local model usage."""
+        # Rough cost estimate: ~$0.003 per 1K tokens for cloud API
+        estimated_tokens = (len(prompt.split()) + len(response.content.split())) * 1.3
+        estimated_cloud_cost = (estimated_tokens / 1000) * 0.003
+
+        # Store in cost tracker
+        if hasattr(self, '_local_savings'):
+            self._local_savings += estimated_cloud_cost
+        else:
+            self._local_savings = estimated_cloud_cost
+
+        logger.info(
+            f"Local routing saved ~${estimated_cloud_cost:.4f} "
+            f"(model={response.agent_name}, total_saved=${self._local_savings:.4f})"
+        )
+
+    def get_local_savings(self) -> float:
+        """Get total estimated cloud cost savings from local model usage."""
+        return getattr(self, '_local_savings', 0.0)
 
     def get_team_status(self) -> Dict[str, Any]:
         """Get status of all team members"""

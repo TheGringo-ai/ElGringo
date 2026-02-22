@@ -217,11 +217,16 @@ async def _process_message_async(message: str) -> str:
 
 - `/voice file <path>` - Transcribe audio file
 
+**Web Search:**
+
+- `/search <query>` - Search the web and get AI-synthesized answer
+
 **Or just type naturally** and the AI Team will collaborate!
 
 **Examples:**
 - `/new fastapi my-api`
 - `/run python print('Hello!')`
+- `/search latest Python 3.13 features`
 - `/analyze ~/screenshot.png code`
 """
 
@@ -260,6 +265,9 @@ async def _process_message_async(message: str) -> str:
 
         elif message.lower().startswith("/voice"):
             return await _handle_voice_command(message[6:].strip())
+
+        elif message.lower().startswith("/search "):
+            return await _handle_web_search(message[8:].strip())
 
         elif message.lower().startswith("/write "):
             return await _handle_write_file(message[7:].strip())
@@ -443,6 +451,72 @@ def _validate_write_path(filepath: str) -> str | None:
         return f"Writing `{ext}` files is not allowed for security reasons."
 
     return None
+
+
+async def _handle_web_search(query: str) -> str:
+    """Search the web and synthesize results with AI."""
+    if not query:
+        return """**Web Search:**
+
+Usage: `/search <query>`
+
+Examples:
+- `/search latest Python 3.13 features`
+- `/search FastAPI best practices 2026`
+- `/search how to optimize SQLite queries`
+"""
+
+    try:
+        # Perform web search
+        try:
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                from duckduckgo_search import DDGS
+            results = []
+            for r in DDGS().text(query, max_results=5):
+                results.append({
+                    "title": r.get("title", ""),
+                    "url": r.get("href", ""),
+                    "snippet": r.get("body", ""),
+                })
+        except ImportError:
+            return "**Error:** `ddgs` not installed. Run: `pip install ddgs`"
+
+        if not results:
+            return f"No results found for: {query}"
+
+        # Format results as context for the AI
+        context_parts = [f"Web search results for: {query}\n"]
+        for i, r in enumerate(results, 1):
+            context_parts.append(f"{i}. **{r['title']}**")
+            context_parts.append(f"   {r['url']}")
+            context_parts.append(f"   {r['snippet']}\n")
+
+        search_context = "\n".join(context_parts)
+
+        # Feed to AI for synthesis
+        t = get_team()
+        prompt = (
+            f"Based on these web search results, provide a concise, helpful answer "
+            f"to the query: \"{query}\"\n\n"
+            f"Include citations [1], [2], etc. referencing the source URLs.\n\n"
+            f"{search_context}"
+        )
+
+        result = await t.ask(prompt=prompt)
+
+        # Build response with sources
+        response = f"**Web Search:** {query}\n\n"
+        response += result.content if result.success else "Could not synthesize results."
+        response += "\n\n---\n**Sources:**\n"
+        for i, r in enumerate(results, 1):
+            response += f"[{i}] [{r['title']}]({r['url']})\n"
+
+        return response
+
+    except Exception as e:
+        return f"Search error: {str(e)}"
 
 
 async def _handle_write_file(args: str) -> str:
@@ -1073,6 +1147,7 @@ Click any example below or type your own request.
             btn_templates = gr.Button("/templates", size="sm")
             btn_status = gr.Button("/git status", size="sm")
             btn_commit = gr.Button("/commit", size="sm")
+            btn_search = gr.Button("/search", size="sm")
 
         with gr.Accordion("Code Execution", open=False):
             with gr.Row():
@@ -1124,6 +1199,7 @@ Click any example below or type your own request.
         btn_templates.click(fn=lambda h: set_and_send("/templates", h), inputs=[chatbot], outputs=[msg, chatbot])
         btn_status.click(fn=lambda h: set_and_send("/git status", h), inputs=[chatbot], outputs=[msg, chatbot])
         btn_commit.click(fn=lambda h: set_and_send("/commit", h), inputs=[chatbot], outputs=[msg, chatbot])
+        btn_search.click(fn=lambda h: set_and_send("/search latest Python AI frameworks", h), inputs=[chatbot], outputs=[msg, chatbot])
 
         # Code execution
         btn_py1.click(fn=lambda h: set_and_send("/run python print('Hello, World!')", h), inputs=[chatbot], outputs=[msg, chatbot])

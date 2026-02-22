@@ -295,6 +295,150 @@ class TFIDFIndex:
         return self._total_docs
 
 
+class VectorIndex:
+    """
+    Vector embedding index using SQLite for storage.
+
+    Uses MLX to generate embeddings on Apple Silicon for fast,
+    local semantic search. Falls back gracefully if MLX unavailable.
+    """
+
+    def __init__(self, db_path: str = "~/.ai-dev-team/rag/vectors.db"):
+        self._db_path = Path(os.path.expanduser(db_path))
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._mlx_inference = None
+        self._embedding_model = "mlx-community/all-MiniLM-L6-v2"
+        self._available = False
+        self._conn = None
+        self._init_db()
+
+    def _init_db(self):
+        """Initialize SQLite database for vector storage."""
+        import sqlite3
+        try:
+            self._conn = sqlite3.connect(str(self._db_path))
+            self._conn.execute("""
+                CREATE TABLE IF NOT EXISTS embeddings (
+                    doc_id TEXT PRIMARY KEY,
+                    embedding BLOB NOT NULL,
+                    dimension INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+            self._conn.commit()
+        except Exception as e:
+            logger.warning(f"Could not initialize vector DB: {e}")
+
+    def _get_mlx(self):
+        """Lazy-load MLX inference engine."""
+        if self._mlx_inference is not None:
+            return self._mlx_inference
+        try:
+            from ..apple.mlx_inference import get_mlx_inference
+            self._mlx_inference = get_mlx_inference()
+            if self._mlx_inference.is_available:
+                self._available = True
+            return self._mlx_inference
+        except Exception:
+            self._available = False
+            return None
+
+    @property
+    def is_available(self) -> bool:
+        """Check if vector search is available (MLX + model loaded)."""
+        mlx = self._get_mlx()
+        return mlx is not None and mlx.is_available
+
+    def _encode_embedding(self, embedding: List[float]) -> bytes:
+        """Encode embedding list to bytes for SQLite storage."""
+        import struct
+        return struct.pack(f'{len(embedding)}f', *embedding)
+
+    def _decode_embedding(self, data: bytes, dim: int) -> List[float]:
+        """Decode bytes back to embedding list."""
+        import struct
+        return list(struct.unpack(f'{dim}f', data))
+
+    def add_embedding(self, doc_id: str, embedding: List[float]):
+        """Store an embedding in the database."""
+        if not self._conn:
+            return
+        try:
+            blob = self._encode_embedding(embedding)
+            self._conn.execute(
+                "INSERT OR REPLACE INTO embeddings (doc_id, embedding, dimension, updated_at) "
+                "VALUES (?, ?, ?, ?)",
+                (doc_id, blob, len(embedding), datetime.now(timezone.utc).isoformat())
+            )
+            self._conn.commit()
+        except Exception as e:
+            logger.debug(f"Could not store embedding for {doc_id}: {e}")
+
+    def remove_embedding(self, doc_id: str):
+        """Remove an embedding from the database."""
+        if not self._conn:
+            return
+        try:
+            self._conn.execute("DELETE FROM embeddings WHERE doc_id = ?", (doc_id,))
+            self._conn.commit()
+        except Exception:
+            pass
+
+    def _cosine_similarity(self, a: List[float], b: List[float]) -> float:
+        """Compute cosine similarity between two vectors."""
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = math.sqrt(sum(x * x for x in a))
+        norm_b = math.sqrt(sum(x * x for x in b))
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+
+    def search(self, query_embedding: List[float], limit: int = 10) -> List[Tuple[str, float]]:
+        """
+        Search for similar documents by cosine similarity.
+
+        Returns list of (doc_id, similarity_score) tuples.
+        """
+        if not self._conn:
+            return []
+
+        try:
+            cursor = self._conn.execute(
+                "SELECT doc_id, embedding, dimension FROM embeddings"
+            )
+            scores = []
+            for doc_id, blob, dim in cursor:
+                emb = self._decode_embedding(blob, dim)
+                score = self._cosine_similarity(query_embedding, emb)
+                scores.append((doc_id, score))
+
+            scores.sort(key=lambda x: x[1], reverse=True)
+            return scores[:limit]
+        except Exception as e:
+            logger.debug(f"Vector search error: {e}")
+            return []
+
+    def count(self) -> int:
+        """Get number of stored embeddings."""
+        if not self._conn:
+            return 0
+        try:
+            cursor = self._conn.execute("SELECT COUNT(*) FROM embeddings")
+            return cursor.fetchone()[0]
+        except Exception:
+            return 0
+
+    def clear(self):
+        """Clear all stored embeddings."""
+        if not self._conn:
+            return
+        try:
+            self._conn.execute("DELETE FROM embeddings")
+            self._conn.commit()
+        except Exception:
+            pass
+
+
 class UniversalRAG:
     """
     Universal Retrieval-Augmented Generation system.
@@ -308,6 +452,11 @@ class UniversalRAG:
 
         self._index = TFIDFIndex()
         self._source_stats: Dict[str, int] = defaultdict(int)
+
+        # Initialize vector index for hybrid search
+        self._vector_index = VectorIndex(
+            db_path=str(self.storage_dir / "vectors.db")
+        )
 
         # Initialize search cache
         self._cache = RAGCache(max_size=cache_size, ttl_seconds=cache_ttl)
@@ -615,7 +764,10 @@ class UniversalRAG:
         use_cache: bool = True,
     ) -> List[SearchResult]:
         """
-        Search across all indexed knowledge.
+        Hybrid search across all indexed knowledge (TF-IDF + vector embeddings).
+
+        Combines BM25 keyword matching with cosine similarity from vector embeddings.
+        Falls back to TF-IDF only if MLX/vector search is unavailable.
 
         Args:
             query: Search query
@@ -651,11 +803,58 @@ class UniversalRAG:
         if framework:
             filters["framework"] = framework
 
-        # Search index
+        # TF-IDF search
         raw_results = self._index.search(query, limit=limit * 2, filters=filters if filters else None)
 
-        results = []
+        # Build TF-IDF score map (normalized to 0-1)
+        tfidf_scores: Dict[str, float] = {}
+        tfidf_terms: Dict[str, List[str]] = {}
+        max_tfidf = max((score for _, score, _ in raw_results), default=1.0) or 1.0
         for doc_id, score, matched_terms in raw_results:
+            tfidf_scores[doc_id] = score / max_tfidf
+            tfidf_terms[doc_id] = matched_terms
+
+        # Vector search (if available)
+        vector_scores: Dict[str, float] = {}
+        if self._vector_index.is_available and self._vector_index.count() > 0:
+            try:
+                import asyncio
+                mlx = self._vector_index._get_mlx()
+                if mlx and mlx._model is not None:
+                    # Generate query embedding synchronously via event loop
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            # Can't await in sync context, skip vector search
+                            pass
+                        else:
+                            query_emb = loop.run_until_complete(mlx.embed(query))
+                            vec_results = self._vector_index.search(query_emb, limit=limit * 2)
+                            for doc_id, sim_score in vec_results:
+                                vector_scores[doc_id] = sim_score
+                    except RuntimeError:
+                        pass  # No event loop, skip vector search
+            except Exception as e:
+                logger.debug(f"Vector search skipped: {e}")
+
+        # Combine scores: hybrid = 0.4 * tfidf + 0.6 * vector (or tfidf-only fallback)
+        all_doc_ids = set(tfidf_scores.keys()) | set(vector_scores.keys())
+        combined_scores: Dict[str, float] = {}
+
+        if vector_scores:
+            for doc_id in all_doc_ids:
+                tfidf = tfidf_scores.get(doc_id, 0.0)
+                vector = vector_scores.get(doc_id, 0.0)
+                combined_scores[doc_id] = 0.4 * tfidf + 0.6 * vector
+        else:
+            # TF-IDF only (vector not available)
+            combined_scores = tfidf_scores
+
+        # Sort by combined score
+        ranked = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
+
+        results = []
+        for doc_id, score in ranked:
             if score < min_score:
                 continue
 
@@ -668,12 +867,13 @@ class UniversalRAG:
                 continue
 
             # Generate snippet
-            snippet = self._extract_snippet(doc.content, matched_terms)
+            matched = tfidf_terms.get(doc_id, [])
+            snippet = self._extract_snippet(doc.content, matched)
 
             results.append(SearchResult(
                 document=doc,
                 score=score,
-                matched_terms=matched_terms,
+                matched_terms=matched,
                 snippet=snippet,
             ))
 

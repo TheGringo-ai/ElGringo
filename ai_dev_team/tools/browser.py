@@ -178,11 +178,44 @@ class BrowserTools(Tool):
     async def _web_search(
         self,
         query: str,
-        num_results: int = 10
+        num_results: int = 5
     ) -> ToolResult:
-        """Search the web using DuckDuckGo"""
+        """Search the web using duckduckgo-search library (structured, reliable)."""
         try:
-            # Use DuckDuckGo HTML search (no API key needed)
+            # Try new package name first, fall back to old
+            try:
+                from ddgs import DDGS
+            except ImportError:
+                from duckduckgo_search import DDGS
+
+            results = []
+            for r in DDGS().text(query, max_results=num_results):
+                results.append({
+                    "title": r.get("title", ""),
+                    "url": r.get("href", ""),
+                    "snippet": r.get("body", ""),
+                })
+
+            return ToolResult(
+                success=True,
+                output=results,
+                metadata={"query": query, "count": len(results)}
+            )
+
+        except ImportError:
+            # Fallback to HTML scraping if neither package installed
+            return await self._web_search_fallback(query, num_results)
+        except Exception as e:
+            logger.warning(f"DuckDuckGo search failed: {e}, trying fallback")
+            return await self._web_search_fallback(query, num_results)
+
+    async def _web_search_fallback(
+        self,
+        query: str,
+        num_results: int = 5
+    ) -> ToolResult:
+        """Fallback HTML scraping search if duckduckgo-search is unavailable."""
+        try:
             search_url = f"https://html.duckduckgo.com/html/?q={query}"
 
             async with await self._get_httpx_client() as client:
@@ -210,8 +243,6 @@ class BrowserTools(Tool):
                     metadata={"query": query, "count": len(results)}
                 )
 
-        except ImportError:
-            return ToolResult(success=False, output=None, error="BeautifulSoup not installed")
         except Exception as e:
             return ToolResult(success=False, output=None, error=str(e))
 

@@ -71,17 +71,15 @@ cd $DIR && $DIR/venv/bin/pip install -q -e .
 FRONTEND_DIR="$DIR/products/command_center/frontend"
 if [ -f "$FRONTEND_DIR/package.json" ]; then
     echo "=== Building Command Center frontend ==="
-    if command -v node &>/dev/null; then
-        cd "$FRONTEND_DIR" && npm ci --production=false && npm run build
-        chown -R fredai:fredai "$FRONTEND_DIR/dist"
-        echo "  Frontend built to $FRONTEND_DIR/dist/"
-    else
-        echo "  WARNING: Node.js not found, installing..."
+    if ! command -v node &>/dev/null; then
+        echo "  Node.js not found, installing..."
         curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
         apt-get install -y nodejs
-        cd "$FRONTEND_DIR" && npm ci --production=false && npm run build
-        chown -R fredai:fredai "$FRONTEND_DIR/dist"
     fi
+    rm -rf "$FRONTEND_DIR/node_modules"
+    cd "$FRONTEND_DIR" && npm ci && npx vite build --base=/command/
+    chown -R fredai:fredai "$FRONTEND_DIR/dist"
+    echo "  Frontend built to $FRONTEND_DIR/dist/"
 fi
 
 # ----------------------------------------------------------

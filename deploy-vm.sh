@@ -34,6 +34,7 @@ tar -czf /tmp/fredai.tar.gz \
     --exclude='.ruff_cache' \
     --exclude='*.egg-info' \
     --exclude='dist' \
+    --exclude='node_modules' \
     --exclude='build' \
     --exclude='htmlcov' \
     --exclude='.coverage' \

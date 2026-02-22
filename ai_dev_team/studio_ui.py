@@ -3345,6 +3345,7 @@ def main():
         show_error=True,
         favicon_path=None,
         auth=auth_config,
+        root_path="/studio",
     )
 
 

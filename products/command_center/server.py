@@ -29,7 +29,7 @@ app = FastAPI(
 
 _cors_origins = os.getenv(
     "COMMAND_CENTER_CORS_ORIGINS",
-    "http://localhost:7863,http://localhost:5173,http://localhost:3000",
+    "http://localhost:7863,http://localhost:5173,http://localhost:3000,https://ai.chatterfix.com",
 ).split(",")
 
 app.add_middleware(

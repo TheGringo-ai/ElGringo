@@ -49,7 +49,7 @@ echo "  Package size: ${SIZE}"
 echo ""
 echo "[2/3] Uploading to VM..."
 gcloud compute scp /tmp/fredai.tar.gz ci-deploy-fredai.sh \
-    "${VM_NAME}:/tmp/" \
+    "${VM_NAME}:~/" \
     --zone="${VM_ZONE}" --quiet
 
 rm -f /tmp/fredai.tar.gz
@@ -61,7 +61,7 @@ echo ""
 echo "[3/3] Deploying on VM..."
 gcloud compute ssh "${VM_NAME}" \
     --zone="${VM_ZONE}" --quiet \
-    --command="sudo bash /tmp/ci-deploy-fredai.sh"
+    --command="sudo mv ~/fredai.tar.gz ~/ci-deploy-fredai.sh /tmp/ && sudo bash /tmp/ci-deploy-fredai.sh"
 
 # ----------------------------------------------------------
 # 4. Health check

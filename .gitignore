@@ -17,6 +17,8 @@ env/
 
 # Testing / Coverage
 .coverage
+coverage.json
+*_test_results.json
 htmlcov/
 .pytest_cache/
 .mypy_cache/
@@ -39,14 +41,16 @@ Thumbs.db
 *.swp
 *.swo
 
+# Claude / MCP config
+.claude/
+.mcp.json
+
 # Databases
 *.db
 *.sqlite3
 
 # Logs
 *.log
-
-# Logs
 logs/
 
 # Symlinks to other repos

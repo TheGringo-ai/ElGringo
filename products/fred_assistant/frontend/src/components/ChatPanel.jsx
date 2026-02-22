@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Trash2, Loader2, Bot, User, TrendingUp } from 'lucide-react';
+import { Send, Trash2, Loader2, Bot, User, TrendingUp, Zap } from 'lucide-react';
 import { fetchChatHistory, streamChat, clearChat } from '../api';
 
 const PERSONAS = [
@@ -14,6 +14,7 @@ export default function ChatPanel() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  const [thinking, setThinking] = useState(null); // null or string describing actions
   const [persona, setPersona] = useState('fred');
   const scrollRef = useRef(null);
 
@@ -23,7 +24,7 @@ export default function ChatPanel() {
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
+  }, [messages, thinking]);
 
   const quickActions = persona === 'coach' ? QUICK_COACH : QUICK_FRED;
 
@@ -36,19 +37,24 @@ export default function ChatPanel() {
     const assistantMsg = { role: 'assistant', content: '', persona };
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setStreaming(true);
+    setThinking(null);
 
     let acc = '';
     await streamChat(
       msg,
       (token) => {
         acc += token;
+        setThinking(null);
         setMessages((prev) => {
           const next = [...prev];
           next[next.length - 1] = { ...next[next.length - 1], content: acc };
           return next;
         });
       },
-      () => setStreaming(false),
+      () => {
+        setStreaming(false);
+        setThinking(null);
+      },
       (err) => {
         setMessages((prev) => {
           const next = [...prev];
@@ -56,8 +62,12 @@ export default function ChatPanel() {
           return next;
         });
         setStreaming(false);
+        setThinking(null);
       },
       persona,
+      (isThinking, detail) => {
+        setThinking(isThinking ? detail : null);
+      },
     );
   };
 
@@ -120,6 +130,19 @@ export default function ChatPanel() {
             }`}>{m.content || '...'}</div>
           </div>
         ))}
+
+        {/* Thinking indicator */}
+        {thinking && (
+          <div className="flex gap-2 animate-fade-in">
+            <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 bg-purple-500/20 text-purple-400">
+              <Zap size={10} />
+            </div>
+            <div className="text-xs text-purple-300/80 bg-purple-500/10 px-2.5 py-1.5 rounded-xl rounded-tl-sm flex items-center gap-1.5">
+              <Loader2 size={10} className="animate-spin" />
+              Fred is working: {thinking}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Input */}

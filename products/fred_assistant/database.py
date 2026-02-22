@@ -196,6 +196,87 @@ def init_db():
             ('health', 'Health & Fitness', '💪', 'red', 3, '["todo","in_progress","done"]'),
             ('ideas', 'Ideas & Research', '💡', 'amber', 4, '["capture","exploring","validated","parked"]');
 
+        -- Focus sessions (focus mode / pomodoro timer)
+        CREATE TABLE IF NOT EXISTS focus_sessions (
+            id TEXT PRIMARY KEY,
+            task_id TEXT,
+            task_title TEXT DEFAULT '',
+            started_at TEXT NOT NULL,
+            ended_at TEXT,
+            planned_minutes INTEGER DEFAULT 25,
+            notes TEXT DEFAULT '',
+            completed INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (task_id) REFERENCES tasks(id)
+        );
+
+        -- Leads (revenue CRM)
+        CREATE TABLE IF NOT EXISTS leads (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            company TEXT DEFAULT '',
+            email TEXT DEFAULT '',
+            phone TEXT DEFAULT '',
+            source TEXT DEFAULT '',
+            pipeline_stage TEXT DEFAULT 'cold',
+            deal_value REAL DEFAULT 0,
+            notes TEXT DEFAULT '',
+            next_followup TEXT,
+            tags TEXT DEFAULT '[]',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Outreach log (CRM activity)
+        CREATE TABLE IF NOT EXISTS outreach_log (
+            id TEXT PRIMARY KEY,
+            lead_id TEXT NOT NULL,
+            outreach_type TEXT DEFAULT 'email',
+            content TEXT DEFAULT '',
+            result TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (lead_id) REFERENCES leads(id)
+        );
+
+        -- Metrics snapshots (CEO lens)
+        CREATE TABLE IF NOT EXISTS metrics_snapshots (
+            id TEXT PRIMARY KEY,
+            date TEXT NOT NULL,
+            mrr REAL DEFAULT 0,
+            leads_contacted INTEGER DEFAULT 0,
+            calls_booked INTEGER DEFAULT 0,
+            trials_started INTEGER DEFAULT 0,
+            deals_closed INTEGER DEFAULT 0,
+            sprint_completion_pct REAL DEFAULT 0,
+            content_published INTEGER DEFAULT 0,
+            revenue REAL DEFAULT 0,
+            custom_metrics TEXT DEFAULT '{}',
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(date)
+        );
+
+        -- Playbooks (agent playbooks / autopilot)
+        CREATE TABLE IF NOT EXISTS playbooks (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT DEFAULT '',
+            category TEXT DEFAULT 'general',
+            steps TEXT DEFAULT '[]',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Playbook runs (execution log)
+        CREATE TABLE IF NOT EXISTS playbook_runs (
+            id TEXT PRIMARY KEY,
+            playbook_id TEXT NOT NULL,
+            status TEXT DEFAULT 'running',
+            step_results TEXT DEFAULT '[]',
+            started_at TEXT DEFAULT (datetime('now')),
+            completed_at TEXT,
+            FOREIGN KEY (playbook_id) REFERENCES playbooks(id)
+        );
+
         -- Seed default social accounts
         INSERT OR IGNORE INTO social_accounts (id, platform, handle, display_name, connected)
         VALUES
@@ -204,6 +285,23 @@ def init_db():
             ('github', 'github', 'TheGringo-ai', 'GitHub', 1),
             ('youtube', 'youtube', '', 'YouTube', 0);
         """)
+
+        # Idempotent ALTER TABLE migrations
+        _migrate_columns(conn)
+
+
+def _migrate_columns(conn):
+    """Add columns to existing tables (idempotent — ignores if already exists)."""
+    migrations = [
+        ("briefings", "briefing_type", "TEXT DEFAULT 'morning'"),
+        ("content_items", "approval_status", "TEXT DEFAULT 'pending'"),
+        ("content_items", "published_url", "TEXT DEFAULT ''"),
+    ]
+    for table, column, col_def in migrations:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
+        except Exception:
+            pass  # Column already exists
 
 
 def log_activity(action: str, entity_type: str = None, entity_id: str = None, details: dict = None):

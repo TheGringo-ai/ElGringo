@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { FileText, Plus, Trash2, Send, Sparkles, Clock, CheckCircle2, XCircle, Filter } from 'lucide-react';
+import { FileText, Plus, Trash2, Send, Sparkles, Clock, CheckCircle2, XCircle, Filter, Shield } from 'lucide-react';
 import {
   fetchContent, createContent, generateContent, updateContent,
   publishContent, deleteContent, fetchSocialAccounts, updateSocialAccount,
+  approveContent, rejectContent, publishContentTo,
 } from '../api';
 
 const PLATFORMS = ['linkedin', 'twitter', 'blog', 'newsletter', 'youtube'];
@@ -13,11 +14,17 @@ const STATUS_COLORS = {
   published: 'bg-emerald-500/20 text-emerald-400',
   rejected: 'bg-red-500/20 text-red-400',
 };
+const APPROVAL_COLORS = {
+  pending: 'bg-yellow-500/20 text-yellow-400',
+  approved: 'bg-emerald-500/20 text-emerald-400',
+  rejected: 'bg-red-500/20 text-red-400',
+};
 const PLATFORM_ICONS = {
   linkedin: '💼', twitter: '🐦', blog: '📝', newsletter: '📧', youtube: '🎬',
 };
 
-function ContentCard({ item, onPublish, onDelete, onEdit }) {
+function ContentCard({ item, onPublish, onDelete, onEdit, onApprove, onReject }) {
+  const approval = item.approval_status || 'pending';
   return (
     <div className="card-hover p-3 animate-slide-up">
       <div className="flex items-start justify-between gap-2">
@@ -25,15 +32,24 @@ function ContentCard({ item, onPublish, onDelete, onEdit }) {
           <span>{PLATFORM_ICONS[item.platform] || '📄'}</span>
           <span className="text-xs font-medium">{item.title}</span>
         </div>
-        <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${STATUS_COLORS[item.status] || STATUS_COLORS.draft}`}>
-          {item.status}
-        </span>
+        <div className="flex items-center gap-1">
+          <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${APPROVAL_COLORS[approval] || APPROVAL_COLORS.pending}`}>
+            {approval}
+          </span>
+          <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${STATUS_COLORS[item.status] || STATUS_COLORS.draft}`}>
+            {item.status}
+          </span>
+        </div>
       </div>
 
       {item.body && (
         <div className="text-[11px] text-gray-500 mt-1.5 line-clamp-3 whitespace-pre-wrap">
           {item.body.slice(0, 200)}{item.body.length > 200 ? '...' : ''}
         </div>
+      )}
+
+      {item.published_url && (
+        <div className="text-[10px] text-blue-400 mt-1 truncate">{item.published_url}</div>
       )}
 
       <div className="flex items-center justify-between mt-2">
@@ -43,7 +59,17 @@ function ContentCard({ item, onPublish, onDelete, onEdit }) {
           {item.ai_generated && <span className="flex items-center gap-0.5"><Sparkles size={8} className="text-purple-400" />AI</span>}
         </div>
         <div className="flex items-center gap-1">
-          {item.status === 'draft' && (
+          {approval === 'pending' && item.status === 'draft' && (
+            <>
+              <button onClick={() => onApprove?.(item.id)} className="text-[10px] text-emerald-400 hover:text-emerald-300 px-1">
+                <CheckCircle2 size={10} />
+              </button>
+              <button onClick={() => onReject?.(item.id)} className="text-[10px] text-red-400 hover:text-red-300 px-1">
+                <XCircle size={10} />
+              </button>
+            </>
+          )}
+          {approval === 'approved' && item.status !== 'published' && (
             <button onClick={() => onPublish(item.id)} className="text-[10px] text-emerald-400 hover:text-emerald-300 px-1">
               <Send size={10} />
             </button>
@@ -121,6 +147,18 @@ export default function ContentView() {
     } finally {
       setGenerating(false);
     }
+  };
+
+  const handleApprove = async (id) => {
+    setContent((prev) => prev.map((c) => c.id === id ? { ...c, approval_status: 'approved' } : c));
+    await approveContent(id);
+    load();
+  };
+
+  const handleReject = async (id) => {
+    setContent((prev) => prev.map((c) => c.id === id ? { ...c, approval_status: 'rejected' } : c));
+    await rejectContent(id);
+    load();
   };
 
   const handlePublish = async (id) => {
@@ -229,7 +267,7 @@ export default function ContentView() {
       {/* Content List */}
       <div className="space-y-1.5">
         {filtered.map((item) => (
-          <ContentCard key={item.id} item={item} onPublish={handlePublish} onDelete={handleDelete} />
+          <ContentCard key={item.id} item={item} onPublish={handlePublish} onDelete={handleDelete} onApprove={handleApprove} onReject={handleReject} />
         ))}
         {filtered.length === 0 && (
           <div className="text-[11px] text-gray-700 text-center py-6">

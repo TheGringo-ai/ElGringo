@@ -301,3 +301,143 @@ class WeeklyReviewOut(BaseModel):
     next_week_priorities: list[str] = []
     ai_insights: str = ""
     created_at: str = ""
+
+
+# ── Focus Mode ──────────────────────────────────────────────────
+
+class FocusSessionOut(BaseModel):
+    id: str
+    task_id: Optional[str] = None
+    task_title: str = ""
+    started_at: str
+    ended_at: Optional[str] = None
+    planned_minutes: int = 25
+    notes: str = ""
+    completed: bool = False
+    created_at: str = ""
+
+
+class FocusStartRequest(BaseModel):
+    task_id: Optional[str] = None
+    planned_minutes: int = 25
+
+
+class FocusStopRequest(BaseModel):
+    session_id: Optional[str] = None
+    completed: bool = True
+    notes: str = ""
+
+
+# ── CRM / Leads ────────────────────────────────────────────────
+
+class LeadOut(BaseModel):
+    id: str
+    name: str
+    company: str = ""
+    email: str = ""
+    phone: str = ""
+    source: str = ""
+    pipeline_stage: str = "cold"
+    deal_value: float = 0
+    notes: str = ""
+    next_followup: Optional[str] = None
+    tags: list[str] = []
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class LeadCreate(BaseModel):
+    name: str
+    company: str = ""
+    email: str = ""
+    phone: str = ""
+    source: str = ""
+    pipeline_stage: str = "cold"
+    deal_value: float = 0
+    notes: str = ""
+    next_followup: Optional[str] = None
+    tags: list[str] = []
+
+
+class LeadUpdate(BaseModel):
+    name: Optional[str] = None
+    company: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    source: Optional[str] = None
+    pipeline_stage: Optional[str] = None
+    deal_value: Optional[float] = None
+    notes: Optional[str] = None
+    next_followup: Optional[str] = None
+    tags: Optional[list[str]] = None
+
+
+class OutreachEntry(BaseModel):
+    lead_id: str
+    outreach_type: str = "email"
+    content: str = ""
+    result: str = ""
+
+
+class FollowupRequest(BaseModel):
+    date: str
+    notes: str = ""
+
+
+# ── CEO Lens Metrics ───────────────────────────────────────────
+
+class MetricsSnapshotOut(BaseModel):
+    id: str
+    date: str
+    mrr: float = 0
+    leads_contacted: int = 0
+    calls_booked: int = 0
+    trials_started: int = 0
+    deals_closed: int = 0
+    sprint_completion_pct: float = 0
+    content_published: int = 0
+    revenue: float = 0
+    custom_metrics: dict = {}
+    created_at: str = ""
+
+
+class MetricLogRequest(BaseModel):
+    name: str
+    value: float
+
+
+# ── Playbooks ──────────────────────────────────────────────────
+
+class PlaybookOut(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    category: str = "general"
+    steps: list[dict] = []
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class PlaybookCreate(BaseModel):
+    name: str
+    description: str = ""
+    category: str = "general"
+    steps: list[dict] = []
+
+
+class PlaybookUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    steps: Optional[list[dict]] = None
+
+
+# ── Unified Inbox ──────────────────────────────────────────────
+
+class InboxItem(BaseModel):
+    type: str
+    title: str
+    description: str = ""
+    priority: int = 3
+    entity_id: str = ""
+    action_hint: str = ""

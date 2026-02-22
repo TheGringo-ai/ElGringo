@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Circle, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
-import { fetchTodayTasks, moveTask } from '../api';
+import { Circle, CheckCircle2, Clock, AlertTriangle, Sun, Moon } from 'lucide-react';
+import { fetchTodayTasks, moveTask, fetchBriefing, generateBriefing, generateShutdown } from '../api';
 
 const STATUS_ICON = {
   todo: Circle,
@@ -11,10 +11,15 @@ const STATUS_ICON = {
 
 export default function TodayView({ onRefresh }) {
   const [tasks, setTasks] = useState([]);
+  const [briefing, setBriefing] = useState(null);
+  const [loadingBriefing, setLoadingBriefing] = useState(false);
+  const [loadingShutdown, setLoadingShutdown] = useState(false);
+  const [shutdown, setShutdown] = useState(null);
 
   const load = async () => {
-    const data = await fetchTodayTasks();
-    setTasks(data);
+    const [td, br] = await Promise.allSettled([fetchTodayTasks(), fetchBriefing()]);
+    if (td.status === 'fulfilled') setTasks(td.value);
+    if (br.status === 'fulfilled' && br.value?.content && br.value?.date) setBriefing(br.value);
   };
 
   useEffect(() => { load(); }, []);
@@ -27,12 +32,48 @@ export default function TodayView({ onRefresh }) {
     load();
   };
 
+  const handleBriefing = async () => {
+    setLoadingBriefing(true);
+    try {
+      const data = await generateBriefing();
+      setBriefing(data);
+    } finally { setLoadingBriefing(false); }
+  };
+
+  const handleShutdown = async () => {
+    setLoadingShutdown(true);
+    try {
+      const data = await generateShutdown();
+      setShutdown(data);
+    } finally { setLoadingShutdown(false); }
+  };
+
   const overdue = tasks.filter((t) => t.due_date && t.due_date < new Date().toISOString().slice(0, 10) && t.status !== 'done');
   const active = tasks.filter((t) => t.status !== 'done');
   const done = tasks.filter((t) => t.status === 'done');
+  const isEvening = new Date().getHours() >= 17;
 
   return (
     <div className="space-y-4">
+      {/* Daily Briefing */}
+      {briefing ? (
+        <div className="card p-3 border-emerald-500/10">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Sun size={12} className="text-amber-400" />
+            <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Daily Briefing</span>
+          </div>
+          <div className="text-[11px] text-gray-400 whitespace-pre-wrap leading-relaxed">{briefing.content}</div>
+        </div>
+      ) : (
+        <button onClick={handleBriefing} disabled={loadingBriefing}
+          className="card p-3 w-full text-left hover:bg-white/5 transition-colors">
+          <div className="flex items-center gap-1.5">
+            <Sun size={12} className="text-amber-400" />
+            <span className="text-xs text-amber-400">{loadingBriefing ? 'Generating...' : 'Generate Daily Briefing'}</span>
+          </div>
+        </button>
+      )}
+
       {overdue.length > 0 && (
         <div>
           <div className="flex items-center gap-1.5 mb-2">
@@ -55,6 +96,26 @@ export default function TodayView({ onRefresh }) {
         <div>
           <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Completed</h4>
           {done.map((t) => <TaskRow key={t.id} task={t} onToggle={toggle} />)}
+        </div>
+      )}
+
+      {/* Shutdown Review */}
+      {isEvening && !shutdown && (
+        <button onClick={handleShutdown} disabled={loadingShutdown}
+          className="card p-3 w-full text-left hover:bg-white/5 transition-colors">
+          <div className="flex items-center gap-1.5">
+            <Moon size={12} className="text-indigo-400" />
+            <span className="text-xs text-indigo-400">{loadingShutdown ? 'Generating...' : 'Daily Shutdown Review'}</span>
+          </div>
+        </button>
+      )}
+      {shutdown && (
+        <div className="card p-3 border-indigo-500/10">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Moon size={12} className="text-indigo-400" />
+            <span className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wider">Shutdown Review</span>
+          </div>
+          <div className="text-[11px] text-gray-400 whitespace-pre-wrap leading-relaxed">{shutdown.content}</div>
         </div>
       )}
     </div>

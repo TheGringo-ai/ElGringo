@@ -30,7 +30,7 @@ export const searchMemories = (q) => api.get('/memory/search', { params: { q } }
 export const fetchChatHistory = () => api.get('/chat/history').then((r) => r.data);
 export const clearChat = () => api.delete('/chat/history');
 
-export async function streamChat(message, onToken, onDone, onError, persona = 'fred') {
+export async function streamChat(message, onToken, onDone, onError, persona = 'fred', onThinking) {
   try {
     const res = await fetch(`${API_URL}/chat/stream`, {
       method: 'POST',
@@ -54,7 +54,11 @@ export async function streamChat(message, onToken, onDone, onError, persona = 'f
         const payload = line.slice(6).trim();
         try {
           const parsed = JSON.parse(payload);
-          if (parsed.token) onToken(parsed.token);
+          if (parsed.thinking !== undefined && onThinking) {
+            onThinking(parsed.thinking, parsed.actions || parsed.result || '');
+          } else if (parsed.token) {
+            onToken(parsed.token);
+          }
           if (parsed.done) { onDone(); return; }
         } catch { /* skip */ }
       }
@@ -65,9 +69,11 @@ export async function streamChat(message, onToken, onDone, onError, persona = 'f
   }
 }
 
-// ── Briefing ─────────────────────────────────────────────────────
+// ── Briefing & Shutdown ─────────────────────────────────────────
 export const fetchBriefing = () => api.get('/briefing/today').then((r) => r.data);
 export const generateBriefing = () => api.post('/briefing').then((r) => r.data);
+export const generateShutdown = () => api.post('/briefing/shutdown').then((r) => r.data);
+export const fetchTomorrowTasks = () => api.get('/briefing/tomorrow').then((r) => r.data);
 
 // ── Projects ─────────────────────────────────────────────────────
 export const fetchProjects = () => api.get('/projects').then((r) => r.data);
@@ -99,6 +105,11 @@ export const deleteContent = (id) => api.delete(`/content/${id}`);
 export const fetchSocialAccounts = () => api.get('/content/social/accounts').then((r) => r.data);
 export const updateSocialAccount = (id, data) =>
   api.patch(`/content/social/accounts/${id}`, data).then((r) => r.data);
+export const approveContent = (id) => api.post(`/content/${id}/approve`).then((r) => r.data);
+export const rejectContent = (id, reason = '') =>
+  api.post(`/content/${id}/reject`, { reason }).then((r) => r.data);
+export const publishContentTo = (id, platform, dryRun = true) =>
+  api.post(`/content/${id}/publish_to`, null, { params: { platform, dry_run: dryRun } }).then((r) => r.data);
 
 // ── Business Coach ───────────────────────────────────────────────
 export const fetchGoals = (params) => api.get('/coach/goals', { params }).then((r) => r.data);
@@ -110,3 +121,52 @@ export const fetchReviews = (limit = 10) =>
 export const fetchCurrentReview = () => api.get('/coach/reviews/current').then((r) => r.data);
 export const generateReview = () => api.post('/coach/reviews/generate').then((r) => r.data);
 export const saveReview = (data) => api.post('/coach/reviews', data).then((r) => r.data);
+
+// ── Focus Mode ──────────────────────────────────────────────────
+export const startFocus = (taskId, minutes = 25) =>
+  api.post('/focus/start', { task_id: taskId, planned_minutes: minutes }).then((r) => r.data);
+export const stopFocus = (sessionId, completed = true, notes = '') =>
+  api.post('/focus/stop', { session_id: sessionId, completed, notes }).then((r) => r.data);
+export const fetchActiveSession = () => api.get('/focus/active').then((r) => r.data);
+export const fetchFocusStats = (days = 7) =>
+  api.get('/focus/stats', { params: { days } }).then((r) => r.data);
+export const fetchFocusSessions = (days = 7) =>
+  api.get('/focus/sessions', { params: { days } }).then((r) => r.data);
+
+// ── CRM ─────────────────────────────────────────────────────────
+export const fetchLeads = (stage, source) =>
+  api.get('/crm/leads', { params: { stage, source } }).then((r) => r.data);
+export const fetchLead = (id) => api.get(`/crm/leads/${id}`).then((r) => r.data);
+export const createLead = (data) => api.post('/crm/leads', data).then((r) => r.data);
+export const updateLead = (id, data) => api.patch(`/crm/leads/${id}`, data).then((r) => r.data);
+export const deleteLead = (id) => api.delete(`/crm/leads/${id}`);
+export const logOutreach = (leadId, data) =>
+  api.post(`/crm/leads/${leadId}/outreach`, data).then((r) => r.data);
+export const fetchOutreach = (leadId) =>
+  api.get(`/crm/leads/${leadId}/outreach`).then((r) => r.data);
+export const scheduleFollowup = (leadId, date, notes = '') =>
+  api.post(`/crm/leads/${leadId}/followup`, { date, notes }).then((r) => r.data);
+export const fetchPipeline = () => api.get('/crm/pipeline').then((r) => r.data);
+export const fetchFollowups = (days = 3) =>
+  api.get('/crm/followups', { params: { days } }).then((r) => r.data);
+
+// ── CEO Lens Metrics ────────────────────────────────────────────
+export const fetchCurrentMetrics = () => api.get('/metrics/current').then((r) => r.data);
+export const fetchMetricsHistory = (days = 30) =>
+  api.get('/metrics/history', { params: { days } }).then((r) => r.data);
+export const saveMetricsSnapshot = () => api.post('/metrics/snapshot').then((r) => r.data);
+export const logMetric = (name, value) =>
+  api.post('/metrics/log', { name, value }).then((r) => r.data);
+
+// ── Inbox ───────────────────────────────────────────────────────
+export const fetchInbox = () => api.get('/inbox').then((r) => r.data);
+export const fetchInboxCount = () => api.get('/inbox/count').then((r) => r.data);
+
+// ── Playbooks ───────────────────────────────────────────────────
+export const fetchPlaybooks = (category) =>
+  api.get('/playbooks', { params: category ? { category } : {} }).then((r) => r.data);
+export const fetchPlaybook = (id) => api.get(`/playbooks/${id}`).then((r) => r.data);
+export const createPlaybook = (data) => api.post('/playbooks', data).then((r) => r.data);
+export const updatePlaybook = (id, data) => api.patch(`/playbooks/${id}`, data).then((r) => r.data);
+export const deletePlaybook = (id) => api.delete(`/playbooks/${id}`);
+export const runPlaybook = (id) => api.post(`/playbooks/${id}/run`).then((r) => r.data);

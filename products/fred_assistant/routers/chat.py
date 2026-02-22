@@ -22,8 +22,17 @@ async def chat(data: ChatRequest):
 @router.post("/stream")
 async def stream_chat(data: ChatRequest):
     async def generate():
-        async for chunk in assistant.stream_chat(data.message, data.persona):
-            yield f"data: {json.dumps({'token': chunk, 'done': False})}\n\n"
+        async for event in assistant.stream_chat(data.message, data.persona):
+            event_type = event.get("type", "token")
+            event_data = event.get("data", "")
+
+            if event_type == "thinking":
+                yield f"data: {json.dumps({'thinking': True, 'actions': event_data, 'done': False})}\n\n"
+            elif event_type == "thinking_done":
+                yield f"data: {json.dumps({'thinking': False, 'result': event_data, 'done': False})}\n\n"
+            else:
+                yield f"data: {json.dumps({'token': event_data, 'done': False})}\n\n"
+
         yield f"data: {json.dumps({'token': '', 'done': True})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")

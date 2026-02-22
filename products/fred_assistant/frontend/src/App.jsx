@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard, Brain, MessageCircle, FolderGit2,
-  Calendar, FileText, TrendingUp,
+  Calendar, FileText, TrendingUp, Timer, Users, BarChart3,
+  Inbox, BookOpen,
 } from 'lucide-react';
-import { fetchStats, fetchBoards } from './api';
+import { fetchStats, fetchBoards, fetchInboxCount } from './api';
 import QuickCapture from './components/QuickCapture';
 import StatsBar from './components/StatsBar';
 import TodayView from './components/TodayView';
@@ -14,14 +15,24 @@ import ProjectsView from './components/ProjectsView';
 import CalendarView from './components/CalendarView';
 import ContentView from './components/ContentView';
 import CoachView from './components/CoachView';
+import FocusView from './components/FocusView';
+import CRMView from './components/CRMView';
+import CEOLensView from './components/CEOLensView';
+import InboxView from './components/InboxView';
+import PlaybookView from './components/PlaybookView';
 
 const NAV = [
   { id: 'today', label: 'Today', icon: LayoutDashboard },
+  { id: 'inbox', label: 'Inbox', icon: Inbox, badge: true },
+  { id: 'focus', label: 'Focus', icon: Timer },
   { id: 'chat', label: 'Fred', icon: MessageCircle },
   { id: 'coach', label: 'Coach', icon: TrendingUp },
+  { id: 'crm', label: 'CRM', icon: Users },
+  { id: 'metrics', label: 'CEO Lens', icon: BarChart3 },
   { id: 'calendar', label: 'Calendar', icon: Calendar },
   { id: 'projects', label: 'Projects', icon: FolderGit2 },
   { id: 'content', label: 'Content', icon: FileText },
+  { id: 'playbooks', label: 'Playbooks', icon: BookOpen },
   { id: 'memory', label: 'Memory', icon: Brain },
 ];
 
@@ -30,11 +41,13 @@ export default function App() {
   const [boards, setBoards] = useState([]);
   const [view, setView] = useState('today');
   const [activeBoard, setActiveBoard] = useState(null);
+  const [inboxCount, setInboxCount] = useState(0);
 
   const loadAll = useCallback(async () => {
-    const [s, b] = await Promise.allSettled([fetchStats(), fetchBoards()]);
+    const [s, b, ic] = await Promise.allSettled([fetchStats(), fetchBoards(), fetchInboxCount()]);
     if (s.status === 'fulfilled') setStats(s.value);
     if (b.status === 'fulfilled') setBoards(b.value);
+    if (ic.status === 'fulfilled') setInboxCount(ic.value?.total || 0);
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
@@ -87,6 +100,11 @@ export default function App() {
             >
               <item.icon size={14} />
               {item.label}
+              {item.badge && inboxCount > 0 && (
+                <span className="ml-auto text-[9px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded-full font-bold">
+                  {inboxCount}
+                </span>
+              )}
             </button>
           ))}
 
@@ -117,11 +135,16 @@ export default function App() {
         {/* Main Content */}
         <main className="flex-1 overflow-y-auto p-5">
           {view === 'today' && !activeBoard && <TodayView onRefresh={loadAll} />}
+          {view === 'inbox' && !activeBoard && <InboxView />}
+          {view === 'focus' && !activeBoard && <FocusView />}
           {view === 'chat' && !activeBoard && <ChatPanel />}
           {view === 'coach' && !activeBoard && <CoachView />}
+          {view === 'crm' && !activeBoard && <CRMView />}
+          {view === 'metrics' && !activeBoard && <CEOLensView />}
           {view === 'calendar' && !activeBoard && <CalendarView />}
           {view === 'projects' && !activeBoard && <ProjectsView />}
           {view === 'content' && !activeBoard && <ContentView />}
+          {view === 'playbooks' && !activeBoard && <PlaybookView />}
           {view === 'memory' && !activeBoard && <MemoryPanel />}
           {activeBoard && <BoardView board={activeBoard} onRefresh={loadAll} />}
         </main>

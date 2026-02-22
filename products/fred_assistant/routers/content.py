@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from products.fred_assistant.models import (
     ContentItemCreate, ContentGenerateRequest, SocialAccountUpdate,
 )
-from products.fred_assistant.services import content_service
+from products.fred_assistant.services import content_service, publish_service
 
 router = APIRouter(prefix="/content", tags=["content"])
 
@@ -68,6 +68,33 @@ def publish_content(content_id: str):
 @router.delete("/{content_id}", status_code=204)
 def delete_content(content_id: str):
     content_service.delete_content(content_id)
+
+
+# ── Approval & Publishing ───────────────────────────────────────
+
+@router.post("/{content_id}/approve")
+def approve_content(content_id: str):
+    result = publish_service.approve_content(content_id)
+    if not result:
+        raise HTTPException(404, "Content not found")
+    return result
+
+
+@router.post("/{content_id}/reject")
+def reject_content(content_id: str, data: dict = None):
+    reason = (data or {}).get("reason", "")
+    result = publish_service.reject_content(content_id, reason)
+    if not result:
+        raise HTTPException(404, "Content not found")
+    return result
+
+
+@router.post("/{content_id}/publish_to")
+def publish_to_platform(content_id: str, platform: str = Query(None), dry_run: bool = Query(True)):
+    result = publish_service.publish_content(content_id, platform, dry_run)
+    if not result:
+        raise HTTPException(404, "Content not found")
+    return result
 
 
 # ── Social Accounts ──────────────────────────────────────────────

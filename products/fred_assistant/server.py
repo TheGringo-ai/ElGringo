@@ -43,6 +43,11 @@ from products.fred_assistant.routers.projects import router as projects_router
 from products.fred_assistant.routers.calendar import router as calendar_router
 from products.fred_assistant.routers.content import router as content_router
 from products.fred_assistant.routers.coach import router as coach_router
+from products.fred_assistant.routers.focus import router as focus_router
+from products.fred_assistant.routers.crm import router as crm_router
+from products.fred_assistant.routers.metrics import router as metrics_router
+from products.fred_assistant.routers.inbox import router as inbox_router
+from products.fred_assistant.routers.playbooks import router as playbooks_router
 
 app.include_router(health_router)
 app.include_router(boards_router)
@@ -55,6 +60,11 @@ app.include_router(projects_router)
 app.include_router(calendar_router)
 app.include_router(content_router)
 app.include_router(coach_router)
+app.include_router(focus_router)
+app.include_router(crm_router)
+app.include_router(metrics_router)
+app.include_router(inbox_router)
+app.include_router(playbooks_router)
 
 # ── Static files (serve React build in production) ────────────────
 

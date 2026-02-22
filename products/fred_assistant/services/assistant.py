@@ -1,6 +1,7 @@
 """
 Fred — Your AI Personal Assistant.
 Wraps the FredAI orchestrator with personal context awareness.
+Supports ACTION: execution loop for real task/memory/git/file operations.
 """
 
 import logging
@@ -9,6 +10,13 @@ from datetime import date, datetime
 
 from products.fred_assistant.database import get_conn
 from products.fred_assistant.services import memory_service, task_service
+from products.fred_assistant.services.fred_tools import (
+    parse_actions,
+    strip_action_lines,
+    execute_actions,
+    get_tool_definitions,
+    MAX_ROUNDS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +41,9 @@ You can help with:
 - Content generation for social media
 - Business strategy and goal tracking
 
+When Fred asks you to do something (create a task, remember something, check git, read a file, etc.),
+USE YOUR ACTIONS to actually do it. Don't just describe what you would do — take the action.
+
 When Fred asks you to remember something, acknowledge it clearly.
 When he asks about his tasks or schedule, reference actual data.
 Always be specific and actionable.
@@ -55,12 +66,22 @@ Your style:
 
 You know Fred's goals, tasks, and weekly progress. Reference them in your advice.
 Always end with a specific action item or question to keep momentum.
+
+When asked to do something (check accountability, create goals, find revenue),
+USE YOUR ACTIONS to actually do it.
 """
 
 PERSONA_PROMPTS = {
     "fred": FRED_SYSTEM_PROMPT,
     "coach": COACH_SYSTEM_PROMPT,
 }
+
+
+def _build_system_prompt(persona: str = "fred") -> str:
+    """Build full system prompt with tool definitions."""
+    base = PERSONA_PROMPTS.get(persona, FRED_SYSTEM_PROMPT)
+    tools = get_tool_definitions()
+    return f"{base}\n\n{tools}"
 
 
 def _build_context(persona: str = "fred") -> str:
@@ -79,6 +100,14 @@ def _build_context(persona: str = "fred") -> str:
     parts.append(f"- Overdue: {stats['overdue']}")
     parts.append(f"- Completed today: {stats['completed_today']}")
     parts.append(f"- Streak: {stats['streak_days']} days\n")
+
+    # Available boards
+    boards = task_service.list_boards()
+    if boards:
+        parts.append("## Boards")
+        for b in boards:
+            parts.append(f"- **{b['id']}**: {b['name']} ({b.get('task_count', 0)} active tasks)")
+        parts.append("")
 
     # Today's tasks
     today_tasks = task_service.get_today_tasks()
@@ -116,6 +145,44 @@ def _build_context(persona: str = "fred") -> str:
         except Exception:
             pass
 
+    # Inbox count
+    try:
+        from products.fred_assistant.services import inbox_service
+        inbox_count = inbox_service.get_inbox_count()
+        if inbox_count.get("total", 0) > 0:
+            parts.append(f"## Inbox: {inbox_count['total']} items needing attention")
+            for t, c in inbox_count.get("by_type", {}).items():
+                parts.append(f"- {t}: {c}")
+            parts.append("")
+    except Exception:
+        pass
+
+    # Active focus session
+    try:
+        from products.fred_assistant.services import focus_service
+        active = focus_service.get_active_session()
+        if active:
+            parts.append(f"## Active Focus Session")
+            parts.append(f"- Task: {active.get('task_title', 'None')}")
+            parts.append(f"- Started: {active['started_at'][:16]}")
+            parts.append(f"- Planned: {active['planned_minutes']} min")
+            parts.append("")
+    except Exception:
+        pass
+
+    # CRM summary
+    try:
+        from products.fred_assistant.services import crm_service
+        pipeline = crm_service.get_pipeline_summary()
+        if pipeline.get("total_leads", 0) > 0:
+            parts.append(f"## Pipeline: {pipeline['total_leads']} leads (${pipeline['total_pipeline_value']:,.0f} total)")
+            for stage, data in pipeline.get("stages", {}).items():
+                if data["count"] > 0:
+                    parts.append(f"- {stage}: {data['count']} (${data['total_value']:,.0f})")
+            parts.append("")
+    except Exception:
+        pass
+
     # Memories
     memory_ctx = memory_service.get_context_for_chat()
     if memory_ctx:
@@ -131,7 +198,7 @@ def get_chat_messages(system_prompt: str = None, persona: str = "fred", limit: i
             "SELECT role, content FROM chat_messages ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
 
-    prompt = system_prompt or PERSONA_PROMPTS.get(persona, FRED_SYSTEM_PROMPT)
+    prompt = system_prompt or _build_system_prompt(persona)
     messages = [{"role": "system", "content": prompt}]
     # Add context as a system message
     ctx = _build_context(persona)
@@ -165,65 +232,171 @@ def clear_history():
         conn.execute("DELETE FROM chat_messages")
 
 
-async def chat(message: str, persona: str = "fred") -> str:
-    """Send a message to Fred and get a response using the AI orchestrator."""
-    save_message("user", message, persona)
+async def _run_action_loop(prompt: str, persona: str = "fred") -> tuple[str, list[dict]]:
+    """Run the AI with action execution loop. Returns (final_reply, all_action_results)."""
+    all_results = []
+    reply = ""
 
-    # Try to use the FredAI orchestrator
+    # Init orchestrator once for all rounds
     try:
         from ai_dev_team.orchestrator import AIDevTeam
 
         team = AIDevTeam(enable_memory=True)
         await team.setup_agents()
-
-        messages = get_chat_messages()
-        # Build a prompt with context
-        prompt = f"{messages[0]['content']}\n\n"
-        for m in messages[1:]:
-            if m["role"] == "system":
-                prompt += f"\n{m['content']}\n"
-
-        prompt += f"\nUser: {message}\nFred:"
-
-        response = await team.ask(prompt)
-        reply = response.get("response", "I'm having trouble processing that right now.")
-
     except Exception as e:
-        logger.warning(f"Orchestrator unavailable, using fallback: {e}")
-        reply = _fallback_response(message)
+        logger.warning(f"Orchestrator unavailable: {e}")
+        return _fallback_response(prompt), all_results
+
+    # Keep original prompt for context trimming
+    original_prompt = prompt
+
+    for round_num in range(MAX_ROUNDS):
+        try:
+            response = await team.ask(prompt)
+            reply = response.get("response", "I'm having trouble processing that right now.")
+        except Exception as e:
+            logger.warning(f"Orchestrator error on round {round_num}: {e}")
+            if reply:
+                return strip_action_lines(reply), all_results
+            return _fallback_response(prompt), all_results
+
+        # Check for actions
+        actions = parse_actions(reply)
+        if not actions:
+            return strip_action_lines(reply), all_results
+
+        # Execute actions
+        results = await execute_actions(actions)
+        all_results.extend(results)
+
+        # Build follow-up prompt — use compact format after round 1 to avoid token bloat
+        results_text = "\n".join(
+            f"- {r['action']}: {'OK' if r.get('success') else 'FAILED'} — {r.get('message', r.get('error', ''))}"
+            for r in results
+        )
+        if round_num == 0:
+            prompt = (
+                f"{prompt}\n\nAssistant: {reply}\n\n"
+                f"[Action results]\n{results_text}\n\n"
+                f"Now respond to the user naturally based on the action results above. "
+                f"Do NOT include ACTION: lines — all actions are complete."
+            )
+        else:
+            # Compact: drop earlier rounds, keep original + latest results only
+            all_results_text = "\n".join(
+                f"- {r['action']}: {'OK' if r.get('success') else 'FAILED'} — {r.get('message', r.get('error', ''))}"
+                for r in all_results
+            )
+            prompt = (
+                f"{original_prompt}\n\n"
+                f"[All action results from {len(all_results)} actions]\n{all_results_text}\n\n"
+                f"Now respond to the user naturally based on ALL action results above. "
+                f"Do NOT include ACTION: lines — all actions are complete."
+            )
+
+    # Hit max rounds — return what we have
+    return strip_action_lines(reply), all_results
+
+
+async def chat(message: str, persona: str = "fred") -> str:
+    """Send a message to Fred and get a response with action execution."""
+    save_message("user", message, persona)
+
+    system_prompt = _build_system_prompt(persona)
+    context = _build_context(persona)
+    full_prompt = f"{system_prompt}\n\n{context}\n\nUser: {message}\nFred:"
+
+    reply, action_results = await _run_action_loop(full_prompt, persona)
 
     save_message("assistant", reply, persona)
     return reply
 
 
 async def stream_chat(message: str, persona: str = "fred"):
-    """Stream a response token by token."""
+    """Stream a response token by token, with action execution support."""
     save_message("user", message, persona)
+
+    system_prompt = _build_system_prompt(persona)
+    context = _build_context(persona)
+    full_prompt = f"{system_prompt}\n\n{context}\n\nUser: {message}\nFred:"
 
     try:
         from ai_dev_team.orchestrator import AIDevTeam
 
         team = AIDevTeam(enable_memory=True)
         await team.setup_agents()
-
-        system_prompt = PERSONA_PROMPTS.get(persona, FRED_SYSTEM_PROMPT)
-        context = _build_context(persona)
-        full_prompt = f"{system_prompt}\n\n{context}\n\nUser: {message}\nFred:"
-
-        response = await team.ask(full_prompt)
-        reply = response.get("response", "I'm having trouble right now.")
-        save_message("assistant", reply, persona)
-
-        # Yield as chunks (orchestrator doesn't support true streaming yet)
-        words = reply.split(" ")
-        for i, word in enumerate(words):
-            yield word + (" " if i < len(words) - 1 else "")
-
     except Exception as e:
-        logger.warning(f"Orchestrator error: {e}")
+        logger.warning(f"Orchestrator unavailable: {e}")
         reply = _fallback_response(message)
         save_message("assistant", reply, persona)
-        yield reply
+        yield {"type": "token", "data": reply}
+        return
+
+    all_results = []
+    reply = ""
+    original_prompt = full_prompt
+
+    try:
+        for round_num in range(MAX_ROUNDS):
+            response = await team.ask(full_prompt)
+            reply = response.get("response", "I'm having trouble right now.")
+
+            # Check for actions
+            actions = parse_actions(reply)
+            if not actions:
+                # No actions — stream the clean reply
+                clean = strip_action_lines(reply)
+                save_message("assistant", clean, persona)
+                words = clean.split(" ")
+                for i, word in enumerate(words):
+                    yield {"type": "token", "data": word + (" " if i < len(words) - 1 else "")}
+                return
+
+            # Has actions — signal thinking, execute, loop
+            action_names = ", ".join(a["name"] for a in actions)
+            yield {"type": "thinking", "data": action_names}
+
+            results = await execute_actions(actions)
+            all_results.extend(results)
+
+            yield {"type": "thinking_done", "data": f"{len(results)} actions completed"}
+
+            # Build follow-up prompt — compact after round 1
+            results_text = "\n".join(
+                f"- {r['action']}: {'OK' if r.get('success') else 'FAILED'} — {r.get('message', r.get('error', ''))}"
+                for r in results
+            )
+            if round_num == 0:
+                full_prompt = (
+                    f"{full_prompt}\n\nAssistant: {reply}\n\n"
+                    f"[Action results]\n{results_text}\n\n"
+                    f"Now respond to the user naturally based on the action results above. "
+                    f"Do NOT include ACTION: lines — all actions are complete."
+                )
+            else:
+                all_results_text = "\n".join(
+                    f"- {r['action']}: {'OK' if r.get('success') else 'FAILED'} — {r.get('message', r.get('error', ''))}"
+                    for r in all_results
+                )
+                full_prompt = (
+                    f"{original_prompt}\n\n"
+                    f"[All action results from {len(all_results)} actions]\n{all_results_text}\n\n"
+                    f"Now respond to the user naturally based on ALL action results above. "
+                    f"Do NOT include ACTION: lines — all actions are complete."
+                )
+
+        # Max rounds — stream what we have
+        clean = strip_action_lines(reply)
+        save_message("assistant", clean, persona)
+        words = clean.split(" ")
+        for i, word in enumerate(words):
+            yield {"type": "token", "data": word + (" " if i < len(words) - 1 else "")}
+
+    except Exception as e:
+        logger.warning(f"Orchestrator error during action loop: {e}")
+        fallback = strip_action_lines(reply) if reply else _fallback_response(message)
+        save_message("assistant", fallback, persona)
+        yield {"type": "token", "data": fallback}
 
 
 def _fallback_response(message: str) -> str:
@@ -307,6 +480,79 @@ async def generate_briefing() -> dict:
             (briefing_id, today, content, json.dumps(stats)),
         )
     return {"id": briefing_id, "date": today, "content": content, "tasks_snapshot": stats}
+
+
+async def generate_shutdown() -> dict:
+    """Generate end-of-day shutdown review."""
+    import uuid
+
+    today = date.today().isoformat()
+    stats = task_service.get_dashboard_stats()
+    today_tasks = task_service.get_today_tasks()
+
+    completed = [t for t in today_tasks if t.get("status") == "done"]
+    incomplete = [t for t in today_tasks if t.get("status") != "done"]
+
+    try:
+        from ai_dev_team.orchestrator import AIDevTeam
+
+        team = AIDevTeam(enable_memory=True)
+        await team.setup_agents()
+
+        context = _build_context()
+        prompt = (
+            f"{FRED_SYSTEM_PROMPT}\n\n{context}\n\n"
+            "Generate an end-of-day shutdown review for Fred. Include:\n"
+            "1. What got done today (celebrate wins)\n"
+            "2. What didn't get done (be honest, no shame)\n"
+            "3. Top 3 priorities for tomorrow\n"
+            "4. Any blockers or concerns to address\n"
+            "Keep it under 200 words. Be direct and supportive."
+        )
+        response = await team.ask(prompt)
+        content = response.get("response", "")
+    except Exception:
+        lines = [f"# Daily Shutdown — {date.today().strftime('%A, %B %d')}\n"]
+        lines.append(f"**{len(completed)}** tasks completed, **{len(incomplete)}** remaining.\n")
+        if completed:
+            lines.append("## Wins")
+            for t in completed[:5]:
+                lines.append(f"- {t['title']}")
+        if incomplete:
+            lines.append("\n## Still Open")
+            for t in incomplete[:5]:
+                lines.append(f"- {t['title']} (P{t['priority']})")
+        lines.append("\n## Tomorrow's Top 3")
+        for t in sorted(incomplete, key=lambda x: x.get("priority", 3))[:3]:
+            lines.append(f"1. {t['title']}")
+        content = "\n".join(lines)
+
+    briefing_id = uuid.uuid4().hex[:8]
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO briefings (id, date, content, tasks_snapshot, briefing_type) VALUES (?,?,?,?,?)",
+            (briefing_id, today + "_shutdown", content, json.dumps(stats), "shutdown"),
+        )
+    return {"id": briefing_id, "date": today, "content": content, "type": "shutdown", "tasks_snapshot": stats}
+
+
+def get_tomorrow_tasks() -> list[dict]:
+    """Get tasks locked in as tomorrow's priorities."""
+    tomorrow = date.today().isoformat()
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT tasks_snapshot FROM briefings WHERE date=? AND briefing_type='shutdown' ORDER BY created_at DESC LIMIT 1",
+            (tomorrow + "_shutdown",),
+        ).fetchone()
+    if row:
+        try:
+            return json.loads(row["tasks_snapshot"]).get("tomorrow_priorities", [])
+        except (json.JSONDecodeError, TypeError):
+            pass
+    # Fallback: top 3 active tasks by priority
+    tasks = task_service.get_today_tasks()
+    active = [t for t in tasks if t.get("status") != "done"]
+    return sorted(active, key=lambda x: x.get("priority", 3))[:3]
 
 
 def get_today_briefing() -> dict | None:

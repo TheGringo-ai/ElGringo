@@ -1,3 +1,5 @@
+"""Briefing router — daily briefing + shutdown review."""
+
 from fastapi import APIRouter
 
 from products.fred_assistant.models import BriefingOut
@@ -17,3 +19,13 @@ async def get_today_briefing():
 @router.post("", response_model=BriefingOut)
 async def generate_briefing():
     return await assistant.generate_briefing()
+
+
+@router.post("/shutdown")
+async def generate_shutdown():
+    return await assistant.generate_shutdown()
+
+
+@router.get("/tomorrow")
+def get_tomorrow_tasks():
+    return assistant.get_tomorrow_tasks()

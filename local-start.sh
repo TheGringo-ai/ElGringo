@@ -59,6 +59,17 @@ else
     echo "  Skipping cmd-ui (run 'npm install' in products/command_center/frontend first)"
 fi
 
+# Fred Assistant (local AI personal assistant)
+start_service "fred-api" 7870 "uvicorn products.fred_assistant.server:app --host 127.0.0.1 --port 7870 --reload --log-level info"
+FRED_FRONTEND="$DIR/products/fred_assistant/frontend"
+if [ -d "$FRED_FRONTEND/node_modules" ]; then
+    echo "  Starting fred-ui on port 5174..."
+    (cd "$FRED_FRONTEND" && npx vite --port 5174 >> "$LOG_DIR/fred-ui.log" 2>&1) &
+    echo $! > "$LOG_DIR/fred-ui.pid"
+else
+    echo "  Skipping fred-ui (run 'npm install' in products/fred_assistant/frontend first)"
+fi
+
 echo ""
 echo "  Waiting for services to start..."
 sleep 5
@@ -73,6 +84,8 @@ curl -s -o /dev/null -w "  Test Gen:    http://localhost:8082  HTTP %{http_code}
 curl -s -o /dev/null -w "  Doc Gen:     http://localhost:8083  HTTP %{http_code}\n" http://127.0.0.1:8083/docs/health 2>/dev/null || echo "  Doc Gen:     http://localhost:8083  starting..."
 curl -s -o /dev/null -w "  Cmd API:     http://localhost:7862  HTTP %{http_code}\n" http://127.0.0.1:7862/health 2>/dev/null || echo "  Cmd API:     http://localhost:7862  starting..."
 curl -s -o /dev/null -w "  Command UI:  http://localhost:5173  HTTP %{http_code}\n" http://127.0.0.1:5173/ 2>/dev/null || echo "  Command UI:  http://localhost:5173  starting..."
+curl -s -o /dev/null -w "  Fred API:    http://localhost:7870  HTTP %{http_code}\n" http://127.0.0.1:7870/health 2>/dev/null || echo "  Fred API:    http://localhost:7870  starting..."
+curl -s -o /dev/null -w "  Fred UI:     http://localhost:5174  HTTP %{http_code}\n" http://127.0.0.1:5174/ 2>/dev/null || echo "  Fred UI:     http://localhost:5174  starting..."
 
 echo ""
 echo "=== VM Services (ai.chatterfix.com) ==="

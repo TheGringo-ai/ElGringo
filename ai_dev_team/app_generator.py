@@ -735,29 +735,193 @@ Use proper Markdown formatting."""
         Returns:
             Dictionary with changes made
         """
-        prompt = f"""Analyze this enhancement request and determine what changes are needed:
+        path = Path(project_path)
+        if not path.exists():
+            return {
+                "success": False,
+                "enhancement": enhancement,
+                "error": f"Project path does not exist: {project_path}"
+            }
+
+        # Step 1: Scan existing project files for context
+        existing_files = {}
+        for fp in path.rglob("*"):
+            if fp.is_file() and not any(
+                part in fp.parts for part in [
+                    "__pycache__", "node_modules", ".git", ".venv",
+                    "venv", ".pytest_cache", "dist", "build"
+                ]
+            ):
+                rel = str(fp.relative_to(path))
+                try:
+                    existing_files[rel] = fp.read_text(errors="replace")[:2000]
+                except Exception:
+                    existing_files[rel] = "<binary or unreadable>"
+
+        file_listing = "\n".join(f"  - {f}" for f in sorted(existing_files.keys()))
+
+        # Step 2: Ask the AI team for a structured enhancement plan
+        plan_prompt = f"""Analyze this enhancement request for an existing project.
 
 Enhancement: {enhancement}
 Project: {project_path}
 
-Provide a detailed plan of:
-1. Files to modify
-2. New files to create
-3. Dependencies to add
-4. Configuration changes
+Existing files:
+{file_listing}
 
-Return as JSON."""
+Provide a JSON response with:
+{{
+    "files_to_modify": [
+        {{"path": "relative/path.py", "description": "what to change"}}
+    ],
+    "files_to_create": [
+        {{"path": "relative/path.py", "description": "purpose of new file"}}
+    ],
+    "dependencies_to_add": ["package-name"],
+    "summary": "Brief description of all changes"
+}}
 
-        result = await self.team.collaborate(
-            prompt,
+Return ONLY valid JSON, no markdown formatting."""
+
+        plan_result = await self.team.collaborate(
+            plan_prompt,
             mode="consensus"
         )
 
-        # TODO: Implement enhancement logic
+        # Parse the enhancement plan
+        try:
+            plan_text = plan_result.final_answer
+            if "```json" in plan_text:
+                plan_text = plan_text.split("```json")[1].split("```")[0]
+            elif "```" in plan_text:
+                plan_text = plan_text.split("```")[1].split("```")[0]
+            plan = json.loads(plan_text.strip())
+        except (json.JSONDecodeError, IndexError):
+            logger.warning("Could not parse enhancement plan, using raw response")
+            return {
+                "success": False,
+                "enhancement": enhancement,
+                "plan": plan_result.final_answer,
+                "error": "Could not parse structured plan from AI response",
+                "status": "plan_failed"
+            }
+
+        # Step 3: Apply modifications to existing files
+        files_modified = []
+        for file_info in plan.get("files_to_modify", []):
+            rel_path = file_info.get("path", "")
+            file_path = path / rel_path
+            if not file_path.exists():
+                logger.warning(f"File to modify not found: {rel_path}")
+                continue
+
+            current_content = file_path.read_text(errors="replace")
+            modify_prompt = f"""Modify this existing file to implement the enhancement.
+
+Enhancement: {enhancement}
+Change needed: {file_info.get('description', '')}
+
+Current file ({rel_path}):
+```
+{current_content}
+```
+
+Return ONLY the complete updated file content, no markdown formatting or explanation."""
+
+            mod_result = await self.team.collaborate(
+                modify_prompt,
+                mode="consensus"
+            )
+            new_content = mod_result.final_answer
+            if "```" in new_content:
+                lines = new_content.split("\n")
+                clean_lines = []
+                in_code = False
+                for line in lines:
+                    if line.startswith("```"):
+                        in_code = not in_code
+                        continue
+                    if in_code or not line.startswith("```"):
+                        clean_lines.append(line)
+                new_content = "\n".join(clean_lines)
+
+            file_path.write_text(new_content.strip())
+            files_modified.append(rel_path)
+            logger.info(f"Modified: {rel_path}")
+
+        # Step 4: Create new files
+        files_created = []
+        for file_info in plan.get("files_to_create", []):
+            rel_path = file_info.get("path", "")
+            file_path = path / rel_path
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            create_prompt = f"""Generate a complete file for an existing project.
+
+Enhancement: {enhancement}
+File: {rel_path}
+Purpose: {file_info.get('description', '')}
+
+Existing project files for context:
+{file_listing}
+
+Generate production-ready code that:
+1. Integrates cleanly with the existing project
+2. Follows the project's existing code style and patterns
+3. Includes proper error handling
+4. Has clear comments where needed
+
+Return ONLY the file content, no markdown formatting or explanation."""
+
+            create_result = await self.team.collaborate(
+                create_prompt,
+                mode="consensus"
+            )
+            content = create_result.final_answer
+            if "```" in content:
+                lines = content.split("\n")
+                clean_lines = []
+                in_code = False
+                for line in lines:
+                    if line.startswith("```"):
+                        in_code = not in_code
+                        continue
+                    if in_code or not line.startswith("```"):
+                        clean_lines.append(line)
+                content = "\n".join(clean_lines)
+
+            file_path.write_text(content.strip())
+            files_created.append(rel_path)
+            logger.info(f"Created: {rel_path}")
+
+        # Step 5: Add dependencies if specified
+        deps_added = plan.get("dependencies_to_add", [])
+        if deps_added:
+            try:
+                pkg_tools = self.tools["package"]
+                # Detect project type by checking for requirements.txt or package.json
+                if (path / "requirements.txt").exists():
+                    req_path = path / "requirements.txt"
+                    existing_deps = req_path.read_text()
+                    new_deps = [d for d in deps_added if d not in existing_deps]
+                    if new_deps:
+                        with open(req_path, "a") as f:
+                            f.write("\n" + "\n".join(new_deps) + "\n")
+                        logger.info(f"Added pip dependencies: {new_deps}")
+                elif (path / "package.json").exists():
+                    logger.info(f"Dependencies to install via npm: {deps_added}")
+            except Exception as e:
+                logger.warning(f"Could not add dependencies: {e}")
+
         return {
+            "success": True,
             "enhancement": enhancement,
-            "plan": result.final_answer,
-            "status": "planned"
+            "plan_summary": plan.get("summary", ""),
+            "files_modified": files_modified,
+            "files_created": files_created,
+            "dependencies_added": deps_added,
+            "status": "applied",
+            "applied_at": datetime.now().isoformat()
         }
 
 

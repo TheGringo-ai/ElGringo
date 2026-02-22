@@ -543,7 +543,7 @@ chmod +x deploy.sh
             input.value = '';
             messages.scrollTop = messages.scrollHeight;
 
-            // TODO: Call your AI API here
+            // TODO(template): Call your AI API here — placeholder for generated project code
             // const response = await fetch('/api/chat', { ... });
 
             // Mock response
@@ -564,7 +564,7 @@ import functions_framework
 from flask import jsonify
 import os
 
-# TODO: Add your AI provider (OpenAI, Anthropic, etc.)
+# TODO(template): Add your AI provider (OpenAI, Anthropic, etc.) — placeholder for generated project code
 # import openai
 # openai.api_key = os.environ.get("OPENAI_API_KEY")
 
@@ -577,7 +577,7 @@ def chat(request):
     data = request.get_json()
     message = data.get('message', '')
 
-    # TODO: Call your AI API
+    # TODO(template): Call your AI API — placeholder for generated project code
     # response = openai.ChatCompletion.create(...)
 
     # Mock response
@@ -635,7 +635,7 @@ async def health():
 async def api_root():
     return {"message": "Welcome to {project_name} API v1"}
 
-# TODO: Add your endpoints here
+# TODO(template): Add your endpoints here — placeholder for generated project code
 
 if __name__ == "__main__":
     import uvicorn

@@ -545,7 +545,7 @@ class TokenResponse(BaseModel):
 @router.post("/login", response_model=TokenResponse)
 async def login(request: LoginRequest):
     """Login and get access token"""
-    # TODO: Implement authentication
+    # TODO(template): Implement authentication — placeholder for generated project code
     raise HTTPException(status_code=501, detail="Not implemented")
 '''
 
@@ -564,12 +564,12 @@ class AuthService:
 
     def create_token(self, user_id: str, expires_delta: timedelta = None) -> str:
         """Create JWT token"""
-        # TODO: Implement JWT creation
+        # TODO(template): Implement JWT creation — placeholder for generated project code
         raise NotImplementedError
 
     def verify_token(self, token: str) -> Optional[dict]:
         """Verify and decode JWT token"""
-        # TODO: Implement JWT verification
+        # TODO(template): Implement JWT verification — placeholder for generated project code
         raise NotImplementedError
 '''
 

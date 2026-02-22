@@ -72,14 +72,14 @@ jobs:
       - name: Upload to VM
         run: |
           gcloud compute scp /tmp/fredai.tar.gz ci-deploy-fredai.sh \
-            "${{ secrets.VM_NAME }}:/tmp/" \
+            "${{ secrets.VM_NAME }}:~/" \
             --zone="${{ secrets.VM_ZONE }}" --quiet
 
       - name: Deploy on VM
         run: |
           gcloud compute ssh "${{ secrets.VM_NAME }}" \
             --zone="${{ secrets.VM_ZONE }}" --quiet \
-            --command="sudo bash /tmp/ci-deploy-fredai.sh"
+            --command="sudo mv ~/fredai.tar.gz ~/ci-deploy-fredai.sh /tmp/ && sudo bash /tmp/ci-deploy-fredai.sh"
 
       - name: Health check
         run: |

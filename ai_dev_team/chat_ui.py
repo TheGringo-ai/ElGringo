@@ -1232,7 +1232,7 @@ def main():
         share=False,
         show_error=True,
         auth=auth_config,
-        root_path="/chat",
+        root_path=os.environ.get("GRADIO_ROOT_PATH", ""),
     )
 
 

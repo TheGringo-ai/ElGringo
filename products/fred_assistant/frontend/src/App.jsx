@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { LayoutDashboard, Brain, MessageCircle } from 'lucide-react';
+import {
+  LayoutDashboard, Brain, MessageCircle, FolderGit2,
+  Calendar, FileText, TrendingUp,
+} from 'lucide-react';
 import { fetchStats, fetchBoards } from './api';
 import QuickCapture from './components/QuickCapture';
 import StatsBar from './components/StatsBar';
@@ -7,10 +10,18 @@ import TodayView from './components/TodayView';
 import BoardView from './components/BoardView';
 import ChatPanel from './components/ChatPanel';
 import MemoryPanel from './components/MemoryPanel';
+import ProjectsView from './components/ProjectsView';
+import CalendarView from './components/CalendarView';
+import ContentView from './components/ContentView';
+import CoachView from './components/CoachView';
 
 const NAV = [
   { id: 'today', label: 'Today', icon: LayoutDashboard },
   { id: 'chat', label: 'Fred', icon: MessageCircle },
+  { id: 'coach', label: 'Coach', icon: TrendingUp },
+  { id: 'calendar', label: 'Calendar', icon: Calendar },
+  { id: 'projects', label: 'Projects', icon: FolderGit2 },
+  { id: 'content', label: 'Content', icon: FileText },
   { id: 'memory', label: 'Memory', icon: Brain },
 ];
 
@@ -107,6 +118,10 @@ export default function App() {
         <main className="flex-1 overflow-y-auto p-5">
           {view === 'today' && !activeBoard && <TodayView onRefresh={loadAll} />}
           {view === 'chat' && !activeBoard && <ChatPanel />}
+          {view === 'coach' && !activeBoard && <CoachView />}
+          {view === 'calendar' && !activeBoard && <CalendarView />}
+          {view === 'projects' && !activeBoard && <ProjectsView />}
+          {view === 'content' && !activeBoard && <ContentView />}
           {view === 'memory' && !activeBoard && <MemoryPanel />}
           {activeBoard && <BoardView board={activeBoard} onRefresh={loadAll} />}
         </main>

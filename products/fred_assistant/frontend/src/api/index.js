@@ -30,12 +30,12 @@ export const searchMemories = (q) => api.get('/memory/search', { params: { q } }
 export const fetchChatHistory = () => api.get('/chat/history').then((r) => r.data);
 export const clearChat = () => api.delete('/chat/history');
 
-export async function streamChat(message, onToken, onDone, onError) {
+export async function streamChat(message, onToken, onDone, onError, persona = 'fred') {
   try {
     const res = await fetch(`${API_URL}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, persona: 'fred' }),
+      body: JSON.stringify({ message, persona }),
     });
     if (!res.ok) throw new Error(`Chat failed: ${res.statusText}`);
 
@@ -68,3 +68,45 @@ export async function streamChat(message, onToken, onDone, onError) {
 // ── Briefing ─────────────────────────────────────────────────────
 export const fetchBriefing = () => api.get('/briefing/today').then((r) => r.data);
 export const generateBriefing = () => api.post('/briefing').then((r) => r.data);
+
+// ── Projects ─────────────────────────────────────────────────────
+export const fetchProjects = () => api.get('/projects').then((r) => r.data);
+export const fetchProject = (name) => api.get(`/projects/${name}`).then((r) => r.data);
+export const fetchProjectCommits = (name, count = 10) =>
+  api.get(`/projects/${name}/commits`, { params: { count } }).then((r) => r.data);
+export const fetchProjectBranches = (name) =>
+  api.get(`/projects/${name}/branches`).then((r) => r.data);
+
+// ── Calendar ─────────────────────────────────────────────────────
+export const fetchCalendarEvents = (params) => api.get('/calendar/events', { params }).then((r) => r.data);
+export const fetchTodayEvents = () => api.get('/calendar/today').then((r) => r.data);
+export const fetchWeekEvents = () => api.get('/calendar/week').then((r) => r.data);
+export const fetchUpcomingEvents = (days = 7) =>
+  api.get('/calendar/upcoming', { params: { days } }).then((r) => r.data);
+export const createCalendarEvent = (data) => api.post('/calendar/events', data).then((r) => r.data);
+export const updateCalendarEvent = (id, data) => api.patch(`/calendar/events/${id}`, data).then((r) => r.data);
+export const deleteCalendarEvent = (id) => api.delete(`/calendar/events/${id}`);
+
+// ── Content & Social ─────────────────────────────────────────────
+export const fetchContent = (params) => api.get('/content', { params }).then((r) => r.data);
+export const fetchContentSchedule = (days = 30) =>
+  api.get('/content/schedule', { params: { days } }).then((r) => r.data);
+export const createContent = (data) => api.post('/content', data).then((r) => r.data);
+export const generateContent = (data) => api.post('/content/generate', data).then((r) => r.data);
+export const updateContent = (id, data) => api.patch(`/content/${id}`, data).then((r) => r.data);
+export const publishContent = (id) => api.post(`/content/${id}/publish`).then((r) => r.data);
+export const deleteContent = (id) => api.delete(`/content/${id}`);
+export const fetchSocialAccounts = () => api.get('/content/social/accounts').then((r) => r.data);
+export const updateSocialAccount = (id, data) =>
+  api.patch(`/content/social/accounts/${id}`, data).then((r) => r.data);
+
+// ── Business Coach ───────────────────────────────────────────────
+export const fetchGoals = (params) => api.get('/coach/goals', { params }).then((r) => r.data);
+export const createGoal = (data) => api.post('/coach/goals', data).then((r) => r.data);
+export const updateGoal = (id, data) => api.patch(`/coach/goals/${id}`, data).then((r) => r.data);
+export const deleteGoal = (id) => api.delete(`/coach/goals/${id}`);
+export const fetchReviews = (limit = 10) =>
+  api.get('/coach/reviews', { params: { limit } }).then((r) => r.data);
+export const fetchCurrentReview = () => api.get('/coach/reviews/current').then((r) => r.data);
+export const generateReview = () => api.post('/coach/reviews/generate').then((r) => r.data);
+export const saveReview = (data) => api.post('/coach/reviews', data).then((r) => r.data);

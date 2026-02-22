@@ -29,14 +29,41 @@ You can help with:
 - Content creation and review
 - Remembering anything Fred tells you
 - Code reviews, debugging, and technical guidance
+- Calendar and scheduling
+- Content generation for social media
+- Business strategy and goal tracking
 
 When Fred asks you to remember something, acknowledge it clearly.
 When he asks about his tasks or schedule, reference actual data.
 Always be specific and actionable.
 """
 
+COACH_SYSTEM_PROMPT = """You are Fred's AI Business Coach — a direct, no-BS strategic advisor.
 
-def _build_context() -> str:
+Your role:
+- Hold Fred accountable to his goals
+- Challenge assumptions and push for clarity
+- Provide actionable business strategy advice
+- Help prioritize what actually matters
+- Give honest feedback, even when it's uncomfortable
+
+Your style:
+- Direct and concise (no motivational fluff)
+- Data-driven (reference actual progress, metrics)
+- Strategic (think long-term, not just tactics)
+- Empathetic but firm (push back when needed)
+
+You know Fred's goals, tasks, and weekly progress. Reference them in your advice.
+Always end with a specific action item or question to keep momentum.
+"""
+
+PERSONA_PROMPTS = {
+    "fred": FRED_SYSTEM_PROMPT,
+    "coach": COACH_SYSTEM_PROMPT,
+}
+
+
+def _build_context(persona: str = "fred") -> str:
     """Build full context from tasks + memories for the AI."""
     parts = []
 
@@ -67,6 +94,28 @@ def _build_context() -> str:
             parts.append(f"- {status_icon} [{t['board_id']}] {t['title']} (P{t['priority']}){overdue}")
         parts.append("")
 
+    # Goals context (especially for coach persona)
+    if persona == "coach":
+        try:
+            from products.fred_assistant.services import coach_service
+            goals = coach_service.list_goals(status="active")
+            if goals:
+                parts.append("## Active Goals")
+                for g in goals[:10]:
+                    parts.append(f"- {g['title']} ({g['category']}, {g['progress']}% complete)")
+                parts.append("")
+
+            review = coach_service.get_current_review()
+            if review and review.get("week_start"):
+                parts.append("## This Week's Review")
+                if review.get("wins"):
+                    parts.append(f"- Wins: {', '.join(review['wins'][:3])}")
+                if review.get("challenges"):
+                    parts.append(f"- Challenges: {', '.join(review['challenges'][:3])}")
+                parts.append("")
+        except Exception:
+            pass
+
     # Memories
     memory_ctx = memory_service.get_context_for_chat()
     if memory_ctx:
@@ -75,16 +124,17 @@ def _build_context() -> str:
     return "\n".join(parts)
 
 
-def get_chat_messages(system_prompt: str = None, limit: int = 20) -> list[dict]:
+def get_chat_messages(system_prompt: str = None, persona: str = "fred", limit: int = 20) -> list[dict]:
     """Get recent chat history formatted for LLM."""
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT role, content FROM chat_messages ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
 
-    messages = [{"role": "system", "content": system_prompt or FRED_SYSTEM_PROMPT}]
+    prompt = system_prompt or PERSONA_PROMPTS.get(persona, FRED_SYSTEM_PROMPT)
+    messages = [{"role": "system", "content": prompt}]
     # Add context as a system message
-    ctx = _build_context()
+    ctx = _build_context(persona)
     if ctx:
         messages.append({"role": "system", "content": ctx})
     # Add history in chronological order
@@ -156,8 +206,9 @@ async def stream_chat(message: str, persona: str = "fred"):
         team = AIDevTeam(enable_memory=True)
         await team.setup_agents()
 
-        context = _build_context()
-        full_prompt = f"{FRED_SYSTEM_PROMPT}\n\n{context}\n\nUser: {message}\nFred:"
+        system_prompt = PERSONA_PROMPTS.get(persona, FRED_SYSTEM_PROMPT)
+        context = _build_context(persona)
+        full_prompt = f"{system_prompt}\n\n{context}\n\nUser: {message}\nFred:"
 
         response = await team.ask(full_prompt)
         reply = response.get("response", "I'm having trouble right now.")

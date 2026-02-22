@@ -39,6 +39,10 @@ from products.fred_assistant.routers.memory import router as memory_router
 from products.fred_assistant.routers.chat import router as chat_router
 from products.fred_assistant.routers.briefing import router as briefing_router
 from products.fred_assistant.routers.capture import router as capture_router
+from products.fred_assistant.routers.projects import router as projects_router
+from products.fred_assistant.routers.calendar import router as calendar_router
+from products.fred_assistant.routers.content import router as content_router
+from products.fred_assistant.routers.coach import router as coach_router
 
 app.include_router(health_router)
 app.include_router(boards_router)
@@ -47,6 +51,10 @@ app.include_router(memory_router)
 app.include_router(chat_router)
 app.include_router(briefing_router)
 app.include_router(capture_router)
+app.include_router(projects_router)
+app.include_router(calendar_router)
+app.include_router(content_router)
+app.include_router(coach_router)
 
 # ── Static files (serve React build in production) ────────────────
 

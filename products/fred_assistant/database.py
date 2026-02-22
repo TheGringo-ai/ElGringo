@@ -113,6 +113,80 @@ def init_db():
             created_at TEXT DEFAULT (datetime('now'))
         );
 
+        -- Calendar events (time blocking, deadlines, appointments)
+        CREATE TABLE IF NOT EXISTS calendar_events (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            event_type TEXT DEFAULT 'event',
+            start_date TEXT NOT NULL,
+            start_time TEXT,
+            end_date TEXT,
+            end_time TEXT,
+            all_day INTEGER DEFAULT 0,
+            recurring TEXT,
+            color TEXT DEFAULT 'blue',
+            location TEXT DEFAULT '',
+            linked_task_id TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Content items (posts, articles, newsletters)
+        CREATE TABLE IF NOT EXISTS content_items (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            body TEXT DEFAULT '',
+            content_type TEXT DEFAULT 'post',
+            platform TEXT DEFAULT 'linkedin',
+            status TEXT DEFAULT 'draft',
+            scheduled_date TEXT,
+            scheduled_time TEXT,
+            published_at TEXT,
+            tags TEXT DEFAULT '[]',
+            ai_generated INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Social media accounts (connected platforms)
+        CREATE TABLE IF NOT EXISTS social_accounts (
+            id TEXT PRIMARY KEY,
+            platform TEXT NOT NULL,
+            handle TEXT NOT NULL,
+            display_name TEXT DEFAULT '',
+            connected INTEGER DEFAULT 1,
+            metadata TEXT DEFAULT '{}',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Goals (business coach tracking)
+        CREATE TABLE IF NOT EXISTS goals (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            category TEXT DEFAULT 'business',
+            target_date TEXT,
+            status TEXT DEFAULT 'active',
+            progress INTEGER DEFAULT 0,
+            milestones TEXT DEFAULT '[]',
+            notes TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- Weekly reviews (business coach)
+        CREATE TABLE IF NOT EXISTS weekly_reviews (
+            id TEXT PRIMARY KEY,
+            week_start TEXT NOT NULL,
+            wins TEXT DEFAULT '[]',
+            challenges TEXT DEFAULT '[]',
+            lessons TEXT DEFAULT '[]',
+            next_week_priorities TEXT DEFAULT '[]',
+            ai_insights TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
         -- Seed default boards if empty
         INSERT OR IGNORE INTO boards (id, name, icon, color, position, columns)
         VALUES
@@ -121,6 +195,14 @@ def init_db():
             ('fredai', 'FredAI Dev', '🤖', 'purple', 2, '["backlog","in_progress","review","done"]'),
             ('health', 'Health & Fitness', '💪', 'red', 3, '["todo","in_progress","done"]'),
             ('ideas', 'Ideas & Research', '💡', 'amber', 4, '["capture","exploring","validated","parked"]');
+
+        -- Seed default social accounts
+        INSERT OR IGNORE INTO social_accounts (id, platform, handle, display_name, connected)
+        VALUES
+            ('linkedin', 'linkedin', '', 'LinkedIn', 0),
+            ('twitter', 'twitter', '', 'X / Twitter', 0),
+            ('github', 'github', 'TheGringo-ai', 'GitHub', 1),
+            ('youtube', 'youtube', '', 'YouTube', 0);
         """)
 
 

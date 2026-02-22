@@ -1,13 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Trash2, Loader2, Bot, User } from 'lucide-react';
+import { Send, Trash2, Loader2, Bot, User, TrendingUp } from 'lucide-react';
 import { fetchChatHistory, streamChat, clearChat } from '../api';
 
-const QUICK = ['What should I focus on today?', 'Summarize my week', 'What\'s overdue?'];
+const PERSONAS = [
+  { id: 'fred', label: 'Fred', icon: Bot, color: 'text-blue-400' },
+  { id: 'coach', label: 'Coach', icon: TrendingUp, color: 'text-amber-400' },
+];
+
+const QUICK_FRED = ['What should I focus on today?', 'Summarize my week', 'What\'s overdue?'];
+const QUICK_COACH = ['Review my goals', 'What should I prioritize?', 'Hold me accountable'];
 
 export default function ChatPanel() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
+  const [persona, setPersona] = useState('fred');
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -18,13 +25,15 @@ export default function ChatPanel() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
+  const quickActions = persona === 'coach' ? QUICK_COACH : QUICK_FRED;
+
   const send = async (text) => {
     const msg = text || input.trim();
     if (!msg || streaming) return;
     setInput('');
 
     const userMsg = { role: 'user', content: msg };
-    const assistantMsg = { role: 'assistant', content: '' };
+    const assistantMsg = { role: 'assistant', content: '', persona };
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setStreaming(true);
 
@@ -47,7 +56,8 @@ export default function ChatPanel() {
           return next;
         });
         setStreaming(false);
-      }
+      },
+      persona,
     );
   };
 
@@ -56,19 +66,30 @@ export default function ChatPanel() {
     setMessages([]);
   };
 
+  const PersonaIcon = PERSONAS.find((p) => p.id === persona)?.icon || Bot;
+  const personaColor = PERSONAS.find((p) => p.id === persona)?.color || 'text-blue-400';
+
   return (
     <div className="card h-full flex flex-col p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <Bot size={14} className="text-blue-400" />
-          <span className="text-xs font-semibold text-gray-300">Fred</span>
+          {/* Persona selector */}
+          {PERSONAS.map((p) => (
+            <button key={p.id} onClick={() => setPersona(p.id)}
+              className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors ${
+                persona === p.id ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'
+              }`}>
+              <p.icon size={12} className={persona === p.id ? p.color : ''} />
+              {p.label}
+            </button>
+          ))}
         </div>
         <button onClick={handleClear} className="p-1 text-gray-600 hover:text-gray-400"><Trash2 size={11} /></button>
       </div>
 
       {/* Quick actions */}
       <div className="flex gap-1 mb-2 overflow-x-auto">
-        {QUICK.map((q) => (
+        {quickActions.map((q) => (
           <button key={q} onClick={() => send(q)} disabled={streaming}
             className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300 disabled:opacity-40">
             {q}
@@ -79,14 +100,20 @@ export default function ChatPanel() {
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-2 mb-2 min-h-0">
         {messages.length === 0 && (
-          <div className="text-[11px] text-gray-700 text-center py-6">Ask Fred anything...</div>
+          <div className="text-[11px] text-gray-700 text-center py-6">
+            {persona === 'coach' ? 'Ask your business coach anything...' : 'Ask Fred anything...'}
+          </div>
         )}
         {messages.map((m, i) => (
           <div key={i} className={`flex gap-2 ${m.role === 'user' ? 'flex-row-reverse' : ''} animate-fade-in`}>
             <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
-              m.role === 'assistant' ? 'bg-blue-500/20 text-blue-400' : 'bg-white/10 text-gray-400'
+              m.role === 'assistant'
+                ? m.persona === 'coach' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'
+                : 'bg-white/10 text-gray-400'
             }`}>
-              {m.role === 'assistant' ? <Bot size={10} /> : <User size={10} />}
+              {m.role === 'assistant'
+                ? m.persona === 'coach' ? <TrendingUp size={10} /> : <Bot size={10} />
+                : <User size={10} />}
             </div>
             <div className={`max-w-[85%] text-xs leading-relaxed px-2.5 py-1.5 rounded-xl whitespace-pre-wrap ${
               m.role === 'assistant' ? 'bg-white/5 text-gray-300 rounded-tl-sm' : 'bg-blue-500/15 text-blue-100 rounded-tr-sm'
@@ -99,7 +126,8 @@ export default function ChatPanel() {
       <div className="flex gap-2">
         <input value={input} onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}
-          placeholder="Talk to Fred..." disabled={streaming} className="input flex-1 text-xs" />
+          placeholder={persona === 'coach' ? 'Ask your coach...' : 'Talk to Fred...'}
+          disabled={streaming} className="input flex-1 text-xs" />
         <button onClick={() => send()} disabled={streaming || !input.trim()}
           className="btn-primary disabled:opacity-40 px-2">
           {streaming ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}

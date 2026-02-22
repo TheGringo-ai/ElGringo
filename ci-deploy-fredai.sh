@@ -344,7 +344,7 @@ Environment=PYTHONPATH=/opt/fredai
 Environment=PORT=7863
 Environment=COMMAND_CENTER_API=http://127.0.0.1:7862
 EnvironmentFile=/opt/fredai/.env
-ExecStart=/opt/fredai/venv/bin/python -m streamlit run ai_dev_team/command_center.py --server.port 7863 --server.headless true
+ExecStart=/opt/fredai/venv/bin/python -m streamlit run ai_dev_team/command_center.py --server.port 7863 --server.headless true --server.baseUrlPath command
 Restart=always
 RestartSec=5
 StandardOutput=append:/opt/fredai/logs/command-center.log

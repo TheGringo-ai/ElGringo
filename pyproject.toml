@@ -73,6 +73,7 @@ all = [
     "flask>=3.0.0",
     "flask-cors>=4.0.0",
 ]
+command-center = ["streamlit>=1.30.0"]
 apple = [
     "ddgs>=8.0.0",
     "watchdog>=4.0.0",

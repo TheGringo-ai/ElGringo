@@ -89,6 +89,14 @@ class TaskScheduler:
                 for t in self._tasks.values()
             ]
 
+    def toggle_task(self, task_id: str) -> bool:
+        with self._lock:
+            if task_id not in self._tasks:
+                return False
+            self._tasks[task_id].enabled = not self._tasks[task_id].enabled
+        self._save()
+        return True
+
     def get_next_runs(self, hours: int = 24) -> List[Dict]:
         cutoff = (datetime.now() + timedelta(hours=hours)).isoformat()
         with self._lock:

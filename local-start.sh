@@ -47,6 +47,8 @@ start_service "studio"     7861 "python -m ai_dev_team.studio_ui"
 start_service "code-audit" 8081 "uvicorn products.code_audit.server:app --host 127.0.0.1 --port 8081 --log-level info"
 start_service "test-gen"   8082 "uvicorn products.test_generator.server:app --host 127.0.0.1 --port 8082 --log-level info"
 start_service "doc-gen"    8083 "uvicorn products.doc_generator.server:app --host 127.0.0.1 --port 8083 --log-level info"
+start_service "cmd-api"    7862 "uvicorn products.command_center.server:app --host 127.0.0.1 --port 7862 --reload --log-level info"
+start_service "command"    7863 "python -m streamlit run ai_dev_team/command_center.py --server.port 7863 --server.headless true"
 
 echo ""
 echo "  Waiting for services to start..."
@@ -60,6 +62,8 @@ curl -s -o /dev/null -w "  Studio:      http://localhost:7861  HTTP %{http_code}
 curl -s -o /dev/null -w "  Code Audit:  http://localhost:8081  HTTP %{http_code}\n" http://127.0.0.1:8081/audit/health 2>/dev/null || echo "  Code Audit:  http://localhost:8081  starting..."
 curl -s -o /dev/null -w "  Test Gen:    http://localhost:8082  HTTP %{http_code}\n" http://127.0.0.1:8082/tests/health 2>/dev/null || echo "  Test Gen:    http://localhost:8082  starting..."
 curl -s -o /dev/null -w "  Doc Gen:     http://localhost:8083  HTTP %{http_code}\n" http://127.0.0.1:8083/docs/health 2>/dev/null || echo "  Doc Gen:     http://localhost:8083  starting..."
+curl -s -o /dev/null -w "  Cmd API:     http://localhost:7862  HTTP %{http_code}\n" http://127.0.0.1:7862/health 2>/dev/null || echo "  Cmd API:     http://localhost:7862  starting..."
+curl -s -o /dev/null -w "  Command Ctr: http://localhost:7863  HTTP %{http_code}\n" http://127.0.0.1:7863/ 2>/dev/null || echo "  Command Ctr: http://localhost:7863  starting..."
 
 echo ""
 echo "=== VM Services (ai.chatterfix.com) ==="

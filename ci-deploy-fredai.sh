@@ -60,7 +60,8 @@ $DIR/venv/bin/pip install -q \
     'PyJWT>=2.8.0' \
     'cryptography>=42.0.0' \
     'httpx>=0.27.0' \
-    'gunicorn>=21.2.0'
+    'gunicorn>=21.2.0' \
+    'streamlit>=1.30.0'
 # Install the package itself in editable mode
 cd $DIR && $DIR/venv/bin/pip install -q -e .
 
@@ -298,12 +299,69 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
+# --- fredai-command-api: Command Center API (port 7862) ---
+cat > /etc/systemd/system/fredai-command-api.service << 'EOF'
+[Unit]
+Description=FredAI Command Center API (FastAPI)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fredai
+Group=fredai
+WorkingDirectory=/opt/fredai
+Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/fredai
+Environment=PORT=7862
+EnvironmentFile=/opt/fredai/.env
+ExecStart=/opt/fredai/venv/bin/uvicorn products.command_center.server:app --host 127.0.0.1 --port 7862 --log-level info
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/fredai/logs/command-api.log
+StandardError=append:/opt/fredai/logs/command-api-error.log
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# --- fredai-command-center: Command Center UI (port 7863) ---
+cat > /etc/systemd/system/fredai-command-center.service << 'EOF'
+[Unit]
+Description=FredAI Command Center UI (Streamlit)
+After=network.target fredai-command-api.service
+Wants=network-online.target fredai-command-api.service
+
+[Service]
+Type=simple
+User=fredai
+Group=fredai
+WorkingDirectory=/opt/fredai
+Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/fredai
+Environment=PORT=7863
+Environment=COMMAND_CENTER_API=http://127.0.0.1:7862
+EnvironmentFile=/opt/fredai/.env
+ExecStart=/opt/fredai/venv/bin/python -m streamlit run ai_dev_team/command_center.py --server.port 7863 --server.headless true
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/fredai/logs/command-center.log
+StandardError=append:/opt/fredai/logs/command-center-error.log
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 # ----------------------------------------------------------
 # 8. Reload and start services
 # ----------------------------------------------------------
 echo "=== Starting services ==="
 systemctl daemon-reload
-systemctl enable fredai-api fredai-pr-bot fredai-chat fredai-studio fredai-fred-api fredai-code-audit fredai-test-gen fredai-doc-gen
+systemctl enable fredai-api fredai-pr-bot fredai-chat fredai-studio fredai-fred-api fredai-code-audit fredai-test-gen fredai-doc-gen fredai-command-api fredai-command-center
 systemctl restart fredai-api
 systemctl restart fredai-pr-bot
 systemctl restart fredai-chat
@@ -312,6 +370,8 @@ systemctl restart fredai-fred-api
 systemctl restart fredai-code-audit
 systemctl restart fredai-test-gen
 systemctl restart fredai-doc-gen
+systemctl restart fredai-command-api
+systemctl restart fredai-command-center
 
 # ----------------------------------------------------------
 # 9. Verify
@@ -326,6 +386,8 @@ systemctl is-active fredai-fred-api && echo "  fredai-fred-api:   RUNNING (port 
 systemctl is-active fredai-code-audit && echo "  fredai-code-audit: RUNNING (port 8081)" || echo "  fredai-code-audit: FAILED"
 systemctl is-active fredai-test-gen && echo "  fredai-test-gen:   RUNNING (port 8082)" || echo "  fredai-test-gen:   FAILED"
 systemctl is-active fredai-doc-gen && echo "  fredai-doc-gen:    RUNNING (port 8083)" || echo "  fredai-doc-gen:    FAILED"
+systemctl is-active fredai-command-api && echo "  fredai-cmd-api:    RUNNING (port 7862)" || echo "  fredai-cmd-api:    FAILED"
+systemctl is-active fredai-command-center && echo "  fredai-command:    RUNNING (port 7863)" || echo "  fredai-command:    FAILED"
 
 echo ""
 echo "=== Deploy complete ==="
@@ -337,3 +399,4 @@ echo "Fred API:   http://localhost:8080/v1/health"
 echo "Code Audit: http://localhost:8081/audit/health"
 echo "Test Gen:   http://localhost:8082/tests/health"
 echo "Doc Gen:    http://localhost:8083/docs/health"
+echo "Command:    http://localhost:7863"

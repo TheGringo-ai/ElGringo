@@ -37,14 +37,30 @@ class ContentGenerator:
         team = self._get_team()
         full_prompt = f"{system_context}\n\n{prompt}" if system_context else prompt
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop is not None and loop.is_running():
+                # Running inside an async context (e.g. Gradio) — use a new thread
                 import concurrent.futures
+                def _in_new_loop():
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    try:
+                        return new_loop.run_until_complete(team.ask(full_prompt))
+                    finally:
+                        new_loop.close()
                 with concurrent.futures.ThreadPoolExecutor() as pool:
-                    result = pool.submit(asyncio.run, team.ask(full_prompt)).result()
+                    result = pool.submit(_in_new_loop).result()
             else:
+                # No running loop (bare thread or main thread) — safe to asyncio.run()
                 result = asyncio.run(team.ask(full_prompt))
-            return result if isinstance(result, str) else str(result)
+            if isinstance(result, str):
+                return result
+            # AgentResponse has a .content attribute with the actual text
+            return getattr(result, "content", str(result))
         except Exception as e:
             logger.error(f"Content generation failed: {e}")
             return ""

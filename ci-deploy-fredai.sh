@@ -66,6 +66,25 @@ $DIR/venv/bin/pip install -q \
 cd $DIR && $DIR/venv/bin/pip install -q -e .
 
 # ----------------------------------------------------------
+# 5b. Build Command Center React frontend
+# ----------------------------------------------------------
+FRONTEND_DIR="$DIR/products/command_center/frontend"
+if [ -f "$FRONTEND_DIR/package.json" ]; then
+    echo "=== Building Command Center frontend ==="
+    if command -v node &>/dev/null; then
+        cd "$FRONTEND_DIR" && npm ci --production=false && npm run build
+        chown -R fredai:fredai "$FRONTEND_DIR/dist"
+        echo "  Frontend built to $FRONTEND_DIR/dist/"
+    else
+        echo "  WARNING: Node.js not found, installing..."
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        apt-get install -y nodejs
+        cd "$FRONTEND_DIR" && npm ci --production=false && npm run build
+        chown -R fredai:fredai "$FRONTEND_DIR/dist"
+    fi
+fi
+
+# ----------------------------------------------------------
 # 6. Set ownership
 # ----------------------------------------------------------
 echo "=== Setting ownership ==="
@@ -327,41 +346,43 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-# --- fredai-command-center: Command Center UI (port 7863) ---
-cat > /etc/systemd/system/fredai-command-center.service << 'EOF'
-[Unit]
-Description=FredAI Command Center UI (Streamlit)
-After=network.target fredai-command-api.service
-Wants=network-online.target fredai-command-api.service
+# --- Command Center UI: Static React app served by nginx ---
+# No systemd service needed — nginx serves dist/ directly.
+# Stop old Streamlit service if it exists.
+systemctl stop fredai-command-center 2>/dev/null || true
+systemctl disable fredai-command-center 2>/dev/null || true
+rm -f /etc/systemd/system/fredai-command-center.service
 
-[Service]
-Type=simple
-User=fredai
-Group=fredai
-WorkingDirectory=/opt/fredai
-Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/opt/fredai
-Environment=PORT=7863
-Environment=COMMAND_CENTER_API=http://127.0.0.1:7862
-EnvironmentFile=/opt/fredai/.env
-ExecStart=/opt/fredai/venv/bin/python -m streamlit run ai_dev_team/command_center.py --server.port 7863 --server.headless true --server.baseUrlPath command
-Restart=always
-RestartSec=5
-StandardOutput=append:/opt/fredai/logs/command-center.log
-StandardError=append:/opt/fredai/logs/command-center-error.log
-NoNewPrivileges=true
-PrivateTmp=true
+# Update nginx for Command Center (static files + API proxy with SSE)
+NGINX_CMD_CONF=/etc/nginx/sites-available/fredai-command-center
+cat > "$NGINX_CMD_CONF" << 'NGINX_EOF'
+# Command Center React app (static files)
+location /command/ {
+    alias /opt/fredai/products/command_center/frontend/dist/;
+    try_files $uri $uri/ /command/index.html;
+}
 
-[Install]
-WantedBy=multi-user.target
-EOF
+# Command Center API proxy (with SSE support)
+location /command/api/ {
+    proxy_pass http://127.0.0.1:7862/;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 300s;
+}
+NGINX_EOF
+echo "  Nginx config written to $NGINX_CMD_CONF"
+echo "  NOTE: Include this file in your main nginx server block if not already included."
 
 # ----------------------------------------------------------
 # 8. Reload and start services
 # ----------------------------------------------------------
 echo "=== Starting services ==="
 systemctl daemon-reload
-systemctl enable fredai-api fredai-pr-bot fredai-chat fredai-studio fredai-fred-api fredai-code-audit fredai-test-gen fredai-doc-gen fredai-command-api fredai-command-center
+systemctl enable fredai-api fredai-pr-bot fredai-chat fredai-studio fredai-fred-api fredai-code-audit fredai-test-gen fredai-doc-gen fredai-command-api
 systemctl restart fredai-api
 systemctl restart fredai-pr-bot
 systemctl restart fredai-chat
@@ -371,7 +392,8 @@ systemctl restart fredai-code-audit
 systemctl restart fredai-test-gen
 systemctl restart fredai-doc-gen
 systemctl restart fredai-command-api
-systemctl restart fredai-command-center
+# Reload nginx for Command Center static files
+nginx -t && systemctl reload nginx
 
 # ----------------------------------------------------------
 # 9. Verify
@@ -387,7 +409,7 @@ systemctl is-active fredai-code-audit && echo "  fredai-code-audit: RUNNING (por
 systemctl is-active fredai-test-gen && echo "  fredai-test-gen:   RUNNING (port 8082)" || echo "  fredai-test-gen:   FAILED"
 systemctl is-active fredai-doc-gen && echo "  fredai-doc-gen:    RUNNING (port 8083)" || echo "  fredai-doc-gen:    FAILED"
 systemctl is-active fredai-command-api && echo "  fredai-cmd-api:    RUNNING (port 7862)" || echo "  fredai-cmd-api:    FAILED"
-systemctl is-active fredai-command-center && echo "  fredai-command:    RUNNING (port 7863)" || echo "  fredai-command:    FAILED"
+[ -f /opt/fredai/products/command_center/frontend/dist/index.html ] && echo "  command-center:    STATIC (nginx at /command/)" || echo "  command-center:    NOT BUILT"
 
 echo ""
 echo "=== Deploy complete ==="
@@ -399,4 +421,4 @@ echo "Fred API:   http://localhost:8080/v1/health"
 echo "Code Audit: http://localhost:8081/audit/health"
 echo "Test Gen:   http://localhost:8082/tests/health"
 echo "Doc Gen:    http://localhost:8083/docs/health"
-echo "Command:    http://localhost:7863"
+echo "Command:    https://ai.chatterfix.com/command/"

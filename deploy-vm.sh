@@ -5,7 +5,7 @@
 # ============================================================
 set -euo pipefail
 
-VM_NAME="${VM_NAME:-managers-dashboard}"
+VM_NAME="${VM_NAME:-fredai-vm}"
 VM_ZONE="${VM_ZONE:-us-central1-a}"
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 

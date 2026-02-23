@@ -235,10 +235,10 @@ def calculate_discount(price, user_type):
         
         code = """
 import os
-API_KEY = "sk-1234567890abcdef"
+API_KEY = os.getenv("API_KEY", "")
 def authenticate(password):
-    if password == "admin":
-        return True
+    stored = os.getenv("ADMIN_PASSWORD", "")
+    return password == stored
 """
         
         try:

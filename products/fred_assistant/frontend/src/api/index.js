@@ -170,3 +170,29 @@ export const createPlaybook = (data) => api.post('/playbooks', data).then((r) =>
 export const updatePlaybook = (id, data) => api.patch(`/playbooks/${id}`, data).then((r) => r.data);
 export const deletePlaybook = (id) => api.delete(`/playbooks/${id}`);
 export const runPlaybook = (id) => api.post(`/playbooks/${id}/run`).then((r) => r.data);
+
+// ── Repo Intelligence ──────────────────────────────────────────
+export const analyzeRepo = (name, depth = 'quick') =>
+  api.post(`/repo-intel/${name}/analyze`, { depth }).then((r) => r.data);
+export const fetchLatestAnalysis = (name) =>
+  api.get(`/repo-intel/${name}/latest`).then((r) => r.data);
+export const generateRepoTasks = (name, createTasks = false) =>
+  api.post(`/repo-intel/${name}/generate-tasks`, { create_tasks: createTasks }).then((r) => r.data);
+export const fetchAnalyses = (projectName, limit = 20) =>
+  api.get('/repo-intel/analyses', { params: { project_name: projectName, limit } }).then((r) => r.data);
+export const reviewRepo = (name) =>
+  api.post(`/repo-intel/${name}/review`).then((r) => r.data);
+
+// ── Platform Services ─────────────────────────────────────────
+export const fetchPlatformStatus = () =>
+  api.get('/platform/status').then((r) => r.data);
+export const auditProject = (name, auditType = 'full') =>
+  api.post(`/platform/${name}/audit`, { audit_type: auditType }).then((r) => r.data);
+export const generateProjectTests = (name) =>
+  api.post(`/platform/${name}/tests`).then((r) => r.data);
+export const generateProjectDocs = (name, docType = 'readme') =>
+  api.post(`/platform/${name}/docs`, { doc_type: docType }).then((r) => r.data);
+export const fullProjectReview = (name) =>
+  api.post(`/platform/${name}/full-review`).then((r) => r.data);
+export const fetchServiceResults = (projectName, service) =>
+  api.get('/platform/results', { params: { project_name: projectName, service } }).then((r) => r.data);

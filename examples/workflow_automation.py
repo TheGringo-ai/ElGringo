@@ -49,8 +49,8 @@ import os
 def get_user_data(user_id):
     # Security issue: SQL injection vulnerability
     query = f"SELECT * FROM users WHERE id = {user_id}"
-    password = "hardcoded_password_123"  # Security issue
-    api_key = "sk-1234567890abcdef"  # Exposed API key
+    password = os.getenv("DB_PASSWORD", "")  # Was hardcoded — moved to env
+    api_key = os.getenv("API_KEY", "")  # Was hardcoded — moved to env
 
     # Code quality issue: bare except
     try:

@@ -1,4 +1,4 @@
-"""Projects & Git router — browse local dev projects, git status, commits."""
+"""Projects & Git router — browse projects from GitHub or local directory."""
 
 from fastapi import APIRouter, Query
 from products.fred_assistant.services import projects_service
@@ -13,22 +13,17 @@ def list_projects(path: str = Query(None, description="Custom projects directory
 
 @router.get("/{project_name}")
 def get_project(project_name: str):
-    import os
-    full = os.path.join(projects_service.PROJECTS_DIR, project_name)
-    if not os.path.isdir(full):
+    project = projects_service.get_project(project_name)
+    if not project:
         return {"error": "Project not found"}
-    return projects_service.get_project_info(full)
+    return project
 
 
 @router.get("/{project_name}/commits")
 def get_commits(project_name: str, count: int = Query(10, ge=1, le=50)):
-    import os
-    full = os.path.join(projects_service.PROJECTS_DIR, project_name)
-    return projects_service.get_recent_commits(full, count)
+    return projects_service.get_recent_commits(project_name, count)
 
 
 @router.get("/{project_name}/branches")
 def get_branches(project_name: str):
-    import os
-    full = os.path.join(projects_service.PROJECTS_DIR, project_name)
-    return projects_service.get_branches(full)
+    return projects_service.get_branches(project_name)

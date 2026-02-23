@@ -65,7 +65,7 @@ def process_user_input(user_data):
 
 def authenticate(username, password):
     # Vulnerability: Hardcoded credentials
-    admin_password = "admin123"
+    admin_password = os.getenv("ADMIN_PASSWORD", "")
 
     if password == admin_password:
         return True

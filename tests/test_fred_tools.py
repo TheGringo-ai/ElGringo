@@ -208,7 +208,7 @@ class TestPathValidation:
 
 class TestToolRegistry:
     def test_all_tools_registered(self):
-        assert len(TOOLS) == 53
+        assert len(TOOLS) == 68
 
     def test_all_tools_have_required_keys(self):
         for name, tool in TOOLS.items():
@@ -238,6 +238,23 @@ class TestToolRegistry:
         assert "read_file" in defs
         assert "accountability_check" in defs
         assert "find_revenue" in defs
+        # Repo Intelligence
+        assert "analyze_repo" in defs
+        assert "create_repo_tasks" in defs
+        assert "repo_roadmap" in defs
+        assert "repo_health" in defs
+        assert "Repo Intelligence" in defs
+        # Platform Services
+        assert "Platform Services" in defs
+        assert "audit_security" in defs
+        assert "generate_tests" in defs
+        assert "generate_readme" in defs
+        assert "platform_status" in defs
+        # Workflows
+        assert "Workflows" in defs
+        assert "full_project_review" in defs
+        assert "ship_ready_check" in defs
+        assert "bootstrap_project" in defs
 
     def test_max_rounds_is_5(self):
         assert MAX_ROUNDS == 5
@@ -274,9 +291,17 @@ class TestToolRegistry:
             # Playbooks & Autopilot (5)
             "run_playbook", "list_playbooks", "create_playbook",
             "run_autopilot", "list_autopilots",
+            # Repo Intelligence (4)
+            "analyze_repo", "create_repo_tasks", "repo_roadmap", "repo_health",
+            # Platform Services (8)
+            "audit_security", "audit_code", "generate_tests", "analyze_tests",
+            "generate_readme", "generate_api_docs", "generate_architecture",
+            "platform_status",
+            # Workflows (3)
+            "full_project_review", "ship_ready_check", "bootstrap_project",
         }
         assert set(TOOLS.keys()) == expected
-        assert len(expected) == 53
+        assert len(expected) == 68
 
     def test_update_task_mentions_board_in_params(self):
         """Verify update_task documents the board/board_id move capability."""

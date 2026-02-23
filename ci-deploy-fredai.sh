@@ -44,6 +44,11 @@ if [ ! -f "$DIR/.env" ] && [ -f "$OLD_DIR/.env" ]; then
     cp "$OLD_DIR/.env" "$DIR/.env"
 fi
 
+# Ensure PROJECTS_DIR is set in .env
+if [ -f "$DIR/.env" ] && ! grep -q "^PROJECTS_DIR=" "$DIR/.env"; then
+    echo "PROJECTS_DIR=/opt/fredai/projects" >> "$DIR/.env"
+fi
+
 # ----------------------------------------------------------
 # 5. Set up Python venv
 # ----------------------------------------------------------
@@ -83,10 +88,29 @@ if [ -f "$FRONTEND_DIR/package.json" ]; then
 fi
 
 # ----------------------------------------------------------
-# 6. Set ownership
+# 5c. Build Fred Assistant React frontend
+# ----------------------------------------------------------
+ASSISTANT_DIR="$DIR/products/fred_assistant/frontend"
+if [ -f "$ASSISTANT_DIR/package.json" ]; then
+    echo "=== Building Fred Assistant frontend ==="
+    if ! command -v node &>/dev/null; then
+        echo "  Node.js not found, installing..."
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        apt-get install -y nodejs
+    fi
+    rm -rf "$ASSISTANT_DIR/node_modules"
+    cd "$ASSISTANT_DIR" && npm ci && VITE_API_URL=/assistant/api npx vite build --base=/assistant/
+    chown -R fredai:fredai "$ASSISTANT_DIR/dist"
+    echo "  Fred Assistant frontend built to $ASSISTANT_DIR/dist/"
+fi
+
+# ----------------------------------------------------------
+# 6. Set ownership + project clone directory
 # ----------------------------------------------------------
 echo "=== Setting ownership ==="
 chown -R fredai:fredai $DIR
+mkdir -p /opt/fredai/projects
+chown fredai:fredai /opt/fredai/projects
 
 # ----------------------------------------------------------
 # 7. Create systemd services
@@ -316,6 +340,34 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
+# --- fredai-assistant: Fred Assistant (port 7870) ---
+cat > /etc/systemd/system/fredai-assistant.service << 'EOF'
+[Unit]
+Description=FredAI Fred Assistant (FastAPI)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fredai
+Group=fredai
+WorkingDirectory=/opt/fredai
+Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/fredai
+Environment=PORT=7870
+EnvironmentFile=/opt/fredai/.env
+ExecStart=/opt/fredai/venv/bin/uvicorn products.fred_assistant.server:app --host 0.0.0.0 --port 7870 --log-level info
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/fredai/logs/assistant.log
+StandardError=append:/opt/fredai/logs/assistant-error.log
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 # --- fredai-command-api: Command Center API (port 7862) ---
 cat > /etc/systemd/system/fredai-command-api.service << 'EOF'
 [Unit]
@@ -375,12 +427,49 @@ NGINX_EOF
 echo "  Nginx config written to $NGINX_CMD_CONF"
 echo "  NOTE: Include this file in your main nginx server block if not already included."
 
+# Update nginx for Fred Assistant (static files + API proxy)
+NGINX_ASST_CONF=/etc/nginx/sites-available/fredai-assistant
+cat > "$NGINX_ASST_CONF" << 'NGINX_EOF'
+# Fred Assistant React app (static files)
+location /assistant/ {
+    alias /opt/fredai/products/fred_assistant/frontend/dist/;
+    try_files $uri $uri/ /assistant/index.html;
+}
+
+# Fred Assistant API proxy
+location /assistant/api/ {
+    proxy_pass http://127.0.0.1:7870/;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 300s;
+}
+NGINX_EOF
+echo "  Nginx Fred Assistant config written to $NGINX_ASST_CONF"
+
+# Auto-include nginx snippets in main server block if not already there
+NGINX_MAIN="/etc/nginx/sites-available/ai.chatterfix.com"
+if [ -f "$NGINX_MAIN" ]; then
+    for SNIPPET in "$NGINX_CMD_CONF" "$NGINX_ASST_CONF"; do
+        if ! grep -qF "include $SNIPPET" "$NGINX_MAIN"; then
+            # Insert include before the last closing brace of the server block
+            sed -i "/^}/i\\    include $SNIPPET;" "$NGINX_MAIN"
+            echo "  Added include for $SNIPPET in nginx main config"
+        fi
+    done
+    # Sync to sites-enabled (some setups use a copy, not a symlink)
+    cp "$NGINX_MAIN" /etc/nginx/sites-enabled/ai.chatterfix.com
+fi
+
 # ----------------------------------------------------------
 # 8. Reload and start services
 # ----------------------------------------------------------
 echo "=== Starting services ==="
 systemctl daemon-reload
-systemctl enable fredai-api fredai-pr-bot fredai-chat fredai-studio fredai-fred-api fredai-code-audit fredai-test-gen fredai-doc-gen fredai-command-api
+systemctl enable fredai-api fredai-pr-bot fredai-chat fredai-studio fredai-fred-api fredai-code-audit fredai-test-gen fredai-doc-gen fredai-command-api fredai-assistant
 systemctl restart fredai-api
 systemctl restart fredai-pr-bot
 systemctl restart fredai-chat
@@ -390,6 +479,7 @@ systemctl restart fredai-code-audit
 systemctl restart fredai-test-gen
 systemctl restart fredai-doc-gen
 systemctl restart fredai-command-api
+systemctl restart fredai-assistant
 # Reload nginx for Command Center static files
 nginx -t && systemctl reload nginx
 
@@ -407,7 +497,9 @@ systemctl is-active fredai-code-audit && echo "  fredai-code-audit: RUNNING (por
 systemctl is-active fredai-test-gen && echo "  fredai-test-gen:   RUNNING (port 8082)" || echo "  fredai-test-gen:   FAILED"
 systemctl is-active fredai-doc-gen && echo "  fredai-doc-gen:    RUNNING (port 8083)" || echo "  fredai-doc-gen:    FAILED"
 systemctl is-active fredai-command-api && echo "  fredai-cmd-api:    RUNNING (port 7862)" || echo "  fredai-cmd-api:    FAILED"
+systemctl is-active fredai-assistant && echo "  fredai-assistant:  RUNNING (port 7870)" || echo "  fredai-assistant:  FAILED"
 [ -f /opt/fredai/products/command_center/frontend/dist/index.html ] && echo "  command-center:    STATIC (nginx at /command/)" || echo "  command-center:    NOT BUILT"
+[ -f /opt/fredai/products/fred_assistant/frontend/dist/index.html ] && echo "  fred-assistant:    STATIC (nginx at /assistant/)" || echo "  fred-assistant:    NOT BUILT"
 
 echo ""
 echo "=== Deploy complete ==="
@@ -420,3 +512,5 @@ echo "Code Audit: http://localhost:8081/audit/health"
 echo "Test Gen:   http://localhost:8082/tests/health"
 echo "Doc Gen:    http://localhost:8083/docs/health"
 echo "Command:    https://ai.chatterfix.com/command/"
+echo "Assistant:  http://localhost:7870/health"
+echo "Asst. UI:   https://ai.chatterfix.com/assistant/"

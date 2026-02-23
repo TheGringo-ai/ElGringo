@@ -134,6 +134,24 @@ async def _run_review(owner: str, repo: str, number: int, installation_id: int |
             ", ".join(result.agents_used),
         )
 
+        # Notify Fred Assistant about the review result
+        try:
+            import httpx
+            fred_url = os.getenv("FRED_ASSISTANT_URL", "http://localhost:7870")
+            async with httpx.AsyncClient(timeout=5) as http:
+                await http.post(f"{fred_url}/platform/pr-review-callback", json={
+                    "repo": f"{owner}/{repo}",
+                    "pr_number": number,
+                    "verdict": result.verdict.value,
+                    "summary": result.summary[:1000] if hasattr(result, "summary") else "",
+                    "confidence": result.confidence,
+                    "agents_used": result.agents_used,
+                    "review_time": result.review_time,
+                })
+                logger.info("PR review result sent to Fred Assistant")
+        except Exception as cb_err:
+            logger.debug("Fred Assistant callback failed (non-critical): %s", cb_err)
+
     except Exception:
         logger.exception("Review failed for %s/%s#%d", owner, repo, number)
 

@@ -9,7 +9,15 @@ from products.fred_assistant.database import get_conn, log_activity
 
 def _row_to_task(row) -> dict:
     d = dict(row)
-    d["tags"] = json.loads(d.get("tags") or "[]")
+    raw_tags = d.get("tags") or "[]"
+    try:
+        parsed = json.loads(raw_tags)
+        # Handle double-encoded JSON strings
+        if isinstance(parsed, str):
+            parsed = json.loads(parsed)
+        d["tags"] = parsed if isinstance(parsed, list) else []
+    except (json.JSONDecodeError, TypeError):
+        d["tags"] = []
     return d
 
 

@@ -277,6 +277,36 @@ def init_db():
             FOREIGN KEY (playbook_id) REFERENCES playbooks(id)
         );
 
+        -- Repo analyses (repo intelligence engine)
+        CREATE TABLE IF NOT EXISTS repo_analyses (
+            id TEXT PRIMARY KEY,
+            project_name TEXT NOT NULL,
+            project_path TEXT NOT NULL,
+            depth TEXT DEFAULT 'quick',
+            health_score INTEGER DEFAULT 0,
+            tech_stack TEXT DEFAULT '[]',
+            findings TEXT DEFAULT '{}',
+            tasks_generated TEXT DEFAULT '[]',
+            summary TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_repo_analyses_project ON repo_analyses(project_name);
+
+        -- Platform service results (cross-service integration)
+        CREATE TABLE IF NOT EXISTS service_results (
+            id TEXT PRIMARY KEY,
+            service TEXT NOT NULL,
+            action TEXT NOT NULL,
+            project_name TEXT,
+            input_summary TEXT,
+            result TEXT DEFAULT '',
+            agents_used TEXT DEFAULT '[]',
+            total_time REAL DEFAULT 0,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_service_results_project ON service_results(project_name);
+        CREATE INDEX IF NOT EXISTS idx_service_results_service ON service_results(service);
+
         -- Seed default social accounts
         INSERT OR IGNORE INTO social_accounts (id, platform, handle, display_name, connected)
         VALUES

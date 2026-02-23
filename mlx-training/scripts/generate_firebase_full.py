@@ -8090,7 +8090,7 @@ def stripe_webhook(req: https_fn.Request) -> https_fn.Response:
     # Verify webhook signature
     payload = req.data
     sig_header = req.headers.get("Stripe-Signature")
-    webhook_secret = "whsec_your_secret"
+    webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
     try:
         # Verify signature
@@ -8231,7 +8231,7 @@ import requests
 initialize_app()
 
 # Email service configuration
-SENDGRID_API_KEY = "your_sendgrid_api_key"
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
 FROM_EMAIL = "noreply@yourapp.com"
 
 @firestore_fn.on_document_created(document="orders/{orderId}")

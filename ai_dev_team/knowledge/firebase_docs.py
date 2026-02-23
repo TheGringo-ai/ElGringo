@@ -415,7 +415,7 @@ from firebase_admin import auth
 # Create user with email/password
 user = auth.create_user(
     email='user@example.com',
-    password='secretPassword',
+    password=os.getenv('FIREBASE_USER_PASSWORD', ''),
     display_name='John Doe',
     email_verified=False
 )

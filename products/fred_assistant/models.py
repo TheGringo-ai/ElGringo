@@ -441,3 +441,58 @@ class InboxItem(BaseModel):
     priority: int = 3
     entity_id: str = ""
     action_hint: str = ""
+
+
+# ── Repo Intelligence ─────────────────────────────────────────
+
+class RepoAnalysisOut(BaseModel):
+    id: str
+    project_name: str
+    project_path: str
+    depth: str = "quick"
+    health_score: int = 0
+    tech_stack: list[str] = []
+    findings: dict = {}
+    tasks_generated: list[dict] = []
+    summary: str = ""
+    created_at: str = ""
+
+
+class RepoAnalyzeRequest(BaseModel):
+    depth: str = "quick"
+
+
+class RepoTasksRequest(BaseModel):
+    create_tasks: bool = False
+
+
+# ── Platform Integration ─────────────────────────────────────────
+
+class PRReviewCallback(BaseModel):
+    repo: str
+    pr_number: int
+    verdict: str
+    summary: str = ""
+    confidence: float = 0
+    agents_used: list[str] = []
+    review_time: float = 0
+
+
+class PlatformAuditRequest(BaseModel):
+    audit_type: str = "full"
+
+
+class PlatformDocsRequest(BaseModel):
+    doc_type: str = "readme"
+
+
+class ServiceResultOut(BaseModel):
+    id: str
+    service: str
+    action: str
+    project_name: str = ""
+    input_summary: str = ""
+    result: str = ""
+    agents_used: list[str] = []
+    total_time: float = 0
+    created_at: str = ""

@@ -1,11 +1,12 @@
 """
 Fred — Your AI Personal Assistant.
-Wraps the FredAI orchestrator with personal context awareness.
+Uses Gemini 2.5 Flash for fast, capable chat with action execution.
 Supports ACTION: execution loop for real task/memory/git/file operations.
 """
 
 import logging
 import json
+import os
 from datetime import date, datetime
 
 from products.fred_assistant.database import get_conn
@@ -20,9 +21,52 @@ from products.fred_assistant.services.fred_tools import (
 
 logger = logging.getLogger(__name__)
 
+# ── LLM Client (Gemini 2.5 Flash) ───────────────────────────────────
+
+_gemini_agent = None
+
+
+def _get_gemini():
+    """Lazy-init the Gemini agent."""
+    global _gemini_agent
+    if _gemini_agent is None:
+        try:
+            from ai_dev_team.agents.gemini import GeminiAgent
+            from ai_dev_team.agents.base import AgentConfig, ModelType
+
+            model = os.getenv("FRED_CHAT_MODEL", "gemini-2.5-flash")
+            _gemini_agent = GeminiAgent(AgentConfig(
+                name="fred",
+                model_type=ModelType.GEMINI,
+                role="AI Personal Assistant",
+                capabilities=["tasks", "memory", "planning", "code", "chat"],
+                model_name=model,
+                temperature=0.7,
+                max_tokens=4000,
+            ))
+        except Exception as e:
+            logger.warning("Gemini agent init failed: %s", e)
+    return _gemini_agent
+
+
+async def _llm_response(prompt: str, system_prompt: str) -> str:
+    """Get a response from the LLM. Returns empty string on failure."""
+    agent = _get_gemini()
+    if not agent:
+        return ""
+    try:
+        resp = await agent.generate_response(prompt, system_override=system_prompt)
+        if resp.error:
+            logger.warning("Gemini error: %s", resp.error)
+            return ""
+        return resp.content or ""
+    except Exception as e:
+        logger.warning("LLM call failed: %s", e)
+        return ""
+
 FRED_SYSTEM_PROMPT = """You are Fred, a highly capable AI personal assistant for Fred Taylor.
+You are the central brain of the FredAI platform — you command an entire AI dev team through your actions.
 You are direct, efficient, and proactive. You know Fred's tasks, schedule, preferences, and history.
-You help him stay on track with work and life.
 
 Your personality:
 - Concise and action-oriented (no fluff)
@@ -30,19 +74,31 @@ Your personality:
 - Personal — you remember preferences and patterns
 - Honest — push back when something doesn't make sense
 
+You command these platform services:
+- Code Audit Service — security audits, code quality reviews
+- Test Generator — AI-generated unit tests, coverage analysis
+- Doc Generator — READMEs, API docs, architecture diagrams
+- PR Review Bot — automated pull request reviews
+- Repo Intelligence — project health analysis, task generation
+
 You can help with:
 - Task management (create, prioritize, move tasks)
 - Daily planning and time blocking
 - Project strategy and architecture decisions
+- Code audits, test generation, and documentation
+- Full project reviews (chains audit + tests + docs + analysis)
 - Content creation and review
 - Remembering anything Fred tells you
 - Code reviews, debugging, and technical guidance
 - Calendar and scheduling
 - Content generation for social media
 - Business strategy and goal tracking
+- CRM / lead pipeline management
 
-When Fred asks you to do something (create a task, remember something, check git, read a file, etc.),
-USE YOUR ACTIONS to actually do it. Don't just describe what you would do — take the action.
+When Fred asks you to do something, USE YOUR ACTIONS to actually do it.
+Don't just describe what you would do — take the action.
+For platform services (audit, tests, docs), use the platform tools to dispatch work to specialist services.
+You are the orchestrator — you decide what gets done and command the team to do it.
 
 When Fred asks you to remember something, acknowledge it clearly.
 When he asks about his tasks or schedule, reference actual data.
@@ -183,6 +239,40 @@ def _build_context(persona: str = "fred") -> str:
     except Exception:
         pass
 
+    # Platform services status
+    try:
+        from products.fred_assistant.services import platform_services
+        cached = platform_services.get_cached_status()
+        if cached:
+            online = sum(1 for s in cached.values() if s.get("healthy"))
+            total = len(cached)
+            parts.append(f"## Platform: {online}/{total} services online")
+            for name, s in cached.items():
+                status = "online" if s.get("healthy") else "offline"
+                parts.append(f"- {s.get('label', name)}: {status}")
+            parts.append("")
+    except Exception:
+        pass
+
+    # Recent PR reviews
+    try:
+        from products.fred_assistant.services import platform_services as ps
+        recent = ps.get_recent_results(service="pr_review", limit=3)
+        if recent:
+            parts.append("## Recent PR Reviews")
+            for r in recent:
+                import json as _json
+                try:
+                    data = _json.loads(r.get("result", "{}"))
+                except (ValueError, TypeError):
+                    data = {}
+                verdict = data.get("verdict", r.get("action", ""))
+                pr_num = data.get("pr_number", "")
+                parts.append(f"- {r.get('project_name', '?')} PR #{pr_num}: {verdict}")
+            parts.append("")
+    except Exception:
+        pass
+
     # Memories
     memory_ctx = memory_service.get_context_for_chat()
     if memory_ctx:
@@ -232,33 +322,34 @@ def clear_history():
         conn.execute("DELETE FROM chat_messages")
 
 
-async def _run_action_loop(prompt: str, persona: str = "fred") -> tuple[str, list[dict]]:
+def _format_result_line(r: dict) -> str:
+    """Format a single action result into a string Gemini can understand."""
+    status = "OK" if r.get("success") else "FAILED"
+    msg = r.get("message", r.get("error", ""))
+    if msg:
+        return f"- {r['action']}: {status} — {msg}"
+    # No message — serialize key fields (skip internal keys)
+    skip = {"action", "success", "fn", "async"}
+    data = {k: v for k, v in r.items() if k not in skip and v}
+    if data:
+        summary = json.dumps(data, default=str)[:1000]
+        return f"- {r['action']}: {status} — {summary}"
+    return f"- {r['action']}: {status}"
+
+
+async def _run_action_loop(prompt: str, system_prompt: str, persona: str = "fred") -> tuple[str, list[dict]]:
     """Run the AI with action execution loop. Returns (final_reply, all_action_results)."""
     all_results = []
     reply = ""
-
-    # Init orchestrator once for all rounds
-    try:
-        from ai_dev_team.orchestrator import AIDevTeam
-
-        team = AIDevTeam(enable_memory=True)
-        await team.setup_agents()
-    except Exception as e:
-        logger.warning(f"Orchestrator unavailable: {e}")
-        return _fallback_response(prompt), all_results
-
-    # Keep original prompt for context trimming
     original_prompt = prompt
 
     for round_num in range(MAX_ROUNDS):
-        try:
-            response = await team.ask(prompt)
-            reply = response.get("response", "I'm having trouble processing that right now.")
-        except Exception as e:
-            logger.warning(f"Orchestrator error on round {round_num}: {e}")
-            if reply:
-                return strip_action_lines(reply), all_results
-            return _fallback_response(prompt), all_results
+        reply = await _llm_response(prompt, system_prompt)
+        if not reply:
+            # LLM unavailable — use fallback
+            if all_results:
+                return _format_action_results(all_results), all_results
+            return _fallback_response(original_prompt), all_results
 
         # Check for actions
         actions = parse_actions(reply)
@@ -269,9 +360,9 @@ async def _run_action_loop(prompt: str, persona: str = "fred") -> tuple[str, lis
         results = await execute_actions(actions)
         all_results.extend(results)
 
-        # Build follow-up prompt — use compact format after round 1 to avoid token bloat
+        # Build follow-up prompt — compact format to avoid token bloat
         results_text = "\n".join(
-            f"- {r['action']}: {'OK' if r.get('success') else 'FAILED'} — {r.get('message', r.get('error', ''))}"
+            _format_result_line(r)
             for r in results
         )
         if round_num == 0:
@@ -282,9 +373,8 @@ async def _run_action_loop(prompt: str, persona: str = "fred") -> tuple[str, lis
                 f"Do NOT include ACTION: lines — all actions are complete."
             )
         else:
-            # Compact: drop earlier rounds, keep original + latest results only
             all_results_text = "\n".join(
-                f"- {r['action']}: {'OK' if r.get('success') else 'FAILED'} — {r.get('message', r.get('error', ''))}"
+                _format_result_line(r)
                 for r in all_results
             )
             prompt = (
@@ -294,8 +384,15 @@ async def _run_action_loop(prompt: str, persona: str = "fred") -> tuple[str, lis
                 f"Do NOT include ACTION: lines — all actions are complete."
             )
 
-    # Hit max rounds — return what we have
     return strip_action_lines(reply), all_results
+
+
+def _format_action_results(results: list[dict]) -> str:
+    """Format action results into a readable response."""
+    lines = ["Here's what I did:"]
+    for r in results:
+        lines.append(_format_result_line(r))
+    return "\n".join(lines)
 
 
 async def chat(message: str, persona: str = "fred") -> str:
@@ -304,99 +401,81 @@ async def chat(message: str, persona: str = "fred") -> str:
 
     system_prompt = _build_system_prompt(persona)
     context = _build_context(persona)
-    full_prompt = f"{system_prompt}\n\n{context}\n\nUser: {message}\nFred:"
+    user_prompt = f"{context}\n\nUser: {message}\nFred:"
 
-    reply, action_results = await _run_action_loop(full_prompt, persona)
+    reply, action_results = await _run_action_loop(user_prompt, system_prompt, persona)
 
     save_message("assistant", reply, persona)
     return reply
 
 
 async def stream_chat(message: str, persona: str = "fred"):
-    """Stream a response token by token, with action execution support."""
+    """Stream a response with action execution support."""
     save_message("user", message, persona)
 
     system_prompt = _build_system_prompt(persona)
     context = _build_context(persona)
-    full_prompt = f"{system_prompt}\n\n{context}\n\nUser: {message}\nFred:"
-
-    try:
-        from ai_dev_team.orchestrator import AIDevTeam
-
-        team = AIDevTeam(enable_memory=True)
-        await team.setup_agents()
-    except Exception as e:
-        logger.warning(f"Orchestrator unavailable: {e}")
-        reply = _fallback_response(message)
-        save_message("assistant", reply, persona)
-        yield {"type": "token", "data": reply}
-        return
+    user_prompt = f"{context}\n\nUser: {message}\nFred:"
 
     all_results = []
     reply = ""
-    original_prompt = full_prompt
+    original_prompt = user_prompt
 
-    try:
-        for round_num in range(MAX_ROUNDS):
-            response = await team.ask(full_prompt)
-            reply = response.get("response", "I'm having trouble right now.")
+    for round_num in range(MAX_ROUNDS):
+        reply = await _llm_response(user_prompt, system_prompt)
+        if not reply:
+            # LLM unavailable — use fallback
+            fallback = _fallback_response(message)
+            save_message("assistant", fallback, persona)
+            yield {"type": "token", "data": fallback}
+            return
 
-            # Check for actions
-            actions = parse_actions(reply)
-            if not actions:
-                # No actions — stream the clean reply
-                clean = strip_action_lines(reply)
-                save_message("assistant", clean, persona)
-                words = clean.split(" ")
-                for i, word in enumerate(words):
-                    yield {"type": "token", "data": word + (" " if i < len(words) - 1 else "")}
-                return
+        # Check for actions
+        actions = parse_actions(reply)
+        if not actions:
+            # No actions — stream the clean reply
+            clean = strip_action_lines(reply)
+            save_message("assistant", clean, persona)
+            yield {"type": "token", "data": clean}
+            return
 
-            # Has actions — signal thinking, execute, loop
-            action_names = ", ".join(a["name"] for a in actions)
-            yield {"type": "thinking", "data": action_names}
+        # Has actions — signal thinking, execute, loop
+        action_names = ", ".join(a["name"] for a in actions)
+        yield {"type": "thinking", "data": action_names}
 
-            results = await execute_actions(actions)
-            all_results.extend(results)
+        results = await execute_actions(actions)
+        all_results.extend(results)
 
-            yield {"type": "thinking_done", "data": f"{len(results)} actions completed"}
+        yield {"type": "thinking_done", "data": f"{len(results)} actions completed"}
 
-            # Build follow-up prompt — compact after round 1
-            results_text = "\n".join(
-                f"- {r['action']}: {'OK' if r.get('success') else 'FAILED'} — {r.get('message', r.get('error', ''))}"
-                for r in results
+        # Build follow-up prompt
+        results_text = "\n".join(
+            _format_result_line(r)
+            for r in results
+        )
+        if round_num == 0:
+            user_prompt = (
+                f"{user_prompt}\n\nAssistant: {reply}\n\n"
+                f"[Action results]\n{results_text}\n\n"
+                f"Now respond to the user naturally based on the action results above. "
+                f"Do NOT include ACTION: lines — all actions are complete."
             )
-            if round_num == 0:
-                full_prompt = (
-                    f"{full_prompt}\n\nAssistant: {reply}\n\n"
-                    f"[Action results]\n{results_text}\n\n"
-                    f"Now respond to the user naturally based on the action results above. "
-                    f"Do NOT include ACTION: lines — all actions are complete."
-                )
-            else:
-                all_results_text = "\n".join(
-                    f"- {r['action']}: {'OK' if r.get('success') else 'FAILED'} — {r.get('message', r.get('error', ''))}"
-                    for r in all_results
-                )
-                full_prompt = (
-                    f"{original_prompt}\n\n"
-                    f"[All action results from {len(all_results)} actions]\n{all_results_text}\n\n"
-                    f"Now respond to the user naturally based on ALL action results above. "
-                    f"Do NOT include ACTION: lines — all actions are complete."
-                )
+        else:
+            all_results_text = "\n".join(
+                _format_result_line(r)
+                for r in all_results
+            )
+            user_prompt = (
+                f"{original_prompt}\n\n"
+                f"[All action results from {len(all_results)} actions]\n{all_results_text}\n\n"
+                f"Now respond to the user naturally based on ALL action results above. "
+                f"Do NOT include ACTION: lines — all actions are complete."
+            )
 
-        # Max rounds — stream what we have
-        clean = strip_action_lines(reply)
-        save_message("assistant", clean, persona)
-        words = clean.split(" ")
-        for i, word in enumerate(words):
-            yield {"type": "token", "data": word + (" " if i < len(words) - 1 else "")}
-
-    except Exception as e:
-        logger.warning(f"Orchestrator error during action loop: {e}")
-        fallback = strip_action_lines(reply) if reply else _fallback_response(message)
-        save_message("assistant", fallback, persona)
-        yield {"type": "token", "data": fallback}
+    # Max rounds — stream what we have
+    clean = strip_action_lines(reply)
+    save_message("assistant", clean, persona)
+    yield {"type": "token", "data": clean}
 
 
 def _fallback_response(message: str) -> str:
@@ -412,6 +491,20 @@ def _fallback_response(message: str) -> str:
                 lines.append(f"- {t['title']} (P{t['priority']}, {t['status']})")
             return "\n".join(lines)
         return "Your task list is empty. Want to add something?"
+
+    if any(w in msg for w in ["platform", "service", "running", "online", "health check"]):
+        try:
+            from products.fred_assistant.services import platform_services
+            status = platform_services.check_all_services()
+            online = sum(1 for s in status.values() if s.get("healthy"))
+            total = len(status)
+            lines = [f"Platform Status: {online}/{total} services online\n"]
+            for name, s in status.items():
+                icon = "🟢" if s.get("healthy") else "🔴"
+                lines.append(f"{icon} {s.get('label', name)} (port {s.get('port', '?')})")
+            return "\n".join(lines)
+        except Exception:
+            return "Unable to check platform status right now."
 
     if any(w in msg for w in ["status", "how am i", "progress", "stats"]):
         return (
@@ -442,22 +535,16 @@ async def generate_briefing() -> dict:
 
     # Try AI-generated briefing
     try:
-        from ai_dev_team.orchestrator import AIDevTeam
-
-        team = AIDevTeam(enable_memory=True)
-        await team.setup_agents()
-
         context = _build_context()
         prompt = (
-            f"{FRED_SYSTEM_PROMPT}\n\n{context}\n\n"
+            f"{context}\n\n"
             "Generate a concise daily briefing for Fred. Include:\n"
             "1. Top priorities for today\n"
             "2. Any overdue items that need attention\n"
             "3. A motivating note\n"
             "Keep it under 200 words. Be direct and actionable."
         )
-        response = await team.ask(prompt)
-        content = response.get("response", "")
+        content = await _llm_response(prompt, FRED_SYSTEM_PROMPT)
     except Exception:
         # Fallback briefing
         lines = [f"# Daily Briefing — {date.today().strftime('%A, %B %d')}\n"]
@@ -494,14 +581,9 @@ async def generate_shutdown() -> dict:
     incomplete = [t for t in today_tasks if t.get("status") != "done"]
 
     try:
-        from ai_dev_team.orchestrator import AIDevTeam
-
-        team = AIDevTeam(enable_memory=True)
-        await team.setup_agents()
-
         context = _build_context()
         prompt = (
-            f"{FRED_SYSTEM_PROMPT}\n\n{context}\n\n"
+            f"{context}\n\n"
             "Generate an end-of-day shutdown review for Fred. Include:\n"
             "1. What got done today (celebrate wins)\n"
             "2. What didn't get done (be honest, no shame)\n"
@@ -509,8 +591,7 @@ async def generate_shutdown() -> dict:
             "4. Any blockers or concerns to address\n"
             "Keep it under 200 words. Be direct and supportive."
         )
-        response = await team.ask(prompt)
-        content = response.get("response", "")
+        content = await _llm_response(prompt, FRED_SYSTEM_PROMPT)
     except Exception:
         lines = [f"# Daily Shutdown — {date.today().strftime('%A, %B %d')}\n"]
         lines.append(f"**{len(completed)}** tasks completed, **{len(incomplete)}** remaining.\n")

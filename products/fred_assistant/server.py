@@ -25,7 +25,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5174", "http://localhost:7870", "http://127.0.0.1:5174"],
+    allow_origins=[
+        "http://localhost:5174", "http://localhost:7870", "http://127.0.0.1:5174",
+        "https://ai.chatterfix.com",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -48,6 +51,8 @@ from products.fred_assistant.routers.crm import router as crm_router
 from products.fred_assistant.routers.metrics import router as metrics_router
 from products.fred_assistant.routers.inbox import router as inbox_router
 from products.fred_assistant.routers.playbooks import router as playbooks_router
+from products.fred_assistant.routers.repo_intel import router as repo_intel_router
+from products.fred_assistant.routers.platform import router as platform_router
 
 app.include_router(health_router)
 app.include_router(boards_router)
@@ -65,6 +70,8 @@ app.include_router(crm_router)
 app.include_router(metrics_router)
 app.include_router(inbox_router)
 app.include_router(playbooks_router)
+app.include_router(repo_intel_router)
+app.include_router(platform_router)
 
 # ── Static files (serve React build in production) ────────────────
 

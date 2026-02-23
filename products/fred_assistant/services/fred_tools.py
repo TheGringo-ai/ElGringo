@@ -22,9 +22,11 @@ from products.fred_assistant.services import (
     inbox_service,
     memory_service,
     metrics_service,
+    platform_services,
     playbook_service,
     projects_service,
     publish_service,
+    repo_intelligence_service,
     task_service,
 )
 
@@ -37,6 +39,7 @@ ALLOWED_ROOTS = [
     os.path.expanduser("~/Documents"),
     "/tmp",
     "/private/tmp",  # macOS resolves /tmp -> /private/tmp
+    "/opt/fredai/projects",  # VM clone directory
 ]
 
 BLOCKED_PATHS = [
@@ -500,9 +503,8 @@ def _exec_review_project(params: dict) -> dict:
     name = params.get("name")
     if not name:
         return {"success": False, "error": "project name is required"}
-    projects_dir = os.path.expanduser("~/Development/Projects")
-    path = os.path.join(projects_dir, name)
-    if not os.path.isdir(path):
+    path = _resolve_project_path(name)
+    if not path:
         return {"success": False, "error": f"Project '{name}' not found"}
 
     info = projects_service.get_project_info(path)
@@ -525,17 +527,19 @@ def _exec_list_projects(params: dict) -> dict:
         line = f"{p['name']} ({', '.join(p.get('tech_stack', [])[:3])})"
         if p.get("git_status") == "dirty":
             line += " [uncommitted changes]"
+        if p.get("description"):
+            line += f" — {p['description']}"
         summary.append(line)
-    return {"success": True, "count": len(projects), "projects": summary}
+    msg = f"Found {len(projects)} projects:\n" + "\n".join(f"- {s}" for s in summary) if summary else "No projects found"
+    return {"success": True, "count": len(projects), "projects": summary, "message": msg}
 
 
 def _exec_git_status(params: dict) -> dict:
     name = params.get("project")
     if not name:
         return {"success": False, "error": "project name is required"}
-    projects_dir = os.path.expanduser("~/Development/Projects")
-    path = os.path.join(projects_dir, name)
-    if not os.path.isdir(path):
+    path = _resolve_project_path(name)
+    if not path:
         return {"success": False, "error": f"Project '{name}' not found"}
 
     info = projects_service.get_project_info(path)
@@ -555,9 +559,8 @@ def _exec_git_log(params: dict) -> dict:
     count = params.get("count", 10)
     if not name:
         return {"success": False, "error": "project name is required"}
-    projects_dir = os.path.expanduser("~/Development/Projects")
-    path = os.path.join(projects_dir, name)
-    if not os.path.isdir(path):
+    path = _resolve_project_path(name)
+    if not path:
         return {"success": False, "error": f"Project '{name}' not found"}
 
     commits = projects_service.get_recent_commits(path, count=count)
@@ -569,9 +572,8 @@ def _exec_git_diff(params: dict) -> dict:
     name = params.get("project")
     if not name:
         return {"success": False, "error": "project name is required"}
-    projects_dir = os.path.expanduser("~/Development/Projects")
-    path = os.path.join(projects_dir, name)
-    if not os.path.isdir(path):
+    path = _resolve_project_path(name)
+    if not path:
         return {"success": False, "error": f"Project '{name}' not found"}
 
     try:
@@ -656,7 +658,7 @@ def _exec_write_file(params: dict) -> dict:
 
 
 def _exec_list_files(params: dict) -> dict:
-    path = params.get("path", "~/Development/Projects")
+    path = params.get("path", PROJECTS_DIR)
     pattern = params.get("pattern")
     try:
         resolved = validate_path(path)
@@ -688,7 +690,7 @@ def _exec_list_files(params: dict) -> dict:
 
 
 def _exec_search_files(params: dict) -> dict:
-    path = params.get("path", "~/Development/Projects")
+    path = params.get("path", PROJECTS_DIR)
     query = params.get("query")
     pattern = params.get("pattern", "*.py")
     if not query:
@@ -992,6 +994,673 @@ def _exec_list_autopilots(params: dict) -> dict:
     return {"success": True, "count": len(playbooks), "autopilots": summary}
 
 
+# ─── Repo Intelligence ───────────────────────────────────────────
+
+def _exec_analyze_repo(params: dict) -> dict:
+    name = params.get("name")
+    if not name:
+        return {"success": False, "error": "project name is required"}
+    depth = params.get("depth", "quick")
+    if depth not in ("quick", "full"):
+        depth = "quick"
+    result = repo_intelligence_service.analyze_repo(name, depth=depth)
+    if "error" in result:
+        return {"success": False, "error": result["error"]}
+    findings = result["findings"]
+    issue_summary = []
+    if findings.get("missing_tests", {}).get("count", 0) > 0:
+        issue_summary.append("no tests")
+    if not findings.get("missing_ci", {}).get("detected", False):
+        issue_summary.append("no CI/CD")
+    if findings.get("security_patterns", {}).get("count", 0) > 0:
+        issue_summary.append(f"{findings['security_patterns']['count']} security concerns")
+    return {
+        "success": True,
+        "analysis_id": result["id"],
+        "health_score": result["health_score"],
+        "summary": result["summary"],
+        "issues": issue_summary,
+        "message": f"Analyzed {name} ({depth}): health score {result['health_score']}/100. {result['summary']}",
+    }
+
+
+def _exec_create_repo_tasks(params: dict) -> dict:
+    name = params.get("name")
+    if not name:
+        return {"success": False, "error": "project name is required"}
+    create = params.get("create", False)
+    latest = repo_intelligence_service.get_latest_analysis(name)
+    if not latest:
+        return {"success": False, "error": f"No analysis found for '{name}'. Run analyze_repo first."}
+    tasks = repo_intelligence_service.generate_tasks_from_analysis(latest["id"], create_tasks=create)
+    task_lines = [f"P{t['priority']}: {t['title']}" + (f" [{t['revenue_impact']}]" if t.get('revenue_impact') else "") for t in tasks]
+    return {
+        "success": True,
+        "count": len(tasks),
+        "tasks": task_lines,
+        "created": create,
+        "message": f"Generated {len(tasks)} tasks from {name} analysis" + (" (created on boards)" if create else " (preview only)"),
+    }
+
+
+async def _exec_repo_roadmap(params: dict) -> dict:
+    name = params.get("name")
+    if not name:
+        return {"success": False, "error": "project name is required"}
+    roadmap = await repo_intelligence_service.generate_roadmap(name)
+    if "error" in roadmap:
+        return {"success": False, "error": roadmap["error"]}
+    sprint = roadmap.get("sprint_1_week", [])
+    month = roadmap.get("roadmap_30_day", [])
+    revenue = roadmap.get("revenue_suggestions", [])
+    lines = [f"Health: {roadmap['health_score']}/100"]
+    if sprint:
+        lines.append("This week: " + "; ".join(sprint))
+    if month:
+        lines.append("30-day: " + "; ".join(month[:3]))
+    if revenue:
+        lines.append("Revenue: " + "; ".join(revenue[:2]))
+    return {
+        "success": True,
+        "roadmap": roadmap,
+        "message": f"Roadmap for {name}:\n" + "\n".join(lines),
+    }
+
+
+def _exec_repo_health(params: dict) -> dict:
+    name = params.get("name")
+    if name:
+        latest = repo_intelligence_service.get_latest_analysis(name)
+        if not latest:
+            result = repo_intelligence_service.analyze_repo(name, depth="quick")
+            if "error" in result:
+                return {"success": False, "error": result["error"]}
+            return {
+                "success": True,
+                "project": name,
+                "health_score": result["health_score"],
+                "summary": result["summary"],
+                "message": f"{name}: {result['health_score']}/100 — {result['summary']}",
+            }
+        return {
+            "success": True,
+            "project": name,
+            "health_score": latest["health_score"],
+            "summary": latest["summary"],
+            "message": f"{name}: {latest['health_score']}/100 — {latest['summary']}",
+        }
+    # All projects
+    projects = projects_service.list_projects()
+    results = []
+    for p in projects:
+        if not p.get("is_git"):
+            continue
+        latest = repo_intelligence_service.get_latest_analysis(p["name"])
+        if latest:
+            results.append({"name": p["name"], "health_score": latest["health_score"]})
+        else:
+            r = repo_intelligence_service.analyze_repo(p["name"], depth="quick")
+            if "error" not in r:
+                results.append({"name": p["name"], "health_score": r["health_score"]})
+    results.sort(key=lambda x: x["health_score"])
+    lines = [f"{r['name']}: {r['health_score']}/100" for r in results]
+    return {
+        "success": True,
+        "projects": results,
+        "count": len(results),
+        "message": f"Health scores for {len(results)} repos:\n" + "\n".join(lines),
+    }
+
+
+# ─── Platform Services ────────────────────────────────────────────
+
+PROJECTS_DIR = os.getenv("PROJECTS_DIR", os.path.expanduser("~/Development/Projects"))
+
+_LANG_MAP = {
+    ".py": "python", ".js": "javascript", ".ts": "typescript",
+    ".jsx": "jsx", ".tsx": "tsx", ".go": "go", ".rs": "rust",
+    ".java": "java", ".rb": "ruby", ".c": "c", ".cpp": "cpp",
+    ".sh": "bash", ".sql": "sql", ".html": "html", ".css": "css",
+}
+
+
+def _detect_language(filepath: str) -> str:
+    ext = os.path.splitext(filepath)[1].lower()
+    return _LANG_MAP.get(ext, "text")
+
+
+def _read_project_files(project_path: str, extensions: tuple = (".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java"), max_files: int = 8, max_chars: int = 80000) -> list[dict]:
+    """Gather key source files from a project for sending to specialist services."""
+    files = []
+    total_chars = 0
+    skip_dirs = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", ".next"}
+    for root, dirs, filenames in os.walk(project_path):
+        dirs[:] = [d for d in dirs if d not in skip_dirs]
+        for fn in sorted(filenames):
+            if len(files) >= max_files:
+                return files
+            if not any(fn.endswith(ext) for ext in extensions):
+                continue
+            full = os.path.join(root, fn)
+            try:
+                size = os.path.getsize(full)
+                if size > MAX_FILE_SIZE or size == 0:
+                    continue
+                with open(full, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+                if total_chars + len(content) > max_chars:
+                    continue
+                total_chars += len(content)
+                rel = os.path.relpath(full, project_path)
+                files.append({"path": rel, "content": content, "language": _detect_language(fn)})
+            except Exception:
+                continue
+    return files
+
+
+def _resolve_project_path(name: str) -> str | None:
+    """Resolve a project name to its full path. Auto-clones from GitHub if needed."""
+    # Check local dev directory
+    path = os.path.join(PROJECTS_DIR, name)
+    if os.path.isdir(path):
+        return path
+    # Check clone directory
+    clone_path = os.path.join(projects_service.CLONE_DIR, name)
+    if os.path.isdir(clone_path):
+        return clone_path
+    # Try auto-clone from GitHub
+    cloned = projects_service._ensure_clone(name)
+    if cloned:
+        return cloned
+    return None
+
+
+async def _exec_audit_security(params: dict) -> dict:
+    path = params.get("path")
+    project = params.get("project")
+    if not path and not project:
+        return {"success": False, "error": "path (file) or project (name) is required"}
+
+    if path:
+        try:
+            resolved = validate_path(path)
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
+        if not os.path.isfile(resolved):
+            return {"success": False, "error": f"File not found: {path}"}
+        try:
+            with open(resolved, "r", encoding="utf-8", errors="replace") as f:
+                code = f.read(MAX_FILE_SIZE)
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        language = _detect_language(resolved)
+        result = await platform_services.call_service("code_audit", "POST", "/audit/security", {
+            "code": code, "language": language, "filename": os.path.basename(resolved),
+        })
+    else:
+        proj_path = _resolve_project_path(project)
+        if not proj_path:
+            return {"success": False, "error": f"Project not found: {project}"}
+        files = _read_project_files(proj_path, max_files=3)
+        if not files:
+            return {"success": False, "error": f"No source files found in {project}"}
+        combined = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files)
+        result = await platform_services.call_service("code_audit", "POST", "/audit/security", {
+            "code": combined, "language": files[0]["language"], "filename": project,
+        })
+
+    if "error" in result:
+        return {"success": False, "error": result["error"]}
+
+    platform_services.store_service_result("code_audit", "security", project or os.path.basename(path), result)
+    return {
+        "success": True,
+        "findings": result.get("findings", ""),
+        "agents_used": result.get("agents_used", []),
+        "message": f"Security audit complete. Agents: {', '.join(result.get('agents_used', []))}",
+    }
+
+
+async def _exec_audit_code(params: dict) -> dict:
+    path = params.get("path")
+    project = params.get("project")
+    if not path and not project:
+        return {"success": False, "error": "path (file) or project (name) is required"}
+
+    if path:
+        try:
+            resolved = validate_path(path)
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
+        if not os.path.isfile(resolved):
+            return {"success": False, "error": f"File not found: {path}"}
+        try:
+            with open(resolved, "r", encoding="utf-8", errors="replace") as f:
+                code = f.read(MAX_FILE_SIZE)
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        language = _detect_language(resolved)
+        result = await platform_services.call_service("code_audit", "POST", "/audit/review", {
+            "code": code, "language": language, "filename": os.path.basename(resolved),
+        })
+    else:
+        proj_path = _resolve_project_path(project)
+        if not proj_path:
+            return {"success": False, "error": f"Project not found: {project}"}
+        files = _read_project_files(proj_path, max_files=3)
+        if not files:
+            return {"success": False, "error": f"No source files found in {project}"}
+        combined = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files)
+        result = await platform_services.call_service("code_audit", "POST", "/audit/review", {
+            "code": combined, "language": files[0]["language"], "filename": project,
+        })
+
+    if "error" in result:
+        return {"success": False, "error": result["error"]}
+
+    platform_services.store_service_result("code_audit", "review", project or os.path.basename(path), result)
+    return {
+        "success": True,
+        "findings": result.get("findings", ""),
+        "agents_used": result.get("agents_used", []),
+        "message": f"Code review complete. Agents: {', '.join(result.get('agents_used', []))}",
+    }
+
+
+async def _exec_generate_tests(params: dict) -> dict:
+    path = params.get("path")
+    project = params.get("project")
+    focus = params.get("focus")
+    if not path and not project:
+        return {"success": False, "error": "path (file) or project (name) is required"}
+
+    if path:
+        try:
+            resolved = validate_path(path)
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
+        if not os.path.isfile(resolved):
+            return {"success": False, "error": f"File not found: {path}"}
+        try:
+            with open(resolved, "r", encoding="utf-8", errors="replace") as f:
+                code = f.read(MAX_FILE_SIZE)
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        language = _detect_language(resolved)
+        data = {"code": code, "language": language, "filename": os.path.basename(resolved)}
+        if focus:
+            data["focus"] = focus
+        result = await platform_services.call_service("test_gen", "POST", "/tests/generate", data)
+    else:
+        proj_path = _resolve_project_path(project)
+        if not proj_path:
+            return {"success": False, "error": f"Project not found: {project}"}
+        files = _read_project_files(proj_path, max_files=3)
+        if not files:
+            return {"success": False, "error": f"No source files found in {project}"}
+        combined = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files)
+        data = {"code": combined, "language": files[0]["language"], "filename": project}
+        if focus:
+            data["focus"] = focus
+        result = await platform_services.call_service("test_gen", "POST", "/tests/generate", data)
+
+    if "error" in result:
+        return {"success": False, "error": result["error"]}
+
+    platform_services.store_service_result("test_gen", "generate", project or os.path.basename(path), result)
+    return {
+        "success": True,
+        "tests": result.get("result", ""),
+        "framework": result.get("framework", ""),
+        "message": f"Tests generated ({result.get('framework', 'unknown')} framework)",
+    }
+
+
+async def _exec_analyze_tests(params: dict) -> dict:
+    path = params.get("path")
+    tests_path = params.get("tests_path")
+    project = params.get("project")
+    if not path and not project:
+        return {"success": False, "error": "path (source file) or project (name) is required"}
+
+    code = ""
+    tests = ""
+    language = "python"
+
+    if path:
+        try:
+            resolved = validate_path(path)
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
+        with open(resolved, "r", encoding="utf-8", errors="replace") as f:
+            code = f.read(MAX_FILE_SIZE)
+        language = _detect_language(resolved)
+        if tests_path:
+            try:
+                t_resolved = validate_path(tests_path)
+                with open(t_resolved, "r", encoding="utf-8", errors="replace") as f:
+                    tests = f.read(MAX_FILE_SIZE)
+            except Exception:
+                pass
+    else:
+        proj_path = _resolve_project_path(project)
+        if not proj_path:
+            return {"success": False, "error": f"Project not found: {project}"}
+        files = _read_project_files(proj_path, max_files=3)
+        if not files:
+            return {"success": False, "error": f"No source files found in {project}"}
+        code = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files)
+        language = files[0]["language"]
+
+    data = {"code": code, "language": language}
+    if tests:
+        data["tests"] = tests
+    result = await platform_services.call_service("test_gen", "POST", "/tests/analyze", data)
+
+    if "error" in result:
+        return {"success": False, "error": result["error"]}
+
+    platform_services.store_service_result("test_gen", "analyze", project or os.path.basename(path), result)
+    return {
+        "success": True,
+        "analysis": result.get("result", ""),
+        "message": "Test coverage analysis complete",
+    }
+
+
+async def _exec_generate_readme(params: dict) -> dict:
+    project = params.get("project") or params.get("name")
+    if not project:
+        return {"success": False, "error": "project name is required"}
+
+    proj_path = _resolve_project_path(project)
+    if not proj_path:
+        return {"success": False, "error": f"Project not found: {project}"}
+
+    files = _read_project_files(proj_path, max_files=8)
+    if not files:
+        return {"success": False, "error": f"No source files found in {project}"}
+
+    file_entries = [{"path": f["path"], "content": f["content"]} for f in files]
+    result = await platform_services.call_service("doc_gen", "POST", "/docs/readme", {
+        "project_name": project,
+        "files": file_entries,
+    })
+
+    if "error" in result:
+        return {"success": False, "error": result["error"]}
+
+    platform_services.store_service_result("doc_gen", "readme", project, result)
+    content = result.get("content", "")
+    return {
+        "success": True,
+        "readme": content[:3000],
+        "full_length": len(content),
+        "message": f"README.md generated for {project} ({len(content)} chars)",
+    }
+
+
+async def _exec_generate_api_docs(params: dict) -> dict:
+    project = params.get("project") or params.get("name")
+    if not project:
+        return {"success": False, "error": "project name is required"}
+
+    proj_path = _resolve_project_path(project)
+    if not proj_path:
+        return {"success": False, "error": f"Project not found: {project}"}
+
+    # Focus on router/route files
+    files = _read_project_files(proj_path, extensions=(".py", ".js", ".ts"), max_files=8)
+    if not files:
+        return {"success": False, "error": f"No source files found in {project}"}
+
+    file_entries = [{"path": f["path"], "content": f["content"]} for f in files]
+    result = await platform_services.call_service("doc_gen", "POST", "/docs/api", {
+        "project_name": project,
+        "files": file_entries,
+    })
+
+    if "error" in result:
+        return {"success": False, "error": result["error"]}
+
+    platform_services.store_service_result("doc_gen", "api", project, result)
+    content = result.get("content", "")
+    return {
+        "success": True,
+        "docs": content[:3000],
+        "full_length": len(content),
+        "message": f"API docs generated for {project} ({len(content)} chars)",
+    }
+
+
+async def _exec_generate_architecture(params: dict) -> dict:
+    project = params.get("project") or params.get("name")
+    if not project:
+        return {"success": False, "error": "project name is required"}
+
+    proj_path = _resolve_project_path(project)
+    if not proj_path:
+        return {"success": False, "error": f"Project not found: {project}"}
+
+    files = _read_project_files(proj_path, max_files=8)
+    if not files:
+        return {"success": False, "error": f"No source files found in {project}"}
+
+    file_entries = [{"path": f["path"], "content": f["content"]} for f in files]
+    result = await platform_services.call_service("doc_gen", "POST", "/docs/architecture", {
+        "project_name": project,
+        "files": file_entries,
+    })
+
+    if "error" in result:
+        return {"success": False, "error": result["error"]}
+
+    platform_services.store_service_result("doc_gen", "architecture", project, result)
+    content = result.get("content", "")
+    return {
+        "success": True,
+        "architecture": content[:3000],
+        "full_length": len(content),
+        "message": f"Architecture docs generated for {project} ({len(content)} chars)",
+    }
+
+
+def _exec_platform_status(params: dict) -> dict:
+    status = platform_services.check_all_services()
+    online = sum(1 for s in status.values() if s["healthy"])
+    total = len(status)
+    lines = []
+    for name, s in status.items():
+        icon = "online" if s["healthy"] else "OFFLINE"
+        lines.append(f"  {s['label']} (:{s['port']}): {icon}")
+    return {
+        "success": True,
+        "services": status,
+        "online": online,
+        "total": total,
+        "message": f"Platform: {online}/{total} services online\n" + "\n".join(lines),
+    }
+
+
+async def _exec_full_project_review(params: dict) -> dict:
+    name = params.get("name") or params.get("project")
+    if not name:
+        return {"success": False, "error": "project name is required"}
+
+    results = {"steps": []}
+
+    # Step 1: Repo intelligence analysis
+    analysis = repo_intelligence_service.analyze_repo(name, depth="full")
+    if "error" in analysis:
+        return {"success": False, "error": analysis["error"]}
+    results["health_score"] = analysis["health_score"]
+    results["steps"].append(f"Repo analysis: {analysis['health_score']}/100")
+
+    # Step 2: Code audit on key files
+    proj_path = _resolve_project_path(name)
+    if proj_path:
+        files = _read_project_files(proj_path, max_files=3)
+        if files:
+            combined = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files)
+            audit = await platform_services.call_service("code_audit", "POST", "/audit/full", {
+                "code": combined, "language": files[0]["language"], "filename": name,
+            })
+            if "error" not in audit:
+                results["audit"] = audit.get("findings", "")
+                results["steps"].append("Code audit: complete")
+                platform_services.store_service_result("code_audit", "full", name, audit)
+            else:
+                results["steps"].append(f"Code audit: {audit['error']}")
+
+            # Step 3: Test coverage analysis
+            test_analysis = await platform_services.call_service("test_gen", "POST", "/tests/analyze", {
+                "code": combined, "language": files[0]["language"],
+            })
+            if "error" not in test_analysis:
+                results["test_analysis"] = test_analysis.get("result", "")
+                results["steps"].append("Test analysis: complete")
+                platform_services.store_service_result("test_gen", "analyze", name, test_analysis)
+            else:
+                results["steps"].append(f"Test analysis: {test_analysis['error']}")
+
+    # Step 4: Generate tasks from findings
+    tasks = repo_intelligence_service.generate_tasks_from_analysis(analysis["id"], create_tasks=True)
+    results["tasks_created"] = len(tasks)
+    results["steps"].append(f"Tasks created: {len(tasks)}")
+
+    return {
+        "success": True,
+        **results,
+        "message": f"Full review of {name}: {analysis['health_score']}/100, {len(tasks)} tasks created\n" + "\n".join(results["steps"]),
+    }
+
+
+async def _exec_ship_ready_check(params: dict) -> dict:
+    name = params.get("name") or params.get("project")
+    if not name:
+        return {"success": False, "error": "project name is required"}
+
+    proj_path = _resolve_project_path(name)
+    if not proj_path:
+        return {"success": False, "error": f"Project not found: {name}"}
+
+    checklist = []
+    files = _read_project_files(proj_path, max_files=5)
+    if not files:
+        return {"success": False, "error": f"No source files found in {name}"}
+
+    combined = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files)
+    file_entries = [{"path": f["path"], "content": f["content"]} for f in files]
+
+    # Security audit
+    audit = await platform_services.call_service("code_audit", "POST", "/audit/security", {
+        "code": combined, "language": files[0]["language"], "filename": name,
+    })
+    if "error" not in audit:
+        checklist.append({"check": "Security Audit", "status": "done", "details": audit.get("findings", "")[:500]})
+        platform_services.store_service_result("code_audit", "security", name, audit)
+    else:
+        checklist.append({"check": "Security Audit", "status": "skipped", "details": audit["error"]})
+
+    # Test generation
+    test_result = await platform_services.call_service("test_gen", "POST", "/tests/generate", {
+        "code": combined, "language": files[0]["language"], "filename": name,
+    })
+    if "error" not in test_result:
+        checklist.append({"check": "Test Generation", "status": "done", "details": f"Tests generated ({test_result.get('framework', '')})"})
+        platform_services.store_service_result("test_gen", "generate", name, test_result)
+    else:
+        checklist.append({"check": "Test Generation", "status": "skipped", "details": test_result["error"]})
+
+    # README check
+    readme_path = os.path.join(proj_path, "README.md")
+    if os.path.isfile(readme_path):
+        checklist.append({"check": "README", "status": "done", "details": "README.md exists"})
+    else:
+        doc_result = await platform_services.call_service("doc_gen", "POST", "/docs/readme", {
+            "project_name": name, "files": file_entries,
+        })
+        if "error" not in doc_result:
+            checklist.append({"check": "README", "status": "generated", "details": "README.md generated (not saved)"})
+            platform_services.store_service_result("doc_gen", "readme", name, doc_result)
+        else:
+            checklist.append({"check": "README", "status": "missing", "details": doc_result["error"]})
+
+    done = sum(1 for c in checklist if c["status"] in ("done", "generated"))
+    lines = [f"  {'[x]' if c['status'] in ('done', 'generated') else '[ ]'} {c['check']}: {c['status']}" for c in checklist]
+    return {
+        "success": True,
+        "checklist": checklist,
+        "passed": done,
+        "total": len(checklist),
+        "message": f"Ship-ready check for {name}: {done}/{len(checklist)} passed\n" + "\n".join(lines),
+    }
+
+
+async def _exec_bootstrap_project(params: dict) -> dict:
+    name = params.get("name") or params.get("project")
+    if not name:
+        return {"success": False, "error": "project name is required"}
+
+    proj_path = _resolve_project_path(name)
+    if not proj_path:
+        return {"success": False, "error": f"Project not found: {name}"}
+
+    files = _read_project_files(proj_path, max_files=8)
+    if not files:
+        return {"success": False, "error": f"No source files found in {name}"}
+
+    file_entries = [{"path": f["path"], "content": f["content"]} for f in files]
+    outputs = []
+
+    # Generate README
+    readme_result = await platform_services.call_service("doc_gen", "POST", "/docs/readme", {
+        "project_name": name, "files": file_entries,
+    })
+    if "error" not in readme_result:
+        outputs.append(f"README.md generated ({len(readme_result.get('content', ''))} chars)")
+        platform_services.store_service_result("doc_gen", "readme", name, readme_result)
+    else:
+        outputs.append(f"README: {readme_result['error']}")
+
+    # Generate architecture docs
+    arch_result = await platform_services.call_service("doc_gen", "POST", "/docs/architecture", {
+        "project_name": name, "files": file_entries,
+    })
+    if "error" not in arch_result:
+        outputs.append(f"Architecture docs generated ({len(arch_result.get('content', ''))} chars)")
+        platform_services.store_service_result("doc_gen", "architecture", name, arch_result)
+    else:
+        outputs.append(f"Architecture: {arch_result['error']}")
+
+    # Generate test scaffold
+    combined = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files[:3])
+    test_result = await platform_services.call_service("test_gen", "POST", "/tests/generate", {
+        "code": combined, "language": files[0]["language"], "filename": name,
+    })
+    if "error" not in test_result:
+        outputs.append(f"Test scaffold generated ({test_result.get('framework', '')})")
+        platform_services.store_service_result("test_gen", "generate", name, test_result)
+    else:
+        outputs.append(f"Tests: {test_result['error']}")
+
+    # Create setup tasks
+    setup_tasks = [
+        {"title": f"Set up CI/CD for {name}", "description": "Add GitHub Actions workflow for tests and linting", "priority": 2},
+        {"title": f"Add test coverage to {name}", "description": "Run the generated tests, fill coverage gaps", "priority": 2},
+        {"title": f"Write contributing guide for {name}", "description": "Add CONTRIBUTING.md with dev setup and PR guidelines", "priority": 3},
+    ]
+    for t in setup_tasks:
+        task_service.create_task({**t, "board_id": "work"})
+    outputs.append(f"{len(setup_tasks)} setup tasks created on work board")
+
+    return {
+        "success": True,
+        "outputs": outputs,
+        "message": f"Bootstrap for {name}:\n" + "\n".join(f"  - {o}" for o in outputs),
+    }
+
+
 # ── Action Registry ─────────────────────────────────────────────────
 
 TOOLS = {
@@ -1084,7 +1753,7 @@ TOOLS = {
                    "params": "path (required), content (required)"},
     "list_files": {"fn": _exec_list_files, "async": False,
                    "desc": "List directory contents",
-                   "params": "path (default: ~/Development/Projects), pattern (glob filter)"},
+                   "params": "path (default: projects directory), pattern (glob filter)"},
     "search_files": {"fn": _exec_search_files, "async": False,
                      "desc": "Search file contents with literal text match",
                      "params": "path, query (required), pattern (default: *.py)"},
@@ -1169,6 +1838,54 @@ TOOLS = {
     "list_autopilots": {"fn": _exec_list_autopilots, "async": False,
                         "desc": "List autopilot-category playbooks",
                         "params": "none"},
+    # Repo Intelligence
+    "analyze_repo": {"fn": _exec_analyze_repo, "async": False,
+                     "desc": "Deep-scan a repo for issues, tech debt, and opportunities",
+                     "params": "name (required, project directory), depth (quick/full, default: quick)"},
+    "create_repo_tasks": {"fn": _exec_create_repo_tasks, "async": False,
+                          "desc": "Generate sprint-ready tasks from repo analysis findings",
+                          "params": "name (required), create (bool, default: false — preview only)"},
+    "repo_roadmap": {"fn": _exec_repo_roadmap, "async": True,
+                     "desc": "AI-generated development roadmap from repo analysis",
+                     "params": "name (required)"},
+    "repo_health": {"fn": _exec_repo_health, "async": False,
+                    "desc": "Quick health score for a repo (or all repos)",
+                    "params": "name (optional, omit for all repos)"},
+    # Platform Services
+    "audit_security": {"fn": _exec_audit_security, "async": True,
+                       "desc": "Run a security audit on a file or project (uses Code Audit service)",
+                       "params": "path (file) or project (name) — one required"},
+    "audit_code": {"fn": _exec_audit_code, "async": True,
+                   "desc": "Run a code quality review on a file or project (uses Code Audit service)",
+                   "params": "path (file) or project (name) — one required"},
+    "generate_tests": {"fn": _exec_generate_tests, "async": True,
+                       "desc": "Generate unit tests for a file or project (uses Test Generator service)",
+                       "params": "path (file) or project (name) — one required, focus (optional area)"},
+    "analyze_tests": {"fn": _exec_analyze_tests, "async": True,
+                      "desc": "Analyze test coverage and suggest missing tests",
+                      "params": "path (source file) or project (name) — one required, tests_path (existing test file)"},
+    "generate_readme": {"fn": _exec_generate_readme, "async": True,
+                        "desc": "Generate README.md for a project (uses Doc Generator service)",
+                        "params": "project (required, project name)"},
+    "generate_api_docs": {"fn": _exec_generate_api_docs, "async": True,
+                          "desc": "Generate API documentation for a project (uses Doc Generator service)",
+                          "params": "project (required, project name)"},
+    "generate_architecture": {"fn": _exec_generate_architecture, "async": True,
+                              "desc": "Generate architecture docs with Mermaid diagrams (uses Doc Generator service)",
+                              "params": "project (required, project name)"},
+    "platform_status": {"fn": _exec_platform_status, "async": False,
+                        "desc": "Check health of all platform services (Code Audit, Test Gen, Doc Gen, PR Bot, Fred API)",
+                        "params": "none"},
+    # Workflows
+    "full_project_review": {"fn": _exec_full_project_review, "async": True,
+                            "desc": "Full integrated review: repo analysis + code audit + test analysis + task creation",
+                            "params": "name (required, project name)"},
+    "ship_ready_check": {"fn": _exec_ship_ready_check, "async": True,
+                         "desc": "Ship-readiness checklist: security audit + test gen + doc check",
+                         "params": "name (required, project name)"},
+    "bootstrap_project": {"fn": _exec_bootstrap_project, "async": True,
+                          "desc": "Bootstrap a project: generate README + architecture docs + test scaffold + setup tasks",
+                          "params": "name (required, project name)"},
 }
 
 
@@ -1199,6 +1916,11 @@ def get_tool_definitions() -> str:
         "Inbox": ["inbox", "inbox_summary"],
         "Playbooks & Autopilot": ["run_playbook", "list_playbooks", "create_playbook",
                                    "run_autopilot", "list_autopilots"],
+        "Repo Intelligence": ["analyze_repo", "create_repo_tasks", "repo_roadmap", "repo_health"],
+        "Platform Services": ["audit_security", "audit_code", "generate_tests", "analyze_tests",
+                              "generate_readme", "generate_api_docs", "generate_architecture",
+                              "platform_status"],
+        "Workflows": ["full_project_review", "ship_ready_check", "bootstrap_project"],
     }
 
     for cat, tool_names in categories.items():

@@ -81,6 +81,11 @@ BOT_STATUS=$(gcloud compute ssh "${VM_NAME}" \
     --command="curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8001/health" 2>/dev/null || echo "000")
 echo "  PR Bot     (8001): HTTP ${BOT_STATUS}"
 
+ASST_STATUS=$(gcloud compute ssh "${VM_NAME}" \
+    --zone="${VM_ZONE}" --quiet \
+    --command="curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:7870/health" 2>/dev/null || echo "000")
+echo "  Assistant  (7870): HTTP ${ASST_STATUS}"
+
 echo ""
 echo "============================================================"
 echo "  Deploy complete!"

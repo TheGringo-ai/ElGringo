@@ -79,10 +79,19 @@ export default function BoardView({ board, onRefresh }) {
     onRefresh?.();
   };
 
-  const columns = (board.columns || ['todo', 'in_progress', 'done']).map((col) => ({
-    key: col,
-    tasks: tasks.filter((t) => t.status === col),
-  }));
+  const boardCols = board.columns || ['todo', 'in_progress', 'done'];
+  const matched = new Set();
+  const columns = boardCols.map((col) => {
+    const colTasks = tasks.filter((t) => t.status === col);
+    colTasks.forEach((t) => matched.add(t.id));
+    return { key: col, tasks: colTasks };
+  });
+  // Show unmatched tasks (e.g. status="todo" on a board without a "todo" column)
+  const unmatched = tasks.filter((t) => !matched.has(t.id));
+  if (unmatched.length > 0) {
+    // Put them in the first column
+    columns[0].tasks = [...unmatched, ...columns[0].tasks];
+  }
 
   return (
     <div className="flex flex-col h-full">

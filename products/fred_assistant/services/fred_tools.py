@@ -13,22 +13,33 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from products.fred_assistant.database import get_conn, log_activity
-from products.fred_assistant.services import (
-    calendar_service,
-    coach_service,
-    content_service,
-    crm_service,
-    focus_service,
-    inbox_service,
-    memory_service,
-    metrics_service,
-    platform_services,
-    playbook_service,
-    projects_service,
-    publish_service,
-    repo_intelligence_service,
-    task_service,
-)
+# Lazy service placeholders — set to None so @patch() can find them for tests,
+# but _svc() skips None and imports the real module on first use.
+task_service = None
+memory_service = None
+calendar_service = None
+coach_service = None
+projects_service = None
+content_service = None
+focus_service = None
+crm_service = None
+publish_service = None
+metrics_service = None
+inbox_service = None
+playbook_service = None
+repo_intelligence_service = None
+platform_services = None
+
+
+def _svc(name: str):
+    """Lazy-load a service module by name. Stores in globals() for @patch compatibility."""
+    cached = globals().get(name)
+    if cached is not None:
+        return cached
+    import importlib
+    mod = importlib.import_module(f"products.fred_assistant.services.{name}")
+    globals()[name] = mod
+    return mod
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +151,7 @@ def _exec_create_task(params: dict) -> dict:
     }
     if params.get("due_date"):
         data["due_date"] = params["due_date"]
-    task = task_service.create_task(data)
+    task = _svc("task_service").create_task(data)
     return {"success": True, "task": task, "message": f"Created task: {task['title']} on {board_id} board"}
 
 
@@ -157,7 +168,7 @@ def _exec_update_task(params: dict) -> dict:
         updates["board_id"] = params["board"]
     if not updates:
         return {"success": False, "error": "No fields to update"}
-    task = task_service.update_task(task_id, updates)
+    task = _svc("task_service").update_task(task_id, updates)
     if not task:
         return {"success": False, "error": f"Task {task_id} not found"}
     return {"success": True, "task": task, "message": f"Updated task: {task['title']}"}
@@ -167,7 +178,7 @@ def _exec_complete_task(params: dict) -> dict:
     task_id = params.get("task_id")
     if not task_id:
         return {"success": False, "error": "task_id is required"}
-    task = task_service.update_task(task_id, {"status": "done"})
+    task = _svc("task_service").update_task(task_id, {"status": "done"})
     if not task:
         return {"success": False, "error": f"Task {task_id} not found"}
     return {"success": True, "task": task, "message": f"Completed: {task['title']}"}
@@ -177,18 +188,18 @@ def _exec_delete_task(params: dict) -> dict:
     task_id = params.get("task_id")
     if not task_id:
         return {"success": False, "error": "task_id is required"}
-    task = task_service.get_task(task_id)
+    task = _svc("task_service").get_task(task_id)
     if not task:
         return {"success": False, "error": f"Task {task_id} not found"}
     title = task["title"]
-    task_service.delete_task(task_id)
+    _svc("task_service").delete_task(task_id)
     return {"success": True, "message": f"Deleted task: {title}"}
 
 
 def _exec_list_tasks(params: dict) -> dict:
     board = params.get("board")
     status = params.get("status")
-    tasks = task_service.list_tasks(board_id=board, status=status)
+    tasks = _svc("task_service").list_tasks(board_id=board, status=status)
     summary = []
     for t in tasks[:20]:
         line = f"[{t['id']}] {t['title']} (P{t['priority']}, {t['status']}, board:{t['board_id']})"
@@ -238,7 +249,7 @@ def _exec_create_todo_list(params: dict) -> dict:
     created = []
     for i, item in enumerate(items):
         item_title = item if isinstance(item, str) else str(item)
-        task = task_service.create_task({
+        task = _svc("task_service").create_task({
             "board_id": board,
             "title": item_title,
             "priority": 3,
@@ -261,7 +272,7 @@ def _exec_remember(params: dict) -> dict:
     value = params.get("value")
     if not key or not value:
         return {"success": False, "error": "key and value are required"}
-    mem = memory_service.remember(category, key, value)
+    mem = _svc("memory_service").remember(category, key, value)
     return {"success": True, "memory": mem, "message": f"Remembered: {key} = {value}"}
 
 
@@ -269,7 +280,7 @@ def _exec_search_memory(params: dict) -> dict:
     query = params.get("query", "")
     if not query:
         return {"success": False, "error": "query is required"}
-    results = memory_service.search_memories(query)
+    results = _svc("memory_service").search_memories(query)
     summary = [f"[{m['category']}] {m['key']}: {m['value']}" for m in results[:10]]
     return {"success": True, "count": len(results), "results": summary}
 
@@ -282,17 +293,17 @@ def _exec_forget(params: dict) -> dict:
         return {"success": False, "error": "memory_id or key is required"}
     # If key provided, find the memory first
     if not memory_id and key:
-        results = memory_service.search_memories(key)
+        results = _svc("memory_service").search_memories(key)
         if category:
             results = [m for m in results if m["category"] == category]
         if not results:
             return {"success": False, "error": f"No memory found for key '{key}'"}
         memory_id = results[0]["id"]
-    mem = memory_service.get_memory(memory_id)
+    mem = _svc("memory_service").get_memory(memory_id)
     if not mem:
         return {"success": False, "error": f"Memory {memory_id} not found"}
     label = f"{mem['key']}: {mem['value']}"
-    memory_service.forget(memory_id)
+    _svc("memory_service").forget(memory_id)
     return {"success": True, "message": f"Forgot: {label}"}
 
 
@@ -307,13 +318,13 @@ def _exec_create_event(params: dict) -> dict:
         "event_type": params.get("event_type", "event"),
         "description": params.get("description", ""),
     }
-    event = calendar_service.create_event(data)
+    event = _svc("calendar_service").create_event(data)
     return {"success": True, "event": event, "message": f"Created event: {event['title']} on {data['start_date']}"}
 
 
 def _exec_list_events(params: dict) -> dict:
     days = params.get("days", 7)
-    events = calendar_service.get_upcoming(days=days)
+    events = _svc("calendar_service").get_upcoming(days=days)
     summary = []
     for e in events[:15]:
         line = f"[{e['id']}] {e['title']} ({e['event_type']}) on {e['start_date']}"
@@ -333,7 +344,7 @@ def _exec_update_event(params: dict) -> dict:
             updates[key] = params[key]
     if not updates:
         return {"success": False, "error": "No fields to update"}
-    event = calendar_service.update_event(event_id, updates)
+    event = _svc("calendar_service").update_event(event_id, updates)
     if not event:
         return {"success": False, "error": f"Event {event_id} not found"}
     return {"success": True, "event": event, "message": f"Updated event: {event['title']}"}
@@ -343,11 +354,11 @@ def _exec_delete_event(params: dict) -> dict:
     event_id = params.get("event_id")
     if not event_id:
         return {"success": False, "error": "event_id is required"}
-    event = calendar_service.get_event(event_id)
+    event = _svc("calendar_service").get_event(event_id)
     if not event:
         return {"success": False, "error": f"Event {event_id} not found"}
     title = event["title"]
-    calendar_service.delete_event(event_id)
+    _svc("calendar_service").delete_event(event_id)
     return {"success": True, "message": f"Deleted event: {title}"}
 
 
@@ -360,7 +371,7 @@ def _exec_create_goal(params: dict) -> dict:
         "target_date": params.get("target_date"),
         "description": params.get("description", ""),
     }
-    goal = coach_service.create_goal(data)
+    goal = _svc("coach_service").create_goal(data)
     return {"success": True, "goal": goal, "message": f"Created goal: {goal['title']}"}
 
 
@@ -372,7 +383,7 @@ def _exec_update_goal(params: dict) -> dict:
     for key in ["progress", "status", "title", "description"]:
         if key in params:
             updates[key] = params[key]
-    goal = coach_service.update_goal(goal_id, updates)
+    goal = _svc("coach_service").update_goal(goal_id, updates)
     if not goal:
         return {"success": False, "error": f"Goal {goal_id} not found"}
     return {"success": True, "goal": goal, "message": f"Updated goal: {goal['title']} ({goal['progress']}%)"}
@@ -382,17 +393,17 @@ def _exec_delete_goal(params: dict) -> dict:
     goal_id = params.get("goal_id")
     if not goal_id:
         return {"success": False, "error": "goal_id is required"}
-    goal = coach_service.get_goal(goal_id)
+    goal = _svc("coach_service").get_goal(goal_id)
     if not goal:
         return {"success": False, "error": f"Goal {goal_id} not found"}
     title = goal["title"]
-    coach_service.delete_goal(goal_id)
+    _svc("coach_service").delete_goal(goal_id)
     return {"success": True, "message": f"Deleted goal: {title}"}
 
 
 def _exec_accountability_check(params: dict) -> dict:
-    goals = coach_service.list_goals(status="active")
-    stats = task_service.get_dashboard_stats()
+    goals = _svc("coach_service").list_goals(status="active")
+    stats = _svc("task_service").get_dashboard_stats()
     today = date.today().isoformat()
 
     # Query overdue directly in SQL instead of loading all tasks
@@ -420,7 +431,7 @@ def _exec_accountability_check(params: dict) -> dict:
 
 
 def _exec_find_revenue(params: dict) -> dict:
-    projects = projects_service.list_projects()
+    projects = _svc("projects_service").list_projects()
     scored = []
     for p in projects:
         score = 0
@@ -483,7 +494,7 @@ def _exec_find_revenue(params: dict) -> dict:
 
 
 async def _exec_generate_review(params: dict) -> dict:
-    review = await coach_service.generate_weekly_review()
+    review = await _svc("coach_service").generate_weekly_review()
     wins = review.get("wins", [])
     challenges = review.get("challenges", [])
     priorities = review.get("next_week_priorities", [])
@@ -507,9 +518,9 @@ def _exec_review_project(params: dict) -> dict:
     if not path:
         return {"success": False, "error": f"Project '{name}' not found"}
 
-    info = projects_service.get_project_info(path)
-    commits = projects_service.get_recent_commits(path, count=5)
-    branches = projects_service.get_branches(path)
+    info = _svc("projects_service").get_project_info(path)
+    commits = _svc("projects_service").get_recent_commits(path, count=5)
+    branches = _svc("projects_service").get_branches(path)
 
     return {
         "success": True,
@@ -521,7 +532,7 @@ def _exec_review_project(params: dict) -> dict:
 
 
 def _exec_list_projects(params: dict) -> dict:
-    projects = projects_service.list_projects()
+    projects = _svc("projects_service").list_projects()
     summary = []
     for p in projects[:20]:
         line = f"{p['name']} ({', '.join(p.get('tech_stack', [])[:3])})"
@@ -542,7 +553,7 @@ def _exec_git_status(params: dict) -> dict:
     if not path:
         return {"success": False, "error": f"Project '{name}' not found"}
 
-    info = projects_service.get_project_info(path)
+    info = _svc("projects_service").get_project_info(path)
     return {
         "success": True,
         "branch": info.get("git_branch"),
@@ -563,7 +574,7 @@ def _exec_git_log(params: dict) -> dict:
     if not path:
         return {"success": False, "error": f"Project '{name}' not found"}
 
-    commits = projects_service.get_recent_commits(path, count=count)
+    commits = _svc("projects_service").get_recent_commits(path, count=count)
     summary = [f"[{c['hash']}] {c['message']} ({c['date']})" for c in commits]
     return {"success": True, "commits": summary, "count": len(commits)}
 
@@ -726,7 +737,7 @@ async def _exec_generate_content(params: dict) -> dict:
     platform = params.get("platform", "linkedin")
     tone = params.get("tone", "professional")
 
-    result = await content_service.generate_content(
+    result = await _svc("content_service").generate_content(
         topic=topic, platform=platform, tone=tone,
     )
     return {
@@ -746,7 +757,7 @@ def _exec_schedule_content(params: dict) -> dict:
     updates = {"scheduled_date": scheduled_date, "status": "scheduled"}
     if params.get("scheduled_time"):
         updates["scheduled_time"] = params["scheduled_time"]
-    result = content_service.update_content(content_id, updates)
+    result = _svc("content_service").update_content(content_id, updates)
     if not result:
         return {"success": False, "error": f"Content {content_id} not found"}
     return {"success": True, "content": result, "message": f"Scheduled '{result['title']}' for {scheduled_date}"}
@@ -757,13 +768,13 @@ def _exec_schedule_content(params: dict) -> dict:
 def _exec_start_focus(params: dict) -> dict:
     task_id = params.get("task_id")
     minutes = params.get("minutes", 25)
-    session = focus_service.start_focus(task_id=task_id, planned_minutes=minutes)
+    session = _svc("focus_service").start_focus(task_id=task_id, planned_minutes=minutes)
     return {"success": True, "session": session, "message": f"Focus session started ({minutes} min){' on: ' + session.get('task_title') if session.get('task_title') else ''}"}
 
 
 def _exec_end_focus(params: dict) -> dict:
     notes = params.get("notes", "")
-    session = focus_service.end_focus(notes=notes)
+    session = _svc("focus_service").end_focus(notes=notes)
     if not session:
         return {"success": False, "error": "No active focus session"}
     return {"success": True, "session": session, "message": "Focus session ended"}
@@ -771,7 +782,7 @@ def _exec_end_focus(params: dict) -> dict:
 
 def _exec_focus_stats(params: dict) -> dict:
     days = params.get("days", 7)
-    stats = focus_service.get_focus_stats(days)
+    stats = _svc("focus_service").get_focus_stats(days)
     return {
         "success": True,
         "stats": stats,
@@ -805,7 +816,7 @@ def _exec_add_lead(params: dict) -> dict:
     }
     if not data["name"]:
         return {"success": False, "error": "name is required"}
-    lead = crm_service.create_lead(data)
+    lead = _svc("crm_service").create_lead(data)
     return {"success": True, "lead": lead, "message": f"Created lead: {lead['name']} ({lead['company'] or 'no company'})"}
 
 
@@ -820,7 +831,7 @@ def _exec_update_lead(params: dict) -> dict:
                 updates["pipeline_stage"] = params[key]
             else:
                 updates[key] = params[key]
-    lead = crm_service.update_lead(lead_id, updates)
+    lead = _svc("crm_service").update_lead(lead_id, updates)
     if not lead:
         return {"success": False, "error": f"Lead {lead_id} not found"}
     return {"success": True, "lead": lead, "message": f"Updated lead: {lead['name']} ({lead['pipeline_stage']})"}
@@ -830,7 +841,7 @@ def _exec_log_outreach(params: dict) -> dict:
     lead_id = params.get("lead_id")
     if not lead_id:
         return {"success": False, "error": "lead_id is required"}
-    entry = crm_service.log_outreach(
+    entry = _svc("crm_service").log_outreach(
         lead_id=lead_id,
         outreach_type=params.get("type", "email"),
         content=params.get("content", ""),
@@ -844,7 +855,7 @@ def _exec_schedule_followup(params: dict) -> dict:
     followup_date = params.get("date")
     if not lead_id or not followup_date:
         return {"success": False, "error": "lead_id and date are required"}
-    lead = crm_service.schedule_followup(lead_id, followup_date, params.get("notes", ""))
+    lead = _svc("crm_service").schedule_followup(lead_id, followup_date, params.get("notes", ""))
     if not lead:
         return {"success": False, "error": f"Lead {lead_id} not found"}
     return {"success": True, "lead": lead, "message": f"Followup scheduled for {followup_date} with {lead['name']}"}
@@ -852,13 +863,13 @@ def _exec_schedule_followup(params: dict) -> dict:
 
 def _exec_list_leads(params: dict) -> dict:
     stage = params.get("stage")
-    leads = crm_service.list_leads(stage=stage)
+    leads = _svc("crm_service").list_leads(stage=stage)
     summary = [f"[{l['id']}] {l['name']} ({l['company'] or 'no co.'}) — {l['pipeline_stage']}, ${l['deal_value']:,.0f}" for l in leads[:20]]
     return {"success": True, "count": len(leads), "leads": summary, "message": f"Found {len(leads)} leads" + (f" in {stage}" if stage else "")}
 
 
 def _exec_pipeline_summary(params: dict) -> dict:
-    summary = crm_service.get_pipeline_summary()
+    summary = _svc("crm_service").get_pipeline_summary()
     stages = summary.get("stages", {})
     lines = [f"{s}: {d['count']} leads (${d['total_value']:,.0f})" for s, d in stages.items() if d["count"] > 0]
     return {
@@ -874,7 +885,7 @@ def _exec_approve_content(params: dict) -> dict:
     content_id = params.get("content_id")
     if not content_id:
         return {"success": False, "error": "content_id is required"}
-    result = publish_service.approve_content(content_id)
+    result = _svc("publish_service").approve_content(content_id)
     if not result:
         return {"success": False, "error": f"Content {content_id} not found"}
     return {"success": True, "content": result, "message": f"Approved: {result.get('title', content_id)}"}
@@ -886,7 +897,7 @@ def _exec_publish_content(params: dict) -> dict:
         return {"success": False, "error": "content_id is required"}
     platform = params.get("platform")
     dry_run = params.get("dry_run", True)
-    result = publish_service.publish_content(content_id, platform, dry_run)
+    result = _svc("publish_service").publish_content(content_id, platform, dry_run)
     if not result:
         return {"success": False, "error": f"Content {content_id} not found"}
     return {"success": True, "result": result, "message": result.get("message", "Published")}
@@ -895,7 +906,7 @@ def _exec_publish_content(params: dict) -> dict:
 # ─── Metrics / CEO Lens ──────────────────────────────────────────
 
 def _exec_ceo_lens(params: dict) -> dict:
-    metrics = metrics_service.get_current_metrics()
+    metrics = _svc("metrics_service").get_current_metrics()
     lines = [
         f"MRR: ${metrics['mrr']:,.0f}",
         f"Leads contacted: {metrics['leads_contacted']}",
@@ -915,20 +926,20 @@ def _exec_log_metric(params: dict) -> dict:
     value = params.get("value")
     if not name or value is None:
         return {"success": False, "error": "name and value are required"}
-    result = metrics_service.log_metric(name, float(value))
+    result = _svc("metrics_service").log_metric(name, float(value))
     return {"success": True, "snapshot": result, "message": f"Logged {name} = {value}"}
 
 
 # ─── Inbox ────────────────────────────────────────────────────────
 
 def _exec_inbox(params: dict) -> dict:
-    items = inbox_service.get_inbox()
+    items = _svc("inbox_service").get_inbox()
     summary = [f"[{i['type']}] {i['title']} — {i['description']}" for i in items[:15]]
     return {"success": True, "count": len(items), "items": summary, "message": f"Inbox: {len(items)} items needing attention"}
 
 
 def _exec_inbox_summary(params: dict) -> dict:
-    counts = inbox_service.get_inbox_count()
+    counts = _svc("inbox_service").get_inbox_count()
     lines = [f"{t}: {c}" for t, c in counts.get("by_type", {}).items()]
     return {"success": True, "counts": counts, "message": f"Inbox summary: {counts['total']} total\n" + "\n".join(lines)}
 
@@ -939,10 +950,10 @@ async def _exec_run_playbook(params: dict) -> dict:
     name = params.get("name")
     if not name:
         return {"success": False, "error": "playbook name is required"}
-    pb = playbook_service.get_playbook_by_name(name)
+    pb = _svc("playbook_service").get_playbook_by_name(name)
     if not pb:
         return {"success": False, "error": f"Playbook '{name}' not found"}
-    result = await playbook_service.run_playbook(pb["id"])
+    result = await _svc("playbook_service").run_playbook(pb["id"])
     return {
         "success": True,
         "result": result,
@@ -952,7 +963,7 @@ async def _exec_run_playbook(params: dict) -> dict:
 
 def _exec_list_playbooks(params: dict) -> dict:
     category = params.get("category")
-    playbooks = playbook_service.list_playbooks(category)
+    playbooks = _svc("playbook_service").list_playbooks(category)
     summary = [f"[{p['id']}] {p['name']} ({p['category']}) — {len(p.get('steps', []))} steps" for p in playbooks]
     return {"success": True, "count": len(playbooks), "playbooks": summary, "message": f"Found {len(playbooks)} playbooks"}
 
@@ -967,7 +978,7 @@ def _exec_create_playbook(params: dict) -> dict:
         "steps": params.get("steps", []),
         "category": params.get("category", "general"),
     }
-    pb = playbook_service.create_playbook(data)
+    pb = _svc("playbook_service").create_playbook(data)
     return {"success": True, "playbook": pb, "message": f"Created playbook: {pb['name']}"}
 
 
@@ -975,12 +986,12 @@ async def _exec_run_autopilot(params: dict) -> dict:
     name = params.get("name")
     if not name:
         return {"success": False, "error": "autopilot name is required"}
-    pb = playbook_service.get_playbook_by_name(name)
+    pb = _svc("playbook_service").get_playbook_by_name(name)
     if not pb:
         return {"success": False, "error": f"Autopilot '{name}' not found"}
     if pb.get("category") != "autopilot":
         return {"success": False, "error": f"'{name}' is not an autopilot playbook (category: {pb.get('category')})"}
-    result = await playbook_service.run_playbook(pb["id"])
+    result = await _svc("playbook_service").run_playbook(pb["id"])
     return {
         "success": True,
         "result": result,
@@ -989,7 +1000,7 @@ async def _exec_run_autopilot(params: dict) -> dict:
 
 
 def _exec_list_autopilots(params: dict) -> dict:
-    playbooks = playbook_service.list_playbooks("autopilot")
+    playbooks = _svc("playbook_service").list_playbooks("autopilot")
     summary = [f"{p['name']} — {p['description']}" for p in playbooks]
     return {"success": True, "count": len(playbooks), "autopilots": summary}
 
@@ -1003,7 +1014,7 @@ def _exec_analyze_repo(params: dict) -> dict:
     depth = params.get("depth", "quick")
     if depth not in ("quick", "full"):
         depth = "quick"
-    result = repo_intelligence_service.analyze_repo(name, depth=depth)
+    result = _svc("repo_intelligence_service").analyze_repo(name, depth=depth)
     if "error" in result:
         return {"success": False, "error": result["error"]}
     findings = result["findings"]
@@ -1029,10 +1040,10 @@ def _exec_create_repo_tasks(params: dict) -> dict:
     if not name:
         return {"success": False, "error": "project name is required"}
     create = params.get("create", False)
-    latest = repo_intelligence_service.get_latest_analysis(name)
+    latest = _svc("repo_intelligence_service").get_latest_analysis(name)
     if not latest:
         return {"success": False, "error": f"No analysis found for '{name}'. Run analyze_repo first."}
-    tasks = repo_intelligence_service.generate_tasks_from_analysis(latest["id"], create_tasks=create)
+    tasks = _svc("repo_intelligence_service").generate_tasks_from_analysis(latest["id"], create_tasks=create)
     task_lines = [f"P{t['priority']}: {t['title']}" + (f" [{t['revenue_impact']}]" if t.get('revenue_impact') else "") for t in tasks]
     return {
         "success": True,
@@ -1047,7 +1058,7 @@ async def _exec_repo_roadmap(params: dict) -> dict:
     name = params.get("name")
     if not name:
         return {"success": False, "error": "project name is required"}
-    roadmap = await repo_intelligence_service.generate_roadmap(name)
+    roadmap = await _svc("repo_intelligence_service").generate_roadmap(name)
     if "error" in roadmap:
         return {"success": False, "error": roadmap["error"]}
     sprint = roadmap.get("sprint_1_week", [])
@@ -1070,9 +1081,9 @@ async def _exec_repo_roadmap(params: dict) -> dict:
 def _exec_repo_health(params: dict) -> dict:
     name = params.get("name")
     if name:
-        latest = repo_intelligence_service.get_latest_analysis(name)
+        latest = _svc("repo_intelligence_service").get_latest_analysis(name)
         if not latest:
-            result = repo_intelligence_service.analyze_repo(name, depth="quick")
+            result = _svc("repo_intelligence_service").analyze_repo(name, depth="quick")
             if "error" in result:
                 return {"success": False, "error": result["error"]}
             return {
@@ -1090,16 +1101,16 @@ def _exec_repo_health(params: dict) -> dict:
             "message": f"{name}: {latest['health_score']}/100 — {latest['summary']}",
         }
     # All projects
-    projects = projects_service.list_projects()
+    projects = _svc("projects_service").list_projects()
     results = []
     for p in projects:
         if not p.get("is_git"):
             continue
-        latest = repo_intelligence_service.get_latest_analysis(p["name"])
+        latest = _svc("repo_intelligence_service").get_latest_analysis(p["name"])
         if latest:
             results.append({"name": p["name"], "health_score": latest["health_score"]})
         else:
-            r = repo_intelligence_service.analyze_repo(p["name"], depth="quick")
+            r = _svc("repo_intelligence_service").analyze_repo(p["name"], depth="quick")
             if "error" not in r:
                 results.append({"name": p["name"], "health_score": r["health_score"]})
     results.sort(key=lambda x: x["health_score"])
@@ -1165,11 +1176,11 @@ def _resolve_project_path(name: str) -> str | None:
     if os.path.isdir(path):
         return path
     # Check clone directory
-    clone_path = os.path.join(projects_service.CLONE_DIR, name)
+    clone_path = os.path.join(_svc("projects_service").CLONE_DIR, name)
     if os.path.isdir(clone_path):
         return clone_path
     # Try auto-clone from GitHub
-    cloned = projects_service._ensure_clone(name)
+    cloned = _svc("projects_service")._ensure_clone(name)
     if cloned:
         return cloned
     return None
@@ -1194,7 +1205,7 @@ async def _exec_audit_security(params: dict) -> dict:
         except Exception as e:
             return {"success": False, "error": str(e)}
         language = _detect_language(resolved)
-        result = await platform_services.call_service("code_audit", "POST", "/audit/security", {
+        result = await _svc("platform_services").call_service("code_audit", "POST", "/audit/security", {
             "code": code, "language": language, "filename": os.path.basename(resolved),
         })
     else:
@@ -1205,14 +1216,14 @@ async def _exec_audit_security(params: dict) -> dict:
         if not files:
             return {"success": False, "error": f"No source files found in {project}"}
         combined = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files)
-        result = await platform_services.call_service("code_audit", "POST", "/audit/security", {
+        result = await _svc("platform_services").call_service("code_audit", "POST", "/audit/security", {
             "code": combined, "language": files[0]["language"], "filename": project,
         })
 
     if "error" in result:
         return {"success": False, "error": result["error"]}
 
-    platform_services.store_service_result("code_audit", "security", project or os.path.basename(path), result)
+    _svc("platform_services").store_service_result("code_audit", "security", project or os.path.basename(path), result)
     return {
         "success": True,
         "findings": result.get("findings", ""),
@@ -1240,7 +1251,7 @@ async def _exec_audit_code(params: dict) -> dict:
         except Exception as e:
             return {"success": False, "error": str(e)}
         language = _detect_language(resolved)
-        result = await platform_services.call_service("code_audit", "POST", "/audit/review", {
+        result = await _svc("platform_services").call_service("code_audit", "POST", "/audit/review", {
             "code": code, "language": language, "filename": os.path.basename(resolved),
         })
     else:
@@ -1251,14 +1262,14 @@ async def _exec_audit_code(params: dict) -> dict:
         if not files:
             return {"success": False, "error": f"No source files found in {project}"}
         combined = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files)
-        result = await platform_services.call_service("code_audit", "POST", "/audit/review", {
+        result = await _svc("platform_services").call_service("code_audit", "POST", "/audit/review", {
             "code": combined, "language": files[0]["language"], "filename": project,
         })
 
     if "error" in result:
         return {"success": False, "error": result["error"]}
 
-    platform_services.store_service_result("code_audit", "review", project or os.path.basename(path), result)
+    _svc("platform_services").store_service_result("code_audit", "review", project or os.path.basename(path), result)
     return {
         "success": True,
         "findings": result.get("findings", ""),
@@ -1290,7 +1301,7 @@ async def _exec_generate_tests(params: dict) -> dict:
         data = {"code": code, "language": language, "filename": os.path.basename(resolved)}
         if focus:
             data["focus"] = focus
-        result = await platform_services.call_service("test_gen", "POST", "/tests/generate", data)
+        result = await _svc("platform_services").call_service("test_gen", "POST", "/tests/generate", data)
     else:
         proj_path = _resolve_project_path(project)
         if not proj_path:
@@ -1302,12 +1313,12 @@ async def _exec_generate_tests(params: dict) -> dict:
         data = {"code": combined, "language": files[0]["language"], "filename": project}
         if focus:
             data["focus"] = focus
-        result = await platform_services.call_service("test_gen", "POST", "/tests/generate", data)
+        result = await _svc("platform_services").call_service("test_gen", "POST", "/tests/generate", data)
 
     if "error" in result:
         return {"success": False, "error": result["error"]}
 
-    platform_services.store_service_result("test_gen", "generate", project or os.path.basename(path), result)
+    _svc("platform_services").store_service_result("test_gen", "generate", project or os.path.basename(path), result)
     return {
         "success": True,
         "tests": result.get("result", ""),
@@ -1355,12 +1366,12 @@ async def _exec_analyze_tests(params: dict) -> dict:
     data = {"code": code, "language": language}
     if tests:
         data["tests"] = tests
-    result = await platform_services.call_service("test_gen", "POST", "/tests/analyze", data)
+    result = await _svc("platform_services").call_service("test_gen", "POST", "/tests/analyze", data)
 
     if "error" in result:
         return {"success": False, "error": result["error"]}
 
-    platform_services.store_service_result("test_gen", "analyze", project or os.path.basename(path), result)
+    _svc("platform_services").store_service_result("test_gen", "analyze", project or os.path.basename(path), result)
     return {
         "success": True,
         "analysis": result.get("result", ""),
@@ -1382,7 +1393,7 @@ async def _exec_generate_readme(params: dict) -> dict:
         return {"success": False, "error": f"No source files found in {project}"}
 
     file_entries = [{"path": f["path"], "content": f["content"]} for f in files]
-    result = await platform_services.call_service("doc_gen", "POST", "/docs/readme", {
+    result = await _svc("platform_services").call_service("doc_gen", "POST", "/docs/readme", {
         "project_name": project,
         "files": file_entries,
     })
@@ -1390,7 +1401,7 @@ async def _exec_generate_readme(params: dict) -> dict:
     if "error" in result:
         return {"success": False, "error": result["error"]}
 
-    platform_services.store_service_result("doc_gen", "readme", project, result)
+    _svc("platform_services").store_service_result("doc_gen", "readme", project, result)
     content = result.get("content", "")
     return {
         "success": True,
@@ -1415,7 +1426,7 @@ async def _exec_generate_api_docs(params: dict) -> dict:
         return {"success": False, "error": f"No source files found in {project}"}
 
     file_entries = [{"path": f["path"], "content": f["content"]} for f in files]
-    result = await platform_services.call_service("doc_gen", "POST", "/docs/api", {
+    result = await _svc("platform_services").call_service("doc_gen", "POST", "/docs/api", {
         "project_name": project,
         "files": file_entries,
     })
@@ -1423,7 +1434,7 @@ async def _exec_generate_api_docs(params: dict) -> dict:
     if "error" in result:
         return {"success": False, "error": result["error"]}
 
-    platform_services.store_service_result("doc_gen", "api", project, result)
+    _svc("platform_services").store_service_result("doc_gen", "api", project, result)
     content = result.get("content", "")
     return {
         "success": True,
@@ -1447,7 +1458,7 @@ async def _exec_generate_architecture(params: dict) -> dict:
         return {"success": False, "error": f"No source files found in {project}"}
 
     file_entries = [{"path": f["path"], "content": f["content"]} for f in files]
-    result = await platform_services.call_service("doc_gen", "POST", "/docs/architecture", {
+    result = await _svc("platform_services").call_service("doc_gen", "POST", "/docs/architecture", {
         "project_name": project,
         "files": file_entries,
     })
@@ -1455,7 +1466,7 @@ async def _exec_generate_architecture(params: dict) -> dict:
     if "error" in result:
         return {"success": False, "error": result["error"]}
 
-    platform_services.store_service_result("doc_gen", "architecture", project, result)
+    _svc("platform_services").store_service_result("doc_gen", "architecture", project, result)
     content = result.get("content", "")
     return {
         "success": True,
@@ -1466,7 +1477,7 @@ async def _exec_generate_architecture(params: dict) -> dict:
 
 
 def _exec_platform_status(params: dict) -> dict:
-    status = platform_services.check_all_services()
+    status = _svc("platform_services").check_all_services()
     online = sum(1 for s in status.values() if s["healthy"])
     total = len(status)
     lines = []
@@ -1490,7 +1501,7 @@ async def _exec_full_project_review(params: dict) -> dict:
     results = {"steps": []}
 
     # Step 1: Repo intelligence analysis
-    analysis = repo_intelligence_service.analyze_repo(name, depth="full")
+    analysis = _svc("repo_intelligence_service").analyze_repo(name, depth="full")
     if "error" in analysis:
         return {"success": False, "error": analysis["error"]}
     results["health_score"] = analysis["health_score"]
@@ -1502,29 +1513,29 @@ async def _exec_full_project_review(params: dict) -> dict:
         files = _read_project_files(proj_path, max_files=3)
         if files:
             combined = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files)
-            audit = await platform_services.call_service("code_audit", "POST", "/audit/full", {
+            audit = await _svc("platform_services").call_service("code_audit", "POST", "/audit/full", {
                 "code": combined, "language": files[0]["language"], "filename": name,
             })
             if "error" not in audit:
                 results["audit"] = audit.get("findings", "")
                 results["steps"].append("Code audit: complete")
-                platform_services.store_service_result("code_audit", "full", name, audit)
+                _svc("platform_services").store_service_result("code_audit", "full", name, audit)
             else:
                 results["steps"].append(f"Code audit: {audit['error']}")
 
             # Step 3: Test coverage analysis
-            test_analysis = await platform_services.call_service("test_gen", "POST", "/tests/analyze", {
+            test_analysis = await _svc("platform_services").call_service("test_gen", "POST", "/tests/analyze", {
                 "code": combined, "language": files[0]["language"],
             })
             if "error" not in test_analysis:
                 results["test_analysis"] = test_analysis.get("result", "")
                 results["steps"].append("Test analysis: complete")
-                platform_services.store_service_result("test_gen", "analyze", name, test_analysis)
+                _svc("platform_services").store_service_result("test_gen", "analyze", name, test_analysis)
             else:
                 results["steps"].append(f"Test analysis: {test_analysis['error']}")
 
     # Step 4: Generate tasks from findings
-    tasks = repo_intelligence_service.generate_tasks_from_analysis(analysis["id"], create_tasks=True)
+    tasks = _svc("repo_intelligence_service").generate_tasks_from_analysis(analysis["id"], create_tasks=True)
     results["tasks_created"] = len(tasks)
     results["steps"].append(f"Tasks created: {len(tasks)}")
 
@@ -1553,22 +1564,22 @@ async def _exec_ship_ready_check(params: dict) -> dict:
     file_entries = [{"path": f["path"], "content": f["content"]} for f in files]
 
     # Security audit
-    audit = await platform_services.call_service("code_audit", "POST", "/audit/security", {
+    audit = await _svc("platform_services").call_service("code_audit", "POST", "/audit/security", {
         "code": combined, "language": files[0]["language"], "filename": name,
     })
     if "error" not in audit:
         checklist.append({"check": "Security Audit", "status": "done", "details": audit.get("findings", "")[:500]})
-        platform_services.store_service_result("code_audit", "security", name, audit)
+        _svc("platform_services").store_service_result("code_audit", "security", name, audit)
     else:
         checklist.append({"check": "Security Audit", "status": "skipped", "details": audit["error"]})
 
     # Test generation
-    test_result = await platform_services.call_service("test_gen", "POST", "/tests/generate", {
+    test_result = await _svc("platform_services").call_service("test_gen", "POST", "/tests/generate", {
         "code": combined, "language": files[0]["language"], "filename": name,
     })
     if "error" not in test_result:
         checklist.append({"check": "Test Generation", "status": "done", "details": f"Tests generated ({test_result.get('framework', '')})"})
-        platform_services.store_service_result("test_gen", "generate", name, test_result)
+        _svc("platform_services").store_service_result("test_gen", "generate", name, test_result)
     else:
         checklist.append({"check": "Test Generation", "status": "skipped", "details": test_result["error"]})
 
@@ -1577,12 +1588,12 @@ async def _exec_ship_ready_check(params: dict) -> dict:
     if os.path.isfile(readme_path):
         checklist.append({"check": "README", "status": "done", "details": "README.md exists"})
     else:
-        doc_result = await platform_services.call_service("doc_gen", "POST", "/docs/readme", {
+        doc_result = await _svc("platform_services").call_service("doc_gen", "POST", "/docs/readme", {
             "project_name": name, "files": file_entries,
         })
         if "error" not in doc_result:
             checklist.append({"check": "README", "status": "generated", "details": "README.md generated (not saved)"})
-            platform_services.store_service_result("doc_gen", "readme", name, doc_result)
+            _svc("platform_services").store_service_result("doc_gen", "readme", name, doc_result)
         else:
             checklist.append({"check": "README", "status": "missing", "details": doc_result["error"]})
 
@@ -1614,33 +1625,33 @@ async def _exec_bootstrap_project(params: dict) -> dict:
     outputs = []
 
     # Generate README
-    readme_result = await platform_services.call_service("doc_gen", "POST", "/docs/readme", {
+    readme_result = await _svc("platform_services").call_service("doc_gen", "POST", "/docs/readme", {
         "project_name": name, "files": file_entries,
     })
     if "error" not in readme_result:
         outputs.append(f"README.md generated ({len(readme_result.get('content', ''))} chars)")
-        platform_services.store_service_result("doc_gen", "readme", name, readme_result)
+        _svc("platform_services").store_service_result("doc_gen", "readme", name, readme_result)
     else:
         outputs.append(f"README: {readme_result['error']}")
 
     # Generate architecture docs
-    arch_result = await platform_services.call_service("doc_gen", "POST", "/docs/architecture", {
+    arch_result = await _svc("platform_services").call_service("doc_gen", "POST", "/docs/architecture", {
         "project_name": name, "files": file_entries,
     })
     if "error" not in arch_result:
         outputs.append(f"Architecture docs generated ({len(arch_result.get('content', ''))} chars)")
-        platform_services.store_service_result("doc_gen", "architecture", name, arch_result)
+        _svc("platform_services").store_service_result("doc_gen", "architecture", name, arch_result)
     else:
         outputs.append(f"Architecture: {arch_result['error']}")
 
     # Generate test scaffold
     combined = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files[:3])
-    test_result = await platform_services.call_service("test_gen", "POST", "/tests/generate", {
+    test_result = await _svc("platform_services").call_service("test_gen", "POST", "/tests/generate", {
         "code": combined, "language": files[0]["language"], "filename": name,
     })
     if "error" not in test_result:
         outputs.append(f"Test scaffold generated ({test_result.get('framework', '')})")
-        platform_services.store_service_result("test_gen", "generate", name, test_result)
+        _svc("platform_services").store_service_result("test_gen", "generate", name, test_result)
     else:
         outputs.append(f"Tests: {test_result['error']}")
 
@@ -1651,7 +1662,7 @@ async def _exec_bootstrap_project(params: dict) -> dict:
         {"title": f"Write contributing guide for {name}", "description": "Add CONTRIBUTING.md with dev setup and PR guidelines", "priority": 3},
     ]
     for t in setup_tasks:
-        task_service.create_task({**t, "board_id": "work"})
+        _svc("task_service").create_task({**t, "board_id": "work"})
     outputs.append(f"{len(setup_tasks)} setup tasks created on work board")
 
     return {

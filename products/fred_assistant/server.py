@@ -53,6 +53,8 @@ from products.fred_assistant.routers.inbox import router as inbox_router
 from products.fred_assistant.routers.playbooks import router as playbooks_router
 from products.fred_assistant.routers.repo_intel import router as repo_intel_router
 from products.fred_assistant.routers.platform import router as platform_router
+from products.fred_assistant.routers.usage import router as usage_router
+from products.fred_assistant.routers.sync import router as sync_router
 
 app.include_router(health_router)
 app.include_router(boards_router)
@@ -72,16 +74,39 @@ app.include_router(inbox_router)
 app.include_router(playbooks_router)
 app.include_router(repo_intel_router)
 app.include_router(platform_router)
+app.include_router(usage_router)
+app.include_router(sync_router)
+
+# ── Background sync task (every 5 min when configured) ────────────
+
+import asyncio
+
+_sync_task = None
+
+async def _background_sync():
+    """Periodically sync local ↔ cloud when configured."""
+    await asyncio.sleep(30)  # Wait 30s after startup
+    while True:
+        try:
+            from products.fred_assistant.services.sync_service import get_sync_service
+            svc = get_sync_service()
+            if svc.configured:
+                await svc.full_sync()
+                logger.info("Background sync completed")
+        except Exception as e:
+            logger.debug("Background sync skipped: %s", e)
+        await asyncio.sleep(300)  # 5 minutes
+
+@app.on_event("startup")
+async def start_sync_task():
+    global _sync_task
+    _sync_task = asyncio.create_task(_background_sync())
 
 # ── RAG background sync on startup ────────────────────────────────
 
-@app.on_event("startup")
-async def _startup_rag_sync():
-    try:
-        from products.fred_assistant.services.rag_service import start_background_sync
-        start_background_sync()
-    except Exception as e:
-        logger.warning("RAG sync not started: %s", e)
+# RAG sync is NOT auto-started. SentenceTransformer + ChromaDB add ~800MB.
+# RAG initializes lazily on first semantic search, keeping idle memory at ~60MB.
+# To trigger a manual sync: POST /rag/sync (defined in platform router).
 
 # ── Static files (serve React build in production) ────────────────
 

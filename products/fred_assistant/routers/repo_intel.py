@@ -33,8 +33,8 @@ def generate_tasks(project_name: str, body: RepoTasksRequest = RepoTasksRequest(
 
 
 @router.post("/{project_name}/review")
-def review_repo(project_name: str):
-    result = ris.review_repo(project_name)
+async def review_repo(project_name: str):
+    result = await ris.review_repo(project_name)
     if "error" in result:
         return {"error": result["error"]}
     return result

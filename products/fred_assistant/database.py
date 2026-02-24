@@ -307,6 +307,40 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_service_results_project ON service_results(project_name);
         CREATE INDEX IF NOT EXISTS idx_service_results_service ON service_results(service);
 
+        -- AI usage tracking (every LLM call)
+        CREATE TABLE IF NOT EXISTS ai_usage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            model TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            input_tokens INTEGER DEFAULT 0,
+            output_tokens INTEGER DEFAULT 0,
+            cost_usd REAL DEFAULT 0,
+            latency_ms REAL DEFAULT 0,
+            feature TEXT DEFAULT 'chat',
+            error TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_usage_created ON ai_usage(created_at);
+        CREATE INDEX IF NOT EXISTS idx_ai_usage_model ON ai_usage(model);
+
+        -- Sync metadata (local-cloud sync)
+        CREATE TABLE IF NOT EXISTS sync_meta (
+            table_name TEXT PRIMARY KEY,
+            last_push TEXT,
+            last_pull TEXT,
+            pending_changes INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS sync_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            direction TEXT NOT NULL,
+            table_name TEXT NOT NULL,
+            rows_synced INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'ok',
+            error TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
         -- Seed default social accounts
         INSERT OR IGNORE INTO social_accounts (id, platform, handle, display_name, connected)
         VALUES
@@ -332,6 +366,154 @@ def _migrate_columns(conn):
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
         except Exception:
             pass  # Column already exists
+
+
+# ── AI Usage tracking ─────────────────────────────────────────────
+
+
+def _get_model_costs():
+    """Import MODEL_COSTS lazily to avoid circular imports."""
+    try:
+        from ai_dev_team.routing.cost_optimizer import MODEL_COSTS
+        return MODEL_COSTS
+    except ImportError:
+        return {}
+
+
+def _provider_from_model(model: str) -> str:
+    """Infer provider name from model string."""
+    m = model.lower()
+    if "gemini" in m:
+        return "gemini"
+    if "gpt" in m:
+        return "openai"
+    if "claude" in m:
+        return "anthropic"
+    if "grok" in m:
+        return "grok"
+    if "llama" in m and ("groq" in m or "together" in m or "versatile" in m or "instant" in m):
+        return "llama_cloud"
+    if "mlx" in m:
+        return "mlx"
+    # Ollama models are typically short names like "llama3.2:3b"
+    if ":" in m or "ollama" in m:
+        return "ollama"
+    return "unknown"
+
+
+def record_ai_usage(
+    model: str,
+    provider: str = None,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    latency_ms: float = 0,
+    feature: str = "chat",
+    error: str = None,
+):
+    """Record a single LLM call. Computes cost from MODEL_COSTS."""
+    if not provider:
+        provider = _provider_from_model(model)
+
+    costs = _get_model_costs()
+    rate = costs.get(model, (0.0, 0.0))
+    cost_usd = (input_tokens / 1_000_000) * rate[0] + (output_tokens / 1_000_000) * rate[1]
+
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO ai_usage
+               (model, provider, input_tokens, output_tokens, cost_usd, latency_ms, feature, error)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (model, provider, input_tokens, output_tokens, cost_usd, latency_ms, feature, error),
+        )
+
+
+def get_usage_today() -> dict:
+    """Today's aggregated usage."""
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT COUNT(*) as requests, COALESCE(SUM(input_tokens),0) as input_tokens,
+                      COALESCE(SUM(output_tokens),0) as output_tokens,
+                      COALESCE(SUM(cost_usd),0) as cost,
+                      COALESCE(AVG(latency_ms),0) as avg_latency,
+                      COALESCE(SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END),0) as errors
+               FROM ai_usage WHERE date(created_at) = date('now')"""
+        ).fetchone()
+        return dict(row) if row else {}
+
+
+def get_usage_summary(days: int = 30) -> list:
+    """Daily aggregates for charting."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT date(created_at) as date, COUNT(*) as requests,
+                      SUM(input_tokens) as input_tokens, SUM(output_tokens) as output_tokens,
+                      SUM(cost_usd) as cost, AVG(latency_ms) as avg_latency
+               FROM ai_usage
+               WHERE created_at >= datetime('now', ?)
+               GROUP BY date(created_at) ORDER BY date(created_at)""",
+            (f"-{days} days",),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_usage_by_model(days: int = 30) -> list:
+    """Breakdown by model/provider."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT model, provider, COUNT(*) as requests,
+                      SUM(input_tokens) as input_tokens, SUM(output_tokens) as output_tokens,
+                      SUM(cost_usd) as cost, AVG(latency_ms) as avg_latency
+               FROM ai_usage
+               WHERE created_at >= datetime('now', ?)
+               GROUP BY model, provider ORDER BY cost DESC""",
+            (f"-{days} days",),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_recent_usage(limit: int = 50) -> list:
+    """Recent individual LLM requests."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT id, model, provider, input_tokens, output_tokens,
+                      cost_usd, latency_ms, feature, error, created_at
+               FROM ai_usage ORDER BY id DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_usage_budget() -> dict:
+    """Read budget limits from memories table."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT value FROM memories WHERE category='system' AND key='usage_budget'"
+        ).fetchone()
+        if row:
+            return json.loads(row["value"])
+    return {"daily_limit": 5.0, "monthly_limit": 50.0}
+
+
+def set_usage_budget(daily_limit: float, monthly_limit: float):
+    """Save budget limits to memories table."""
+    import uuid
+    budget = json.dumps({"daily_limit": daily_limit, "monthly_limit": monthly_limit})
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO memories (id, category, key, value, importance)
+               VALUES (?, 'system', 'usage_budget', ?, 10)
+               ON CONFLICT(category, key) DO UPDATE SET value=excluded.value, updated_at=datetime('now')""",
+            (str(uuid.uuid4()), budget),
+        )
+
+
+def get_monthly_cost() -> float:
+    """Total cost for current calendar month."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(cost_usd),0) as cost FROM ai_usage WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')"
+        ).fetchone()
+        return row["cost"] if row else 0.0
 
 
 def log_activity(action: str, entity_type: str = None, entity_id: str = None, details: dict = None):

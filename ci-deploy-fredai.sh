@@ -37,6 +37,16 @@ tar -xzf /tmp/fredai.tar.gz -C $DIR
 rm -f /tmp/fredai.tar.gz
 
 # ----------------------------------------------------------
+# 3b. Set up password protection (nginx basic auth)
+# ----------------------------------------------------------
+echo "=== Setting up password protection ==="
+apt-get install -y apache2-utils 2>/dev/null || true
+htpasswd -cb /etc/nginx/.htpasswd fred '@Gringo420'
+chmod 640 /etc/nginx/.htpasswd
+chown root:www-data /etc/nginx/.htpasswd
+echo "  htpasswd file created at /etc/nginx/.htpasswd"
+
+# ----------------------------------------------------------
 # 4. Migrate .env from old install (if exists and new one doesn't)
 # ----------------------------------------------------------
 if [ ! -f "$DIR/.env" ] && [ -f "$OLD_DIR/.env" ]; then
@@ -346,6 +356,8 @@ cat > /etc/systemd/system/fredai-assistant.service << 'EOF'
 Description=FredAI Fred Assistant (FastAPI)
 After=network.target
 Wants=network-online.target
+StartLimitBurst=5
+StartLimitIntervalSec=60
 
 [Service]
 Type=simple
@@ -357,8 +369,9 @@ Environment=PYTHONPATH=/opt/fredai
 Environment=PORT=7870
 EnvironmentFile=/opt/fredai/.env
 ExecStart=/opt/fredai/venv/bin/uvicorn products.fred_assistant.server:app --host 0.0.0.0 --port 7870 --log-level info
-Restart=always
+Restart=on-failure
 RestartSec=5
+MemoryMax=800M
 StandardOutput=append:/opt/fredai/logs/assistant.log
 StandardError=append:/opt/fredai/logs/assistant-error.log
 NoNewPrivileges=true
@@ -410,6 +423,15 @@ cat > "$NGINX_CMD_CONF" << 'NGINX_EOF'
 location /command/ {
     alias /opt/fredai/products/command_center/frontend/dist/;
     try_files $uri $uri/ /command/index.html;
+
+    location = /command/index.html {
+        alias /opt/fredai/products/command_center/frontend/dist/index.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+    location /command/assets/ {
+        alias /opt/fredai/products/command_center/frontend/dist/assets/;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
 }
 
 # Command Center API proxy (with SSE support)
@@ -434,6 +456,17 @@ cat > "$NGINX_ASST_CONF" << 'NGINX_EOF'
 location /assistant/ {
     alias /opt/fredai/products/fred_assistant/frontend/dist/;
     try_files $uri $uri/ /assistant/index.html;
+
+    # Cache-bust index.html so new deploys are picked up immediately
+    location = /assistant/index.html {
+        alias /opt/fredai/products/fred_assistant/frontend/dist/index.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+    # Hashed assets can be cached forever
+    location /assistant/assets/ {
+        alias /opt/fredai/products/fred_assistant/frontend/dist/assets/;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
 }
 
 # Fred Assistant API proxy
@@ -450,10 +483,59 @@ location /assistant/api/ {
 NGINX_EOF
 echo "  Nginx Fred Assistant config written to $NGINX_ASST_CONF"
 
+# Update nginx for Landing Page + Auth
+NGINX_LANDING_CONF=/etc/nginx/sites-available/fredai-landing
+cat > "$NGINX_LANDING_CONF" << 'NGINX_EOF'
+# --- Password protection (domain-wide) ---
+auth_basic "FredAI Platform";
+auth_basic_user_file /etc/nginx/.htpasswd;
+
+# --- Landing page ---
+location = / {
+    root /opt/fredai/products/landing;
+    try_files /index.html =404;
+}
+location /landing/ {
+    alias /opt/fredai/products/landing/;
+}
+
+# --- Exempt health checks from auth ---
+location = /health {
+    auth_basic off;
+    proxy_pass http://127.0.0.1:5050/api/health;
+    proxy_set_header Host $host;
+}
+
+# --- Exempt GitHub webhook from auth ---
+location = /webhook {
+    auth_basic off;
+    proxy_pass http://127.0.0.1:8001/webhook;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 120s;
+}
+NGINX_EOF
+echo "  Nginx landing + auth config written to $NGINX_LANDING_CONF"
+
 # Auto-include nginx snippets in main server block if not already there
 NGINX_MAIN="/etc/nginx/sites-available/ai.chatterfix.com"
 if [ -f "$NGINX_MAIN" ]; then
-    for SNIPPET in "$NGINX_CMD_CONF" "$NGINX_ASST_CONF"; do
+    # Remove old bare-JSON root location (replaced by landing page)
+    # Matches: location = / { return 200 ...; } or similar single-line/multi-line blocks
+    if grep -q 'location = / {' "$NGINX_MAIN"; then
+        echo "  Removing old root location block from nginx main config..."
+        sed -i '/location = \/ {/,/}/d' "$NGINX_MAIN"
+    fi
+
+    # Add auth_basic off to existing webhook location (if not already there)
+    if grep -q 'location.*\/webhook' "$NGINX_MAIN" && ! grep -A1 'location.*\/webhook' "$NGINX_MAIN" | grep -q 'auth_basic off'; then
+        sed -i '/location.*\/webhook.*{/a\    auth_basic off;' "$NGINX_MAIN"
+        echo "  Added auth_basic off to existing webhook location"
+    fi
+
+    for SNIPPET in "$NGINX_LANDING_CONF" "$NGINX_CMD_CONF" "$NGINX_ASST_CONF"; do
         if ! grep -qF "include $SNIPPET" "$NGINX_MAIN"; then
             # Insert include before the last closing brace of the server block
             sed -i "/^}/i\\    include $SNIPPET;" "$NGINX_MAIN"
@@ -465,7 +547,23 @@ if [ -f "$NGINX_MAIN" ]; then
 fi
 
 # ----------------------------------------------------------
-# 8. Reload and start services
+# 8. Ensure swap space (prevents OOM on 4GB VMs)
+# ----------------------------------------------------------
+if [ ! -f /swapfile ]; then
+    echo "=== Creating 2GB swap file ==="
+    fallocate -l 2G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    echo "  Swap file created and enabled"
+else
+    echo "  Swap file already exists"
+    swapon /swapfile 2>/dev/null || true
+fi
+
+# ----------------------------------------------------------
+# 9. Reload and start services
 # ----------------------------------------------------------
 echo "=== Starting services ==="
 systemctl daemon-reload
@@ -500,9 +598,12 @@ systemctl is-active fredai-command-api && echo "  fredai-cmd-api:    RUNNING (po
 systemctl is-active fredai-assistant && echo "  fredai-assistant:  RUNNING (port 7870)" || echo "  fredai-assistant:  FAILED"
 [ -f /opt/fredai/products/command_center/frontend/dist/index.html ] && echo "  command-center:    STATIC (nginx at /command/)" || echo "  command-center:    NOT BUILT"
 [ -f /opt/fredai/products/fred_assistant/frontend/dist/index.html ] && echo "  fred-assistant:    STATIC (nginx at /assistant/)" || echo "  fred-assistant:    NOT BUILT"
+[ -f /opt/fredai/products/landing/index.html ] && echo "  landing-page:      STATIC (nginx at /)" || echo "  landing-page:      MISSING"
+[ -f /etc/nginx/.htpasswd ] && echo "  auth:              ENABLED (basic auth)" || echo "  auth:              NOT SET UP"
 
 echo ""
 echo "=== Deploy complete ==="
+echo "Landing:    https://ai.chatterfix.com/ (user: fred)"
 echo "API:        http://localhost:5050/api/health"
 echo "PR Bot:     http://localhost:8001/health"
 echo "Chat:       http://localhost:7860"

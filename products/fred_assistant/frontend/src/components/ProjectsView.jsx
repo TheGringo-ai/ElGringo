@@ -3,14 +3,17 @@ import {
   GitBranch, GitCommit, FolderGit2, ExternalLink, RefreshCw,
   ChevronDown, ChevronRight, Activity, Zap, ListChecks, Search,
   FileCode, AlertTriangle, ShieldAlert, Wrench, CheckCircle2,
-  Shield, TestTube2, BookOpen, Rocket, Layers,
+  Shield, TestTube2, BookOpen, Rocket, Layers, Loader2,
 } from 'lucide-react';
 import {
   fetchProjects, fetchProjectCommits, fetchProjectBranches,
   analyzeRepo, fetchLatestAnalysis, generateRepoTasks, reviewRepo,
   auditProject, generateProjectTests, generateProjectDocs, fullProjectReview,
+  parseAuditFindings,
 } from '../api';
 import PlatformStatus from './PlatformStatus';
+import AuditInsightsPanel from './AuditInsightsPanel';
+import ReviewChatPanel from './ReviewChatPanel';
 
 const STATUS_DOT = { clean: 'bg-emerald-400', dirty: 'bg-amber-400' };
 
@@ -100,6 +103,7 @@ function CodeReviewPanel({ review, projectName, onFixIssues }) {
   const [fixing, setFixing] = useState(false);
   const [fixResult, setFixResult] = useState(null);
   const [showAllTodos, setShowAllTodos] = useState(false);
+  const [showChat, setShowChat] = useState(false);
 
   if (!review) return null;
 
@@ -198,6 +202,13 @@ function CodeReviewPanel({ review, projectName, onFixIssues }) {
             {fixing ? 'Creating tasks...' : 'Fix Issues & Create TODO List'}
           </button>
         )}
+        {!showChat && (
+          <button onClick={() => setShowChat(true)}
+            className="text-[10px] px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors flex items-center gap-1">
+            <Search size={10} />
+            Discuss with AI
+          </button>
+        )}
       </div>
 
       {fixResult?.tasks && (
@@ -220,6 +231,14 @@ function CodeReviewPanel({ review, projectName, onFixIssues }) {
         </div>
       )}
 
+      {showChat && (
+        <ReviewChatPanel
+          projectName={projectName}
+          reviewData={review}
+          onClose={() => setShowChat(false)}
+        />
+      )}
+
       <div className="text-[9px] text-gray-700">
         Reviewed: {review.created_at?.slice(0, 16).replace('T', ' ')}
       </div>
@@ -240,6 +259,9 @@ function ProjectCard({ project, expanded, onToggle, analysis }) {
   const [activeAction, setActiveAction] = useState(null);  // 'audit' | 'tests' | 'docs' | 'full'
   const [serviceResult, setServiceResult] = useState(null);
   const [serviceType, setServiceType] = useState(null);
+  // Audit insights states
+  const [parsedFindings, setParsedFindings] = useState(null);
+  const [parsingFindings, setParsingFindings] = useState(false);
 
   useEffect(() => { setLocalAnalysis(analysis); }, [analysis]);
 
@@ -272,10 +294,24 @@ function ProjectCard({ project, expanded, onToggle, analysis }) {
     setActiveAction(type);
     setServiceResult(null);
     setServiceType(null);
+    setParsedFindings(null);
+    setParsingFindings(false);
     try {
       const result = await fn(project.name);
-      if (!result.error) { setServiceResult(result); setServiceType(type); }
-      else { setServiceResult({ error: result.error }); setServiceType(type); }
+      if (!result.error) {
+        setServiceResult(result); setServiceType(type);
+        // Auto-parse audit findings with AI
+        if (type === 'audit' && result.findings) {
+          setParsingFindings(true);
+          try {
+            const parsed = await parseAuditFindings(project.name, result.findings);
+            if (parsed?.findings?.length > 0) setParsedFindings(parsed.findings);
+          } catch { /* fallback to raw panel */ }
+          setParsingFindings(false);
+        }
+      } else {
+        setServiceResult({ error: result.error }); setServiceType(type);
+      }
     } catch (err) {
       setServiceResult({ error: err.message }); setServiceType(type);
     }
@@ -347,8 +383,22 @@ function ProjectCard({ project, expanded, onToggle, analysis }) {
         </div>
       )}
 
-      {/* ── Service Result Panel ──────────────────────────────────────── */}
-      {serviceResult && serviceType && !serviceResult.error && (
+      {/* ── Audit Insights or Service Result Panel ──────────────────── */}
+      {parsingFindings && (
+        <div className="mt-2 p-2 rounded bg-purple-500/5 border border-purple-500/10 text-[10px] text-purple-400 flex items-center gap-1.5">
+          <Loader2 size={10} className="animate-spin" />
+          Analyzing findings with AI...
+        </div>
+      )}
+      {parsedFindings && serviceResult && serviceType === 'audit' && !serviceResult.error && (
+        <AuditInsightsPanel
+          findings={parsedFindings}
+          result={serviceResult}
+          projectName={project.name}
+          onClose={() => { setServiceResult(null); setServiceType(null); setParsedFindings(null); }}
+        />
+      )}
+      {serviceResult && serviceType && !serviceResult.error && !parsedFindings && !parsingFindings && (
         <ServiceResultPanel
           title={serviceTitles[serviceType]}
           icon={serviceIcons[serviceType]}
@@ -359,7 +409,7 @@ function ProjectCard({ project, expanded, onToggle, analysis }) {
       {serviceResult?.error && (
         <div className="mt-2 p-2 rounded bg-red-500/5 border border-red-500/10 text-[10px] text-red-400">
           {serviceResult.error}
-          <button onClick={() => { setServiceResult(null); setServiceType(null); }}
+          <button onClick={() => { setServiceResult(null); setServiceType(null); setParsedFindings(null); }}
             className="ml-2 text-gray-600 hover:text-gray-400">dismiss</button>
         </div>
       )}

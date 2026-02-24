@@ -496,3 +496,33 @@ class ServiceResultOut(BaseModel):
     agents_used: list[str] = []
     total_time: float = 0
     created_at: str = ""
+
+
+# ── Audit Insights ──────────────────────────────────────────────────
+
+class ParseFindingsRequest(BaseModel):
+    raw_findings: str
+    project_name: str
+    language: str = "python"
+
+
+class ApplyFixRequest(BaseModel):
+    project_name: str
+    file_path: str
+    finding_id: str
+    code_snippet: str = ""
+    suggested_fix: str
+    description: str = ""
+
+
+class AuditChatRequest(BaseModel):
+    message: str
+    project_name: str
+    audit_findings: list[dict] = []
+    finding_id: Optional[str] = None
+
+
+class ReviewChatRequest(BaseModel):
+    message: str
+    project_name: str
+    review_data: dict = {}

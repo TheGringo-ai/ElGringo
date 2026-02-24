@@ -196,3 +196,80 @@ export const fullProjectReview = (name) =>
   api.post(`/platform/${name}/full-review`).then((r) => r.data);
 export const fetchServiceResults = (projectName, service) =>
   api.get('/platform/results', { params: { project_name: projectName, service } }).then((r) => r.data);
+
+// ── AI Usage ────────────────────────────────────────────────
+export const fetchUsageToday = () => api.get('/usage/today').then((r) => r.data);
+export const fetchUsageSummary = (days = 30) =>
+  api.get('/usage/summary', { params: { days } }).then((r) => r.data);
+export const fetchUsageByModel = (days = 30) =>
+  api.get('/usage/by-model', { params: { days } }).then((r) => r.data);
+export const fetchUsageBudget = () => api.get('/usage/budget').then((r) => r.data);
+export const updateUsageBudget = (daily_limit, monthly_limit) =>
+  api.post('/usage/budget', { daily_limit, monthly_limit }).then((r) => r.data);
+export const fetchRecentUsage = (limit = 50) =>
+  api.get('/usage/recent', { params: { limit } }).then((r) => r.data);
+export const fetchProviders = () => api.get('/usage/providers').then((r) => r.data);
+export const updateProviderPrefs = (preferred_provider, enabled_providers) =>
+  api.post('/usage/providers/preferences', { preferred_provider, enabled_providers }).then((r) => r.data);
+export const fetchSyncStatus = () => api.get('/usage/sync/status').then((r) => r.data);
+
+// ── Sync ────────────────────────────────────────────────────
+export const triggerSync = () => api.post('/sync/now').then((r) => r.data);
+export const configureSyncRemote = (remote_url, token) =>
+  api.post('/sync/configure', { remote_url, token }).then((r) => r.data);
+
+// ── Audit Insights ───────────────────────────────────────────
+export const parseAuditFindings = (projectName, rawFindings, language = 'python') =>
+  api.post(`/platform/${projectName}/audit/parse`, {
+    raw_findings: rawFindings, project_name: projectName, language,
+  }).then((r) => r.data);
+
+export const applyAuditFix = (projectName, filePath, findingId, codeSnippet, suggestedFix, description = '') =>
+  api.post(`/platform/${projectName}/audit/fix`, {
+    project_name: projectName, file_path: filePath, finding_id: findingId,
+    code_snippet: codeSnippet, suggested_fix: suggestedFix, description,
+  }, { timeout: 60000 }).then((r) => r.data);
+
+async function _streamSSE(url, body, onToken, onDone, onError) {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Stream failed: ${res.statusText}`);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const parsed = JSON.parse(line.slice(6).trim());
+          if (parsed.token) onToken(parsed.token);
+          if (parsed.done) { onDone(); return; }
+        } catch { /* skip */ }
+      }
+    }
+    onDone();
+  } catch (err) {
+    onError(err.message);
+  }
+}
+
+export const streamAuditChat = (projectName, message, findings, findingId, onToken, onDone, onError) =>
+  _streamSSE(`${API_URL}/platform/${projectName}/audit/chat`, {
+    message, project_name: projectName, audit_findings: findings, finding_id: findingId,
+  }, onToken, onDone, onError);
+
+export const streamReviewChat = (projectName, message, reviewData, onToken, onDone, onError) =>
+  _streamSSE(`${API_URL}/platform/${projectName}/review/chat`, {
+    message, project_name: projectName, review_data: reviewData,
+  }, onToken, onDone, onError);

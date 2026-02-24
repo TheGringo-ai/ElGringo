@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FredAI Platform</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0f;
+            color: #e2e8f0;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        /* Subtle gradient background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background:
+                radial-gradient(ellipse at 20% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(16, 185, 129, 0.05) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 3rem 0 2rem;
+        }
+
+        .logo {
+            font-size: 3rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6, #10b981);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+        }
+
+        .tagline {
+            color: #94a3b8;
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+        }
+
+        .domain {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: 0.35rem 1rem;
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            color: #60a5fa;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+        }
+
+        /* Section headers */
+        .section-title {
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #64748b;
+            margin: 2.5rem 0 1rem;
+            padding-left: 0.25rem;
+        }
+
+        /* Card grid */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+            gap: 1rem;
+        }
+
+        .card {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(51, 65, 85, 0.5);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            border-color: rgba(99, 102, 241, 0.5);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .card-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #f1f5f9;
+        }
+
+        .card-path {
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-size: 0.75rem;
+            color: #64748b;
+        }
+
+        .card-desc {
+            color: #94a3b8;
+            font-size: 0.9rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .card-usage {
+            font-size: 0.8rem;
+            color: #64748b;
+            padding: 0.5rem 0.75rem;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 9999px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-left: auto;
+        }
+
+        .badge-ui { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+        .badge-api { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+        .badge-bot { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+
+        /* Icon colors */
+        .icon-blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+        .icon-purple { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+        .icon-green { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+        .icon-amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+        .icon-rose { background: rgba(244, 63, 94, 0.15); color: #fb7185; }
+        .icon-cyan { background: rgba(6, 182, 212, 0.15); color: #22d3ee; }
+        .icon-indigo { background: rgba(99, 102, 241, 0.15); color: #818cf8; }
+        .icon-teal { background: rgba(20, 184, 166, 0.15); color: #2dd4bf; }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 3rem 0 2rem;
+            color: #475569;
+            font-size: 0.85rem;
+        }
+
+        .footer-stats {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #e2e8f0;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Animations */
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .card { animation: fadeUp 0.4s ease-out both; }
+        .card:nth-child(1) { animation-delay: 0.05s; }
+        .card:nth-child(2) { animation-delay: 0.1s; }
+        .card:nth-child(3) { animation-delay: 0.15s; }
+        .card:nth-child(4) { animation-delay: 0.2s; }
+        .card:nth-child(5) { animation-delay: 0.25s; }
+        .card:nth-child(6) { animation-delay: 0.3s; }
+        .card:nth-child(7) { animation-delay: 0.35s; }
+        .card:nth-child(8) { animation-delay: 0.4s; }
+        .card:nth-child(9) { animation-delay: 0.45s; }
+
+        /* Mobile */
+        @media (max-width: 600px) {
+            .grid { grid-template-columns: 1fr; }
+            .logo { font-size: 2.2rem; }
+            .container { padding: 1rem; }
+            .header { padding: 2rem 0 1rem; }
+            .footer-stats { gap: 1.25rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">FredAI</div>
+            <p class="tagline">AI-Powered Development Platform</p>
+            <span class="domain">ai.chatterfix.com</span>
+        </header>
+
+        <div class="section-title">Dashboards</div>
+        <div class="grid">
+            <a href="/assistant/" class="card">
+                <div class="card-header">
+                    <div class="card-icon icon-blue">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 1 5 5v3a5 5 0 0 1-10 0V7a5 5 0 0 1 5-5z"/><path d="M17 10v1a5 5 0 0 1-10 0v-1"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
+                    </div>
+                    <div>
+                        <div class="card-title">Fred Assistant</div>
+                        <div class="card-path">/assistant/</div>
+                    </div>
+                    <span class="badge badge-ui">UI</span>
+                </div>
+                <div class="card-desc">Personal AI assistant with tasks, memory, chat, calendar, CRM, and project management.</div>
+                <div class="card-usage">68 tools &middot; All platform services integrated</div>
+            </a>
+
+            <a href="/command/" class="card">
+                <div class="card-header">
+                    <div class="card-icon icon-purple">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    </div>
+                    <div>
+                        <div class="card-title">Command Center</div>
+                        <div class="card-path">/command/</div>
+                    </div>
+                    <span class="badge badge-ui">UI</span>
+                </div>
+                <div class="card-desc">Sprint board, metrics, content queue, and team dashboard for managing development.</div>
+                <div class="card-usage">Kanban &middot; Metrics &middot; Content Queue</div>
+            </a>
+
+            <a href="/chat/" class="card">
+                <div class="card-header">
+                    <div class="card-icon icon-green">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    </div>
+                    <div>
+                        <div class="card-title">Chat UI</div>
+                        <div class="card-path">/chat/</div>
+                    </div>
+                    <span class="badge badge-ui">UI</span>
+                </div>
+                <div class="card-desc">Multi-model AI chat interface supporting GPT-4, Gemini, Grok, and Claude.</div>
+                <div class="card-usage">Gradio &middot; Multi-model routing</div>
+            </a>
+
+            <a href="/studio/" class="card">
+                <div class="card-header">
+                    <div class="card-icon icon-indigo">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/><line x1="14" y1="4" x2="10" y2="20"/></svg>
+                    </div>
+                    <div>
+                        <div class="card-title">Studio IDE</div>
+                        <div class="card-path">/studio/</div>
+                    </div>
+                    <span class="badge badge-ui">UI</span>
+                </div>
+                <div class="card-desc">Web-based code editor with AI-powered agents for writing, reviewing, and refactoring code.</div>
+                <div class="card-usage">Gradio &middot; AI code agents</div>
+            </a>
+        </div>
+
+        <div class="section-title">APIs &amp; Services</div>
+        <div class="grid">
+            <a href="/v1/health" class="card">
+                <div class="card-header">
+                    <div class="card-icon icon-teal">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    </div>
+                    <div>
+                        <div class="card-title">Fred API</div>
+                        <div class="card-path">/v1/</div>
+                    </div>
+                    <span class="badge badge-api">API</span>
+                </div>
+                <div class="card-desc">REST API for AI orchestration. Routes requests across all AI models with unified interface.</div>
+                <div class="card-usage">Authorization: Bearer &lt;FRED_API_KEY&gt;</div>
+            </a>
+
+            <a href="/audit/health" class="card">
+                <div class="card-header">
+                    <div class="card-icon icon-rose">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </div>
+                    <div>
+                        <div class="card-title">Code Audit</div>
+                        <div class="card-path">/audit/</div>
+                    </div>
+                    <span class="badge badge-api">API</span>
+                </div>
+                <div class="card-desc">Automated security and code quality analysis. Scans repos for vulnerabilities and anti-patterns.</div>
+                <div class="card-usage">Authorization: Bearer &lt;CODE_AUDIT_API_KEY&gt;</div>
+            </a>
+
+            <a href="/tests/health" class="card">
+                <div class="card-header">
+                    <div class="card-icon icon-cyan">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                    </div>
+                    <div>
+                        <div class="card-title">Test Generator</div>
+                        <div class="card-path">/tests/</div>
+                    </div>
+                    <span class="badge badge-api">API</span>
+                </div>
+                <div class="card-desc">AI-powered test generation. Analyzes code and produces comprehensive test suites automatically.</div>
+                <div class="card-usage">POST /tests/generate { "repo_url": "..." }</div>
+            </a>
+
+            <a href="/docs/health" class="card">
+                <div class="card-header">
+                    <div class="card-icon icon-amber">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    </div>
+                    <div>
+                        <div class="card-title">Doc Generator</div>
+                        <div class="card-path">/docs/</div>
+                    </div>
+                    <span class="badge badge-api">API</span>
+                </div>
+                <div class="card-desc">AI documentation generation. Creates READMEs, API docs, and architecture guides from code.</div>
+                <div class="card-usage">POST /docs/generate { "repo_url": "..." }</div>
+            </a>
+
+            <div class="card" style="cursor: default;">
+                <div class="card-header">
+                    <div class="card-icon icon-amber">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                    </div>
+                    <div>
+                        <div class="card-title">PR Review Bot</div>
+                        <div class="card-path">/webhook</div>
+                    </div>
+                    <span class="badge badge-bot">Bot</span>
+                </div>
+                <div class="card-desc">Automated pull request reviews via GitHub webhook. Analyzes diffs, suggests improvements, posts comments.</div>
+                <div class="card-usage">GitHub webhook &middot; Runs automatically on PR events</div>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <div class="footer-stats">
+                <div class="stat">
+                    <div class="stat-value">12</div>
+                    <div class="stat-label">Services</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">68</div>
+                    <div class="stat-label">AI Tools</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">5</div>
+                    <div class="stat-label">AI Models</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">399</div>
+                    <div class="stat-label">Tests Passing</div>
+                </div>
+            </div>
+            <p>FredAI Platform &copy; 2026 &middot; Built by the AI Team</p>
+        </footer>
+    </div>
+</body>
+</html>

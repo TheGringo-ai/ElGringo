@@ -4,13 +4,19 @@ import json
 import os
 
 from fastapi import APIRouter, Query
+from fastapi.responses import StreamingResponse
 
 from products.fred_assistant.models import (
     PlatformAuditRequest,
     PlatformDocsRequest,
     PRReviewCallback,
+    ParseFindingsRequest,
+    ApplyFixRequest,
+    AuditChatRequest,
+    ReviewChatRequest,
 )
 from products.fred_assistant.services import platform_services, repo_intelligence_service, task_service
+from products.fred_assistant.services import audit_insights_service
 from products.fred_assistant.services.fred_tools import _resolve_project_path, _read_project_files
 from products.fred_assistant.database import get_conn, log_activity
 
@@ -115,6 +121,58 @@ def list_service_results(
     return platform_services.get_recent_results(
         service=service, project_name=project_name, limit=limit,
     )
+
+
+@router.post("/{project_name}/audit/parse")
+async def parse_audit_findings(project_name: str, body: ParseFindingsRequest):
+    """Parse raw audit findings into structured JSON using AI."""
+    findings = await audit_insights_service.parse_audit_findings(
+        body.raw_findings, project_name, body.language,
+    )
+    return {"findings": findings, "project_name": project_name}
+
+
+@router.post("/{project_name}/audit/fix")
+async def apply_audit_fix(project_name: str, body: ApplyFixRequest):
+    """Apply an AI-suggested fix to a project file — reads file, patches intelligently, writes back."""
+    result = await audit_insights_service.apply_fix_to_file(
+        project_name, body.file_path, body.code_snippet, body.suggested_fix, body.description,
+    )
+    return {**result, "finding_id": body.finding_id}
+
+
+@router.post("/{project_name}/audit/chat")
+async def audit_chat(project_name: str, body: AuditChatRequest):
+    """Stream an AI response about audit findings."""
+    async def generate():
+        async for event in audit_insights_service.stream_audit_chat(
+            body.message, project_name, body.audit_findings, body.finding_id,
+        ):
+            event_type = event.get("type", "token")
+            event_data = event.get("data", "")
+            if event_type == "done":
+                yield f"data: {json.dumps({'token': '', 'done': True})}\n\n"
+            else:
+                yield f"data: {json.dumps({'token': event_data, 'done': False})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@router.post("/{project_name}/review/chat")
+async def review_chat(project_name: str, body: ReviewChatRequest):
+    """Stream an AI response about code review findings."""
+    async def generate():
+        async for event in audit_insights_service.stream_review_chat(
+            body.message, project_name, body.review_data,
+        ):
+            event_type = event.get("type", "token")
+            event_data = event.get("data", "")
+            if event_type == "done":
+                yield f"data: {json.dumps({'token': '', 'done': True})}\n\n"
+            else:
+                yield f"data: {json.dumps({'token': event_data, 'done': False})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @router.post("/pr-review-callback")

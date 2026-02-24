@@ -10,59 +10,33 @@ import os
 from datetime import date, datetime
 
 from products.fred_assistant.database import get_conn
-from products.fred_assistant.services import memory_service, task_service
-from products.fred_assistant.services.fred_tools import (
-    parse_actions,
-    strip_action_lines,
-    execute_actions,
-    get_tool_definitions,
-    MAX_ROUNDS,
-)
+from products.fred_assistant.services.llm_shared import get_gemini as _get_gemini, llm_response as _llm_response
 
 logger = logging.getLogger(__name__)
 
-# ── LLM Client (Gemini 2.5 Flash) ───────────────────────────────────
-
-_gemini_agent = None
-
-
-def _get_gemini():
-    """Lazy-init the Gemini agent."""
-    global _gemini_agent
-    if _gemini_agent is None:
-        try:
-            from ai_dev_team.agents.gemini import GeminiAgent
-            from ai_dev_team.agents.base import AgentConfig, ModelType
-
-            model = os.getenv("FRED_CHAT_MODEL", "gemini-2.5-flash")
-            _gemini_agent = GeminiAgent(AgentConfig(
-                name="fred",
-                model_type=ModelType.GEMINI,
-                role="AI Personal Assistant",
-                capabilities=["tasks", "memory", "planning", "code", "chat"],
-                model_name=model,
-                temperature=0.7,
-                max_tokens=4000,
-            ))
-        except Exception as e:
-            logger.warning("Gemini agent init failed: %s", e)
-    return _gemini_agent
+# Lazy imports to avoid circular dependency chains at startup
+_fred_tools_cache = None
 
 
-async def _llm_response(prompt: str, system_prompt: str) -> str:
-    """Get a response from the LLM. Returns empty string on failure."""
-    agent = _get_gemini()
-    if not agent:
-        return ""
-    try:
-        resp = await agent.generate_response(prompt, system_override=system_prompt)
-        if resp.error:
-            logger.warning("Gemini error: %s", resp.error)
-            return ""
-        return resp.content or ""
-    except Exception as e:
-        logger.warning("LLM call failed: %s", e)
-        return ""
+def _get_fred_tools():
+    global _fred_tools_cache
+    if _fred_tools_cache is None:
+        from products.fred_assistant.services import fred_tools
+        _fred_tools_cache = fred_tools
+    return _fred_tools_cache
+
+
+def _lazy_service(name):
+    import importlib
+    return importlib.import_module(f"products.fred_assistant.services.{name}")
+
+
+# Re-export fred_tools functions as lazy accessors
+def parse_actions(text): return _get_fred_tools().parse_actions(text)
+def strip_action_lines(text): return _get_fred_tools().strip_action_lines(text)
+async def execute_actions(actions): return await _get_fred_tools().execute_actions(actions)
+def get_tool_definitions(): return _get_fred_tools().get_tool_definitions()
+MAX_ROUNDS = 5  # Same as fred_tools.MAX_ROUNDS
 
 FRED_SYSTEM_PROMPT = """You are Fred, a highly capable AI personal assistant for Fred Taylor.
 You are the central brain of the FredAI platform — you command an entire AI dev team through your actions.
@@ -148,7 +122,7 @@ def _build_context(persona: str = "fred") -> str:
     parts.append(f"Today is {date.today().strftime('%A, %B %d, %Y')}.\n")
 
     # Dashboard stats
-    stats = task_service.get_dashboard_stats()
+    stats = _lazy_service("task_service").get_dashboard_stats()
     parts.append(f"## Current Status")
     parts.append(f"- Active tasks: {stats['total_tasks']}")
     parts.append(f"- In progress: {stats['in_progress']}")
@@ -158,7 +132,7 @@ def _build_context(persona: str = "fred") -> str:
     parts.append(f"- Streak: {stats['streak_days']} days\n")
 
     # Available boards
-    boards = task_service.list_boards()
+    boards = _lazy_service("task_service").list_boards()
     if boards:
         parts.append("## Boards")
         for b in boards:
@@ -166,7 +140,7 @@ def _build_context(persona: str = "fred") -> str:
         parts.append("")
 
     # Today's tasks
-    today_tasks = task_service.get_today_tasks()
+    today_tasks = _lazy_service("task_service").get_today_tasks()
     if today_tasks:
         parts.append("## Today's Tasks")
         for t in today_tasks[:15]:
@@ -274,7 +248,7 @@ def _build_context(persona: str = "fred") -> str:
         pass
 
     # Memories
-    memory_ctx = memory_service.get_context_for_chat()
+    memory_ctx = _lazy_service("memory_service").get_context_for_chat()
     if memory_ctx:
         parts.append(memory_ctx)
 
@@ -298,7 +272,7 @@ def _build_context_with_rag(user_message: str, persona: str = "fred") -> str:
     parts.append(f"Today is {date.today().strftime('%A, %B %d, %Y')}.\n")
 
     # Dashboard stats
-    stats = task_service.get_dashboard_stats()
+    stats = _lazy_service("task_service").get_dashboard_stats()
     parts.append(f"## Current Status")
     parts.append(f"- Active tasks: {stats['total_tasks']}")
     parts.append(f"- In progress: {stats['in_progress']}")
@@ -308,7 +282,7 @@ def _build_context_with_rag(user_message: str, persona: str = "fred") -> str:
     parts.append(f"- Streak: {stats['streak_days']} days\n")
 
     # Available boards
-    boards = task_service.list_boards()
+    boards = _lazy_service("task_service").list_boards()
     if boards:
         parts.append("## Boards")
         for b in boards:
@@ -316,7 +290,7 @@ def _build_context_with_rag(user_message: str, persona: str = "fred") -> str:
         parts.append("")
 
     # Today's tasks
-    today_tasks = task_service.get_today_tasks()
+    today_tasks = _lazy_service("task_service").get_today_tasks()
     if today_tasks:
         parts.append("## Today's Tasks")
         for t in today_tasks[:15]:
@@ -474,7 +448,7 @@ def _build_context_with_rag(user_message: str, persona: str = "fred") -> str:
 
     # Fallback: if RAG didn't provide memories, use old dump
     if not rag_used:
-        memory_ctx = memory_service.get_context_for_chat()
+        memory_ctx = _lazy_service("memory_service").get_context_for_chat()
         if memory_ctx:
             parts.append(memory_ctx)
 
@@ -688,10 +662,10 @@ async def stream_chat(message: str, persona: str = "fred"):
 def _fallback_response(message: str) -> str:
     """Basic response when the AI orchestrator is unavailable."""
     msg = message.lower()
-    stats = task_service.get_dashboard_stats()
+    stats = _lazy_service("task_service").get_dashboard_stats()
 
     if any(w in msg for w in ["task", "todo", "what should", "work on"]):
-        today = task_service.get_today_tasks()
+        today = _lazy_service("task_service").get_today_tasks()
         if today:
             lines = ["Here's what's on your plate today:"]
             for t in today[:5]:
@@ -737,8 +711,8 @@ async def generate_briefing() -> dict:
     import uuid
 
     today = date.today().isoformat()
-    stats = task_service.get_dashboard_stats()
-    today_tasks = task_service.get_today_tasks()
+    stats = _lazy_service("task_service").get_dashboard_stats()
+    today_tasks = _lazy_service("task_service").get_today_tasks()
 
     # Try AI-generated briefing
     try:
@@ -781,8 +755,8 @@ async def generate_shutdown() -> dict:
     import uuid
 
     today = date.today().isoformat()
-    stats = task_service.get_dashboard_stats()
-    today_tasks = task_service.get_today_tasks()
+    stats = _lazy_service("task_service").get_dashboard_stats()
+    today_tasks = _lazy_service("task_service").get_today_tasks()
 
     completed = [t for t in today_tasks if t.get("status") == "done"]
     incomplete = [t for t in today_tasks if t.get("status") != "done"]
@@ -838,7 +812,7 @@ def get_tomorrow_tasks() -> list[dict]:
         except (json.JSONDecodeError, TypeError):
             pass
     # Fallback: top 3 active tasks by priority
-    tasks = task_service.get_today_tasks()
+    tasks = _lazy_service("task_service").get_today_tasks()
     active = [t for t in tasks if t.get("status") != "done"]
     return sorted(active, key=lambda x: x.get("priority", 3))[:3]
 

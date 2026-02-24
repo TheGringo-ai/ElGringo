@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard, Brain, MessageCircle, FolderGit2,
   Calendar, FileText, TrendingUp, Timer, Users, BarChart3,
-  Inbox, BookOpen,
+  Inbox, BookOpen, Activity,
 } from 'lucide-react';
 import { fetchStats, fetchBoards, fetchInboxCount } from './api';
 import QuickCapture from './components/QuickCapture';
@@ -20,6 +20,7 @@ import CRMView from './components/CRMView';
 import CEOLensView from './components/CEOLensView';
 import InboxView from './components/InboxView';
 import PlaybookView from './components/PlaybookView';
+import UsageView from './components/UsageView';
 
 const NAV = [
   { id: 'today', label: 'Today', icon: LayoutDashboard },
@@ -33,6 +34,7 @@ const NAV = [
   { id: 'projects', label: 'Projects', icon: FolderGit2 },
   { id: 'content', label: 'Content', icon: FileText },
   { id: 'playbooks', label: 'Playbooks', icon: BookOpen },
+  { id: 'usage', label: 'AI Usage', icon: Activity },
   { id: 'memory', label: 'Memory', icon: Brain },
 ];
 
@@ -145,6 +147,7 @@ export default function App() {
           {view === 'projects' && !activeBoard && <ProjectsView />}
           {view === 'content' && !activeBoard && <ContentView />}
           {view === 'playbooks' && !activeBoard && <PlaybookView />}
+          {view === 'usage' && !activeBoard && <UsageView />}
           {view === 'memory' && !activeBoard && <MemoryPanel />}
           {activeBoard && <BoardView board={activeBoard} onRefresh={loadAll} />}
         </main>

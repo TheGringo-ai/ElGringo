@@ -13,9 +13,52 @@ import uuid
 from datetime import datetime, timedelta
 
 from products.fred_assistant.database import get_conn
-from products.fred_assistant.services import projects_service
 
 logger = logging.getLogger(__name__)
+
+_projects_service_cache = None
+
+
+def _projects_svc():
+    global _projects_service_cache
+    if _projects_service_cache is None:
+        from products.fred_assistant.services import projects_service
+        _projects_service_cache = projects_service
+    return _projects_service_cache
+
+
+# ── AI Review ────────────────────────────────────────────────────────
+
+def _get_review_agent():
+    from products.fred_assistant.services.llm_shared import get_gemini
+    return get_gemini()
+
+
+AI_REVIEW_PROMPT = """You are a senior code reviewer. Analyze this real code and produce specific, actionable findings.
+
+Project: {project_name}
+Tech stack: {tech_stack}
+Static analysis health score: {health_score}/100
+
+Source files:
+{code_content}
+
+Return ONLY a JSON array of findings. Each finding must have:
+- severity: "high" | "medium" | "low"
+- category: "security" | "testing" | "performance" | "architecture" | "quality" | "devops" | "documentation" | "dependencies"
+- title: specific, actionable title referencing actual code (NOT generic like "add tests")
+- detail: 2-3 sentences explaining the specific issue with file/function references
+- revenue_impact: "blocks launch" | "blocks sales" | null
+
+Focus on:
+1. Actual bugs or logic errors in the code
+2. Security vulnerabilities specific to this codebase
+3. Architecture problems (circular deps, god classes, tight coupling)
+4. Missing error handling in specific functions
+5. Performance issues in specific code paths
+
+Do NOT produce generic findings like "add tests" or "add CI/CD" — only findings specific to the actual code you see.
+Return 3-8 findings max. Return ONLY the JSON array."""
 
 PROJECTS_DIR = os.getenv("PROJECTS_DIR", os.path.expanduser("~/Development/Projects"))
 
@@ -407,10 +450,10 @@ def _resolve_repo_path(project_name: str) -> str | None:
     path = os.path.join(PROJECTS_DIR, project_name)
     if os.path.isdir(path):
         return path
-    clone_path = os.path.join(projects_service.CLONE_DIR, project_name)
+    clone_path = os.path.join(_projects_svc().CLONE_DIR, project_name)
     if os.path.isdir(clone_path):
         return clone_path
-    cloned = projects_service._ensure_clone(project_name)
+    cloned = _projects_svc()._ensure_clone(project_name)
     if cloned:
         return cloned
     return None
@@ -428,7 +471,7 @@ def analyze_repo(project_name: str, depth: str = "quick") -> dict:
         entries = set()
 
     # Tech stack (reuse existing)
-    tech_stack = projects_service.detect_tech_stack(path)
+    tech_stack = _projects_svc().detect_tech_stack(path)
 
     # Git health
     is_git = os.path.isdir(os.path.join(path, ".git"))
@@ -825,8 +868,8 @@ async def generate_roadmap(project_name: str) -> dict:
     return roadmap
 
 
-def review_repo(project_name: str) -> dict:
-    """Run a full code review — returns structured review with TODOs, action items, and summary."""
+async def review_repo(project_name: str) -> dict:
+    """Run a full code review — static analysis + AI review of actual code."""
     analysis = analyze_repo(project_name, depth="full")
     if "error" in analysis:
         return analysis
@@ -834,11 +877,11 @@ def review_repo(project_name: str) -> dict:
     findings = analysis["findings"]
     health_score = analysis["health_score"]
     tech_stack = analysis["tech_stack"]
+    path = analysis["project_path"]
 
     # Build TODO items from the todo_fixme scan
     todo_items = []
     for item in findings.get("todo_fixme", {}).get("items", []):
-        # Each item is "file:line: content"
         parts = item.split(":", 2)
         if len(parts) >= 3:
             todo_items.append({
@@ -852,91 +895,16 @@ def review_repo(project_name: str) -> dict:
         else:
             todo_items.append({"file": "", "line": "", "text": item[:150], "type": "TODO"})
 
-    # Build action items from findings
-    action_items = []
+    # ── AI-powered code review (reads actual files) ──────────────────
+    action_items = await _ai_review_code(path, project_name, tech_stack, health_score)
 
-    if findings.get("missing_tests", {}).get("count", 0) > 0:
-        action_items.append({
-            "severity": "high",
-            "category": "testing",
-            "title": "Add test infrastructure",
-            "detail": "No tests detected. Add pytest/jest and write initial test suite.",
-            "revenue_impact": "blocks launch",
-        })
-
-    ci = findings.get("missing_ci", {})
-    if not ci.get("detected", False):
-        action_items.append({
-            "severity": "medium",
-            "category": "devops",
-            "title": "Set up CI/CD pipeline",
-            "detail": "No CI/CD configuration. Add GitHub Actions or similar for automated testing/deploy.",
-            "revenue_impact": "blocks launch",
-        })
-
-    if not findings.get("missing_docs", {}).get("detected", False):
-        action_items.append({
-            "severity": "low",
-            "category": "documentation",
-            "title": "Add README documentation",
-            "detail": "No README.md found. Document setup, usage, and architecture.",
-            "revenue_impact": "blocks sales",
-        })
-
-    sec = findings.get("security_patterns", {})
-    if sec.get("count", 0) > 0:
-        action_items.append({
-            "severity": "high",
-            "category": "security",
-            "title": f"Fix {sec['count']} security concerns",
-            "detail": "Potential hardcoded secrets/keys:\n" + "\n".join(sec.get("items", [])[:3]),
-            "revenue_impact": "blocks launch",
-        })
-
-    dep = findings.get("dependency_issues", {})
-    if dep.get("count", 0) > 0:
-        action_items.append({
-            "severity": "medium",
-            "category": "dependencies",
-            "title": "Address dependency issues",
-            "detail": "\n".join(dep.get("items", [])[:3]),
-            "revenue_impact": None,
-        })
-
-    smells = findings.get("code_smells", {})
-    if smells.get("count", 0) > 0:
-        action_items.append({
-            "severity": "medium",
-            "category": "refactoring",
-            "title": f"Refactor {smells['count']} complex files",
-            "detail": "Files over 500 lines:\n" + "\n".join(smells.get("items", [])[:3]),
-            "revenue_impact": None,
-        })
-
-    large = findings.get("large_files", {})
-    if large.get("count", 0) > 0:
-        items_str = ", ".join(f"{i['file']} ({i['size_mb']}MB)" for i in large.get("items", [])[:3])
-        action_items.append({
-            "severity": "low",
-            "category": "optimization",
-            "title": f"Address {large['count']} large files",
-            "detail": items_str,
-            "revenue_impact": None,
-        })
-
-    dead = findings.get("dead_code_hints", {})
-    if dead.get("count", 0) > 0:
-        action_items.append({
-            "severity": "medium",
-            "category": "testing",
-            "title": "Improve test coverage",
-            "detail": "\n".join(dead.get("items", [])[:3]),
-            "revenue_impact": None,
-        })
+    # ── Fallback: append static findings if AI returned nothing ──────
+    if not action_items:
+        action_items = _static_action_items(findings)
 
     # Sort action items: high first, then medium, then low
     severity_order = {"high": 0, "medium": 1, "low": 2}
-    action_items.sort(key=lambda x: severity_order.get(x["severity"], 9))
+    action_items.sort(key=lambda x: severity_order.get(x.get("severity", "low"), 9))
 
     return {
         "analysis_id": analysis["id"],
@@ -951,6 +919,135 @@ def review_repo(project_name: str) -> dict:
         "findings": findings,
         "created_at": analysis["created_at"],
     }
+
+
+async def _ai_review_code(path: str, project_name: str, tech_stack: list, health_score: int) -> list[dict]:
+    """Read actual code files and use AI to find real issues."""
+    agent = _get_review_agent()
+    if not agent:
+        return []
+
+    # Lazy import to avoid circular dependency (fred_tools imports this module)
+    from products.fred_assistant.services.fred_tools import _read_project_files
+
+    # Read real source files
+    files = _read_project_files(path, max_files=8)
+    if not files:
+        return []
+
+    code_content = "\n\n".join(
+        f"### {f['path']} ({f['language']})\n```\n{f['content'][:2000]}\n```"
+        for f in files
+    )
+
+    prompt = AI_REVIEW_PROMPT.format(
+        project_name=project_name,
+        tech_stack=", ".join(tech_stack) or "unknown",
+        health_score=health_score,
+        code_content=code_content[:8000],
+    )
+
+    try:
+        resp = await agent.generate_response(prompt)
+        if resp.error or not resp.content:
+            logger.warning("AI review failed: %s", resp.error)
+            return []
+
+        # Parse JSON from response
+        cleaned = resp.content.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned.rsplit("```", 1)[0]
+        cleaned = cleaned.strip()
+
+        items = json.loads(cleaned)
+        if isinstance(items, list):
+            return items[:8]
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning("AI review JSON parse failed: %s", e)
+    except Exception as e:
+        logger.warning("AI review error: %s", e)
+
+    return []
+
+
+def _static_action_items(findings: dict) -> list[dict]:
+    """Fallback: build action items from static analysis when AI is unavailable."""
+    action_items = []
+
+    if findings.get("missing_tests", {}).get("count", 0) > 0:
+        action_items.append({
+            "severity": "high", "category": "testing",
+            "title": "Add test infrastructure",
+            "detail": "No tests detected. Add pytest/jest and write initial test suite.",
+            "revenue_impact": "blocks launch",
+        })
+
+    ci = findings.get("missing_ci", {})
+    if not ci.get("detected", False):
+        action_items.append({
+            "severity": "medium", "category": "devops",
+            "title": "Set up CI/CD pipeline",
+            "detail": "No CI/CD configuration. Add GitHub Actions or similar.",
+            "revenue_impact": "blocks launch",
+        })
+
+    if not findings.get("missing_docs", {}).get("detected", False):
+        action_items.append({
+            "severity": "low", "category": "documentation",
+            "title": "Add README documentation",
+            "detail": "No README.md found.",
+            "revenue_impact": "blocks sales",
+        })
+
+    sec = findings.get("security_patterns", {})
+    if sec.get("count", 0) > 0:
+        action_items.append({
+            "severity": "high", "category": "security",
+            "title": f"Fix {sec['count']} security concerns",
+            "detail": "Potential hardcoded secrets:\n" + "\n".join(sec.get("items", [])[:3]),
+            "revenue_impact": "blocks launch",
+        })
+
+    dep = findings.get("dependency_issues", {})
+    if dep.get("count", 0) > 0:
+        action_items.append({
+            "severity": "medium", "category": "dependencies",
+            "title": "Address dependency issues",
+            "detail": "\n".join(dep.get("items", [])[:3]),
+            "revenue_impact": None,
+        })
+
+    smells = findings.get("code_smells", {})
+    if smells.get("count", 0) > 0:
+        action_items.append({
+            "severity": "medium", "category": "refactoring",
+            "title": f"Refactor {smells['count']} complex files",
+            "detail": "Files over 500 lines:\n" + "\n".join(smells.get("items", [])[:3]),
+            "revenue_impact": None,
+        })
+
+    large = findings.get("large_files", {})
+    if large.get("count", 0) > 0:
+        items_str = ", ".join(f"{i['file']} ({i['size_mb']}MB)" for i in large.get("items", [])[:3])
+        action_items.append({
+            "severity": "low", "category": "optimization",
+            "title": f"Address {large['count']} large files",
+            "detail": items_str,
+            "revenue_impact": None,
+        })
+
+    dead = findings.get("dead_code_hints", {})
+    if dead.get("count", 0) > 0:
+        action_items.append({
+            "severity": "medium", "category": "testing",
+            "title": "Improve test coverage",
+            "detail": "\n".join(dead.get("items", [])[:3]),
+            "revenue_impact": None,
+        })
+
+    return action_items
 
 
 def _row_to_dict(row) -> dict:

@@ -184,6 +184,19 @@ def store_service_result(
     log_activity(f"service_result:{service}:{action}", "service_result", result_id, {
         "project_name": project_name,
     })
+    # Index in RAG (fire-and-forget)
+    try:
+        from products.fred_assistant.services.rag_service import get_rag
+        get_rag().index_service_result({
+            "id": result_id,
+            "service": service,
+            "action": action,
+            "project_name": project_name or "",
+            "input_summary": result_data.get("input_summary", ""),
+            "result": str(result_data)[:500],
+        })
+    except Exception:
+        pass
     return result_id
 
 

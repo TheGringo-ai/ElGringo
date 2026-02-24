@@ -73,6 +73,16 @@ app.include_router(playbooks_router)
 app.include_router(repo_intel_router)
 app.include_router(platform_router)
 
+# ── RAG background sync on startup ────────────────────────────────
+
+@app.on_event("startup")
+async def _startup_rag_sync():
+    try:
+        from products.fred_assistant.services.rag_service import start_background_sync
+        start_background_sync()
+    except Exception as e:
+        logger.warning("RAG sync not started: %s", e)
+
 # ── Static files (serve React build in production) ────────────────
 
 DIST_DIR = os.path.join(os.path.dirname(__file__), "frontend", "dist")

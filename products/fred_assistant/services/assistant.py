@@ -281,6 +281,206 @@ def _build_context(persona: str = "fred") -> str:
     return "\n".join(parts)
 
 
+def _build_context_with_rag(user_message: str, persona: str = "fred") -> str:
+    """Build context using RAG for semantic retrieval of memories/tasks/results.
+
+    Real-time sections (stats, boards, today's tasks, inbox, focus, CRM, platform)
+    stay exactly as in _build_context(). Only memories, backlog tasks, and service
+    results move to semantic retrieval.
+
+    Falls back to _build_context() if RAG is unavailable.
+    """
+    parts = []
+
+    # ── Real-time sections (identical to _build_context) ──────────
+
+    # Today's date
+    parts.append(f"Today is {date.today().strftime('%A, %B %d, %Y')}.\n")
+
+    # Dashboard stats
+    stats = task_service.get_dashboard_stats()
+    parts.append(f"## Current Status")
+    parts.append(f"- Active tasks: {stats['total_tasks']}")
+    parts.append(f"- In progress: {stats['in_progress']}")
+    parts.append(f"- Due today: {stats['due_today']}")
+    parts.append(f"- Overdue: {stats['overdue']}")
+    parts.append(f"- Completed today: {stats['completed_today']}")
+    parts.append(f"- Streak: {stats['streak_days']} days\n")
+
+    # Available boards
+    boards = task_service.list_boards()
+    if boards:
+        parts.append("## Boards")
+        for b in boards:
+            parts.append(f"- **{b['id']}**: {b['name']} ({b.get('task_count', 0)} active tasks)")
+        parts.append("")
+
+    # Today's tasks
+    today_tasks = task_service.get_today_tasks()
+    if today_tasks:
+        parts.append("## Today's Tasks")
+        for t in today_tasks[:15]:
+            status_icon = {"todo": "⬜", "in_progress": "🔵", "review": "🟡", "done": "✅"}.get(
+                t["status"], "⬜"
+            )
+            overdue = ""
+            if t.get("due_date") and t["due_date"] < date.today().isoformat() and t["status"] != "done":
+                overdue = " ⚠️ OVERDUE"
+            parts.append(f"- {status_icon} [{t['board_id']}] {t['title']} (P{t['priority']}){overdue}")
+        parts.append("")
+
+    # Goals context (especially for coach persona)
+    if persona == "coach":
+        try:
+            from products.fred_assistant.services import coach_service
+            goals = coach_service.list_goals(status="active")
+            if goals:
+                parts.append("## Active Goals")
+                for g in goals[:10]:
+                    parts.append(f"- {g['title']} ({g['category']}, {g['progress']}% complete)")
+                parts.append("")
+
+            review = coach_service.get_current_review()
+            if review and review.get("week_start"):
+                parts.append("## This Week's Review")
+                if review.get("wins"):
+                    parts.append(f"- Wins: {', '.join(review['wins'][:3])}")
+                if review.get("challenges"):
+                    parts.append(f"- Challenges: {', '.join(review['challenges'][:3])}")
+                parts.append("")
+        except Exception:
+            pass
+
+    # Inbox count
+    try:
+        from products.fred_assistant.services import inbox_service
+        inbox_count = inbox_service.get_inbox_count()
+        if inbox_count.get("total", 0) > 0:
+            parts.append(f"## Inbox: {inbox_count['total']} items needing attention")
+            for t, c in inbox_count.get("by_type", {}).items():
+                parts.append(f"- {t}: {c}")
+            parts.append("")
+    except Exception:
+        pass
+
+    # Active focus session
+    try:
+        from products.fred_assistant.services import focus_service
+        active = focus_service.get_active_session()
+        if active:
+            parts.append(f"## Active Focus Session")
+            parts.append(f"- Task: {active.get('task_title', 'None')}")
+            parts.append(f"- Started: {active['started_at'][:16]}")
+            parts.append(f"- Planned: {active['planned_minutes']} min")
+            parts.append("")
+    except Exception:
+        pass
+
+    # CRM summary
+    try:
+        from products.fred_assistant.services import crm_service
+        pipeline = crm_service.get_pipeline_summary()
+        if pipeline.get("total_leads", 0) > 0:
+            parts.append(f"## Pipeline: {pipeline['total_leads']} leads (${pipeline['total_pipeline_value']:,.0f} total)")
+            for stage, data in pipeline.get("stages", {}).items():
+                if data["count"] > 0:
+                    parts.append(f"- {stage}: {data['count']} (${data['total_value']:,.0f})")
+            parts.append("")
+    except Exception:
+        pass
+
+    # Platform services status
+    try:
+        from products.fred_assistant.services import platform_services
+        cached = platform_services.get_cached_status()
+        if cached:
+            online = sum(1 for s in cached.values() if s.get("healthy"))
+            total = len(cached)
+            parts.append(f"## Platform: {online}/{total} services online")
+            for name, s in cached.items():
+                status = "online" if s.get("healthy") else "offline"
+                parts.append(f"- {s.get('label', name)}: {status}")
+            parts.append("")
+    except Exception:
+        pass
+
+    # Recent PR reviews
+    try:
+        from products.fred_assistant.services import platform_services as ps
+        recent = ps.get_recent_results(service="pr_review", limit=3)
+        if recent:
+            parts.append("## Recent PR Reviews")
+            for r in recent:
+                import json as _json
+                try:
+                    data = _json.loads(r.get("result", "{}"))
+                except (ValueError, TypeError):
+                    data = {}
+                verdict = data.get("verdict", r.get("action", ""))
+                pr_num = data.get("pr_number", "")
+                parts.append(f"- {r.get('project_name', '?')} PR #{pr_num}: {verdict}")
+            parts.append("")
+    except Exception:
+        pass
+
+    # ── RAG sections (semantic retrieval replaces dump-everything) ──
+
+    rag_used = False
+    try:
+        from products.fred_assistant.services.rag_service import get_rag
+        rag = get_rag()
+        if rag.is_ready:
+            results = rag.query_for_context(user_message)
+
+            # Relevant memories
+            if results["memories"]:
+                rag_used = True
+                parts.append("## What I know about you (relevant):")
+                for item in results["memories"]:
+                    parts.append(f"- {item['document']}")
+                parts.append("")
+
+            # Relevant backlog tasks
+            if results["tasks"]:
+                rag_used = True
+                parts.append("## Related tasks:")
+                for item in results["tasks"]:
+                    meta = item.get("metadata", {})
+                    status = meta.get("status", "")
+                    board = meta.get("board_id", "")
+                    parts.append(f"- [{board}] {item['document']} ({status})")
+                parts.append("")
+
+            # Relevant service results
+            if results["service_results"]:
+                rag_used = True
+                parts.append("## Related platform results:")
+                for item in results["service_results"]:
+                    parts.append(f"- {item['document']}")
+                parts.append("")
+
+            # Relevant project knowledge
+            if results.get("projects"):
+                rag_used = True
+                parts.append("## Relevant project context:")
+                for item in results["projects"]:
+                    meta = item.get("metadata", {})
+                    project = meta.get("project", "")
+                    chunk = meta.get("chunk", "")
+                    parts.append(f"- [{project}/{chunk}] {item['document']}")
+                parts.append("")
+    except Exception:
+        pass
+
+    # Fallback: if RAG didn't provide memories, use old dump
+    if not rag_used:
+        memory_ctx = memory_service.get_context_for_chat()
+        if memory_ctx:
+            parts.append(memory_ctx)
+
+    return "\n".join(parts)
+
+
 def get_chat_messages(system_prompt: str = None, persona: str = "fred", limit: int = 20) -> list[dict]:
     """Get recent chat history formatted for LLM."""
     with get_conn() as conn:
@@ -306,6 +506,13 @@ def save_message(role: str, content: str, persona: str = "fred"):
             "INSERT INTO chat_messages (role, content, persona) VALUES (?,?,?)",
             (role, content, persona),
         )
+        msg_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    # Index in RAG (fire-and-forget)
+    try:
+        from products.fred_assistant.services.rag_service import get_rag
+        get_rag().index_chat_message(str(msg_id), role, content, persona)
+    except Exception:
+        pass
 
 
 def get_history(limit: int = 50) -> list[dict]:
@@ -400,7 +607,7 @@ async def chat(message: str, persona: str = "fred") -> str:
     save_message("user", message, persona)
 
     system_prompt = _build_system_prompt(persona)
-    context = _build_context(persona)
+    context = _build_context_with_rag(message, persona)
     user_prompt = f"{context}\n\nUser: {message}\nFred:"
 
     reply, action_results = await _run_action_loop(user_prompt, system_prompt, persona)
@@ -414,7 +621,7 @@ async def stream_chat(message: str, persona: str = "fred"):
     save_message("user", message, persona)
 
     system_prompt = _build_system_prompt(persona)
-    context = _build_context(persona)
+    context = _build_context_with_rag(message, persona)
     user_prompt = f"{context}\n\nUser: {message}\nFred:"
 
     all_results = []

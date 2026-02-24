@@ -48,13 +48,26 @@ def remember(category: str, key: str, value: str, context: str = "", importance:
                 (mem_id, category, key, value, context, importance, now, now),
             )
     log_activity("memory_stored", "memory", mem_id, {"category": category, "key": key})
-    return get_memory(mem_id)
+    mem = get_memory(mem_id)
+    # Index in RAG (fire-and-forget)
+    try:
+        from products.fred_assistant.services.rag_service import get_rag
+        get_rag().index_memory(mem)
+    except Exception:
+        pass
+    return mem
 
 
 def forget(memory_id: str):
     with get_conn() as conn:
         conn.execute("DELETE FROM memories WHERE id=?", (memory_id,))
     log_activity("memory_deleted", "memory", memory_id)
+    # Remove from RAG (fire-and-forget)
+    try:
+        from products.fred_assistant.services.rag_service import get_rag
+        get_rag().delete_memory(memory_id)
+    except Exception:
+        pass
 
 
 def search_memories(query: str, limit: int = 10):

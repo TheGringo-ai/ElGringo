@@ -126,7 +126,14 @@ def create_task(data: dict) -> dict:
             ),
         )
     log_activity("task_created", "task", task_id, {"title": data["title"]})
-    return get_task(task_id)
+    task = get_task(task_id)
+    # Index in RAG (fire-and-forget)
+    try:
+        from products.fred_assistant.services.rag_service import get_rag
+        get_rag().index_task(task)
+    except Exception:
+        pass
+    return task
 
 
 def update_task(task_id: str, data: dict) -> dict:
@@ -151,13 +158,26 @@ def update_task(task_id: str, data: dict) -> dict:
     with get_conn() as conn:
         conn.execute(f"UPDATE tasks SET {','.join(sets)} WHERE id=?", params)
     log_activity("task_updated", "task", task_id, data)
-    return get_task(task_id)
+    task = get_task(task_id)
+    # Index in RAG: index if active, delete if done (fire-and-forget)
+    try:
+        from products.fred_assistant.services.rag_service import get_rag
+        get_rag().index_task(task)
+    except Exception:
+        pass
+    return task
 
 
 def delete_task(task_id: str):
     with get_conn() as conn:
         conn.execute("DELETE FROM tasks WHERE id=?", (task_id,))
     log_activity("task_deleted", "task", task_id)
+    # Remove from RAG (fire-and-forget)
+    try:
+        from products.fred_assistant.services.rag_service import get_rag
+        get_rag().delete_task(task_id)
+    except Exception:
+        pass
 
 
 def get_today_tasks():

@@ -1,0 +1,320 @@
+# Fred AI Ecosystem — Project Manifest
+# Indexed into RAG on startup so the AI team stays on task.
+# Update this file when projects change scope, features, or status.
+
+projects:
+
+  chatterfix:
+    name: ChatterFix CMMS
+    status: production
+    domain: https://chatterfix.com
+    repo: https://github.com/TheGringo-ai/Chatterfix
+    location: /Users/fredtaylor/Development/Projects/ChatterFix/
+    vm: Google Cloud Run
+    intention: >
+      AI-powered maintenance management system built for field technicians, not office workers.
+      Hands-free operation through voice commands, OCR scanning, and natural language AI.
+      The flagship product of the Fred AI ecosystem.
+    tech_stack:
+      backend: Python 3.11+, FastAPI, Firestore, Cloud Run
+      frontend: React Native mobile, Jinja2 web templates
+      ai: Google Gemini, multi-model orchestration
+      auth: Firebase Auth
+      storage: Google Cloud Storage, Firestore (42+ collections)
+    features:
+      - Voice command work order creation (hands-free for technicians)
+      - OCR-powered document scanning
+      - AI-assisted maintenance diagnosis and insights
+      - Multi-tenant organization isolation
+      - Training module system for technician onboarding
+      - Real-time notifications and alerts
+      - Asset management with QR code support
+      - Parts inventory and vendor management
+      - Work order lifecycle (create, assign, complete, audit)
+      - Preventive maintenance scheduling
+    roadmap:
+      - AR-guided repair instructions
+      - Predictive maintenance via IoT sensor data
+      - Voice-to-work-order pipeline improvements
+      - Mobile offline mode with sync
+    principles:
+      - Technician-first, not manager-first
+      - Hands-free is the default interaction mode
+      - Safety-aware — professional tone in all outputs
+      - Multi-tenant isolation is non-negotiable
+
+  managers_dashboard:
+    name: Managers Dashboard
+    status: production
+    domain: https://dashboard.chatterfix.com
+    repo: https://github.com/TheGringo-ai/ManagersDashboard
+    location: /Users/fredtaylor/Development/Projects/work/managers-dashboard/
+    vm: 136.113.48.166 (e2-medium)
+    intention: >
+      Multi-tenant CMMS analytics and auditing dashboard for maintenance managers.
+      Provides KPI tracking, equipment health scoring, technician performance,
+      and AI-powered audit reporting. The analytics brain of ChatterFix.
+    tech_stack:
+      backend: Python 3.11+, FastAPI (21 routers, 70+ endpoints)
+      frontend: React 18, Vite, Tailwind CSS (30+ tabs)
+      ai: OpenAI GPT-4, Gemini, Groq for audit analysis
+      auth: Firebase Auth + PIN login
+      storage: Firestore, Google Cloud Storage
+      cicd: GitHub Actions → SCP → systemd
+    features:
+      - Dashboard analytics with KPI tracking and trend analysis
+      - 5-factor equipment health scoring (repairs, overdue, backlog, cost, workload)
+      - Technician performance metrics and team comparisons
+      - Automated CMMS compliance auditing vs industry benchmarks
+      - AI-generated PDF audit reports with charts
+      - Multi-tenant per-client data isolation
+      - Role-based access (super_admin, admin, manager, viewer)
+      - Client portal for self-service non-admin users
+      - Real-time notifications (overdue, PM reminders, audit alerts)
+      - AI chat sidebar for natural language data queries
+      - Work order cost analysis and budgeting
+      - Preventive maintenance schedule generation
+    roadmap:
+      - Dynamic dashboard builder (drag-and-drop widgets)
+      - Intelligent alerts with ML anomaly detection
+      - Cross-client benchmarking reports
+      - Mobile-responsive redesign
+    principles:
+      - This is NOT ChatterFix — separate product, separate codebase
+      - clientApi paths never include /api/ prefix (interceptors add it)
+      - PIN auth uses bcrypt hashing (DASHBOARD_PIN_HASH env var)
+      - Dark mode must always be tested before deploy
+
+  fredai:
+    name: FredAI Platform
+    status: production
+    domain: https://ai.chatterfix.com
+    repo: https://github.com/TheGringo-ai/FredAI
+    location: /Users/fredtaylor/Development/Projects/FredAI/
+    vm: 34.61.174.254 (fredai-vm, e2-medium, Debian 12)
+    intention: >
+      Advanced multi-agent AI orchestration platform. The brain of the entire ecosystem.
+      Coordinates ChatGPT, Gemini, Grok, Claude, and local models. Routes tasks to
+      optimal models, runs analysis in parallel, synthesizes responses, and learns from
+      every interaction to prevent repeated mistakes.
+    tech_stack:
+      backend: Python 3.9+, AutoGen framework (enhanced)
+      models: OpenAI GPT-4, Gemini 2.5 Flash, Grok 3, Claude, Ollama, LlamaCloud
+      infrastructure: Firestore for memory, Redis for caching
+      interfaces: CLI, REST API, MCP Server (28 tools), Gradio UI
+      learning: Tiered memory (hot/warm/cold), mistake prevention, solution patterns
+    features:
+      - 8 collaboration modes (parallel, consensus, debate, peer review, brainstorm, etc.)
+      - Intelligent model routing based on task type, complexity, and cost
+      - Weighted response synthesis using confidence scores
+      - Fred Assistant — local AI personal assistant (tasks, memory, boards, calendar, CRM)
+      - GitHub PR review bot with multi-agent structured output
+      - Code audit service (security scanning)
+      - Test generation service
+      - Documentation generation service
+      - FredFix security scanner with auto-fix
+      - 28 MCP tools for Claude Code integration
+      - Tiered memory with TF-IDF search and auto-deduplication
+      - Code RAG for codebase-aware retrieval
+      - 12 services running on dedicated VM
+    roadmap:
+      - Local RAG with ChromaDB for semantic context (IN PROGRESS)
+      - Agent-to-agent delegation (Fred dispatches to specialists)
+      - Cost optimization dashboard
+      - Multi-project memory sharing
+    principles:
+      - Fred Assistant is the central hub connecting all services
+      - Every mistake must be logged and prevented from recurring
+      - All AI responses go through quality scoring
+      - Platform services communicate via localhost HTTP
+
+  fix_it_fred:
+    name: Fix It Fred
+    status: production
+    domain: https://fixitfred.app
+    repo: https://github.com/TheGringo-ai/FixItFred
+    location: /Users/fredtaylor/Development/Projects/FixItFred/
+    vm: Google Cloud Run
+    intention: >
+      AI-powered DIY troubleshooting and home repair assistant for homeowners.
+      Diagnoses problems, finds parts at best prices, manages repair projects,
+      and teaches repair techniques. The consumer-facing product.
+    tech_stack:
+      backend: Python, FastAPI, Cloud Run
+      frontend: React 18 + TypeScript, Styled Components
+      ai: OpenAI GPT-4, Gemini
+      auth: Firebase Authentication
+      storage: Firestore, Firebase Storage
+    features:
+      - AI-powered step-by-step troubleshooting with image recognition
+      - Multi-retailer price comparison (Home Depot, Amazon, Lowe's, O'Reilly's)
+      - Project management with timeline tracking and budget management
+      - Home asset inventory with warranty tracking and maintenance scheduling
+      - Interactive DIY tutorials and video integration
+      - Expert network for connecting with verified contractors
+      - QR code integration for asset identification
+      - Real-time inventory checking with direct retail links
+    roadmap:
+      - AR overlay for visual repair guidance
+      - Community forums and shared repair knowledge
+      - Subscription tier for premium diagnostics
+      - Integration with ChatterFix for pro referrals
+    principles:
+      - Consumer-friendly language (no jargon)
+      - Safety warnings always shown for electrical/gas/structural work
+      - Price transparency — always show multiple retailer options
+      - Never auto-purchase — user always confirms
+
+  linesmart:
+    name: LineSmart Training Platform
+    status: development
+    domain: Google Cloud Run
+    location: /Users/fredtaylor/Development/Projects/linesmartcl/
+    intention: >
+      AI-powered training platform for manufacturing and industrial environments.
+      Adaptive learning pathways, competency tracking, and performance analytics
+      to close skill gaps on the production floor.
+    tech_stack:
+      frontend: React
+      backend: Cloud Run (serverless)
+      database: Firestore
+      infrastructure: Google Cloud Platform
+    features:
+      - Adaptive learning pathways that adjust to learner performance
+      - Skill gap analysis and competency tracking
+      - Performance analytics dashboard
+      - Content optimization based on engagement metrics
+      - Manufacturing-specific training modules
+      - Compliance training tracking
+    roadmap:
+      - AR/VR immersive training modules
+      - Integration with ChatterFix for on-the-job training triggers
+      - Multilingual content support
+      - Certification management
+    principles:
+      - Manufacturing floor context — mobile-first, quick sessions
+      - Skill-based progression, not time-based
+      - Analytics drive content improvement
+
+  safetyfix:
+    name: SafetyFix
+    status: development
+    repo: https://github.com/TheGringo-ai/SafetyFix
+    location: /Users/fredtaylor/Development/Projects/SafetyFix/
+    intention: >
+      AI-powered workplace safety management system. Transforms safety from reactive
+      incident tracking to proactive hazard prevention using AI, IoT, and mobile-first
+      design. Targets OSHA, ISO 45001 compliance.
+    tech_stack:
+      backend: Python 3.12+, FastAPI, PostgreSQL, Firestore, Redis, Celery
+      frontend: React Native (iOS/Android), React web dashboard, PWA
+      ai: Google Vertex AI, TensorFlow/PyTorch, Cloud Vision, Speech-to-Text
+      infrastructure: GCP, Kubernetes (GKE), Cloud Run, Pub/Sub, BigQuery
+    features:
+      - Multi-channel incident reporting (voice, photo, text)
+      - CAPA tracking and OSHA reporting automation
+      - AI-suggested corrective actions for inspections
+      - Risk assessment with JSA/JHA and AI scoring
+      - SafetyFred AI Coach — 24/7 safety advisor with voice
+      - Predictive hazard detection via ML models
+      - Computer vision PPE compliance checking
+      - Smart risk scoring
+      - Document control (SDS/MSDS, permits)
+      - Real-time analytics dashboard
+    roadmap:
+      - IoT sensor integration (wearables, environmental)
+      - Integration with ChatterFix CMMS for auto work orders
+      - HR system integrations (Workday, ADP, BambooHR)
+      - ERP integrations (SAP, Oracle)
+    principles:
+      - Safety is non-negotiable — never downplay risks
+      - Compliance standards drive feature priorities
+      - Offline capability is required for field use
+      - Integration with ChatterFix is a key differentiator
+
+  artproof:
+    name: ArtProof Studio v2
+    status: development
+    location: /Users/fredtaylor/Development/Projects/artproof/
+    intention: >
+      NFT certificate of authenticity generator for physical and digital artworks
+      on Polygon blockchain. Professional photo processing, AI-assisted metadata,
+      and decentralized storage for art authentication.
+    tech_stack:
+      backend: Node.js/Express, Python (image processing)
+      frontend: React + TypeScript, Styled Components
+      blockchain: Polygon, Solidity, ERC-721
+      database: MongoDB
+      storage: IPFS via NFT.Storage
+      ai: OpenAI ChatGPT for descriptions
+    features:
+      - Advanced photo processing with AI enhancement and background removal
+      - Professional certificate template customization
+      - Master NFT image optimization for blockchain
+      - ChatGPT-assisted artwork descriptions and metadata
+      - IPFS decentralized storage for permanence
+      - Low-cost Polygon minting
+      - Artist verification system
+      - Marketing flyer generation
+      - OpenSea-compatible metadata output
+    roadmap:
+      - Multi-chain support (Ethereum, Solana)
+      - Gallery marketplace integration
+      - Provenance tracking chain
+      - Bulk minting for collections
+    principles:
+      - Art authenticity is sacred — no shortcuts
+      - Gas costs must stay low (Polygon priority)
+      - Artist owns their data — decentralized storage only
+
+  freddy_mac_ide:
+    name: Freddy Mac IDE
+    status: development
+    location: /Users/fredtaylor/Development/Projects/freddy-mac-ide/
+    intention: >
+      Web-based IDE with multi-AI integration for the Fred AI ecosystem.
+      Code editing, AI team collaboration, semantic search, and project management
+      all in one development environment.
+    tech_stack:
+      frontend: React, Node.js 18+
+      ai: Multi-provider (OpenAI, Claude, Gemini, Grok, Ollama)
+    features:
+      - Multi-AI provider integration (5+ simultaneously)
+      - 6 specialized AI agents (architect, frontend, backend, reviewer, creative, PM)
+      - Code editor with syntax highlighting and auto-completion
+      - File explorer and project navigation
+      - AI terminal for natural language commands
+      - Semantic search across projects
+      - Code diff visualization
+    roadmap:
+      - Git integration (commit, branch, merge from IDE)
+      - Live preview for web projects
+      - Collaborative editing
+      - Plugin system for custom tools
+    principles:
+      - AI assistance should augment, not replace developer judgment
+      - Multi-model consensus for important decisions
+      - Local-first — works offline with Ollama
+
+  ai_repo_review:
+    name: AI Repo Review
+    status: ready
+    location: /Users/fredtaylor/Development/Projects/ai-repo-review/
+    intention: >
+      Static analysis tool for Python repositories. Detects security issues,
+      code quality problems, and deprecated patterns without executing code.
+      Used to audit all Fred ecosystem projects.
+    tech_stack:
+      core: Python, static analysis only
+    features:
+      - Security detection (hardcoded secrets, API keys, eval/exec, pickle)
+      - Code quality analysis (bare excepts, deprecated patterns, missing type hints)
+      - Dependency vulnerability scanning
+      - No code execution — pure static analysis
+      - No external calls — fully local
+      - No data retention — reports only
+    principles:
+      - Never execute analyzed code
+      - Never make external calls during analysis
+      - Report findings for human review only — no auto-fixes
+      - False positive rate matters — precision over recall

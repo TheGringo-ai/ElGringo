@@ -27,6 +27,8 @@ flask-cors>=4.0.0
 # ML Intelligence (optional) - pip install ai-team-platform[ml]
 sentence-transformers>=2.2.0  # Code embeddings
 numpy>=1.24.0                  # Array operations
+chromadb>=0.4.0                # Local vector DB for RAG
+PyYAML>=6.0                    # Project manifest parsing
 
 # Apple Silicon MLX (Mac only) - pip install ai-team-platform[mlx]
 mlx>=0.4.0                     # Apple ML framework

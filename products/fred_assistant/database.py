@@ -348,6 +348,56 @@ def init_db():
             ('twitter', 'twitter', '', 'X / Twitter', 0),
             ('github', 'github', 'TheGringo-ai', 'GitHub', 1),
             ('youtube', 'youtube', '', 'YouTube', 0);
+
+        -- App Factory: app registry
+        CREATE TABLE IF NOT EXISTS apps (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            app_type TEXT DEFAULT 'fullstack',
+            tech_stack TEXT DEFAULT '{}',
+            spec TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'draft',
+            repo_url TEXT DEFAULT '',
+            deploy_url TEXT DEFAULT '',
+            port INTEGER DEFAULT 0,
+            project_dir TEXT DEFAULT '',
+            error_message TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- App Factory: build pipeline steps
+        CREATE TABLE IF NOT EXISTS app_builds (
+            id TEXT PRIMARY KEY,
+            app_id TEXT NOT NULL,
+            version INTEGER DEFAULT 1,
+            step TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            log TEXT DEFAULT '',
+            started_at TEXT,
+            completed_at TEXT,
+            FOREIGN KEY (app_id) REFERENCES apps(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_app_builds_app ON app_builds(app_id);
+
+        -- App Factory: customer tracking per app
+        CREATE TABLE IF NOT EXISTS app_customers (
+            id TEXT PRIMARY KEY,
+            app_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            email TEXT DEFAULT '',
+            plan TEXT DEFAULT 'free',
+            stripe_customer_id TEXT DEFAULT '',
+            stripe_subscription_id TEXT DEFAULT '',
+            mrr REAL DEFAULT 0,
+            status TEXT DEFAULT 'trial',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (app_id) REFERENCES apps(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_app_customers_app ON app_customers(app_id);
         """)
 
         # Idempotent ALTER TABLE migrations

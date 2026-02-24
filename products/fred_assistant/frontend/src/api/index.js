@@ -273,3 +273,38 @@ export const streamReviewChat = (projectName, message, reviewData, onToken, onDo
   _streamSSE(`${API_URL}/platform/${projectName}/review/chat`, {
     message, project_name: projectName, review_data: reviewData,
   }, onToken, onDone, onError);
+
+// ── App Factory ────────────────────────────────────────────────
+export const fetchFactoryApps = () => api.get('/factory/apps').then((r) => r.data);
+export const createFactoryApp = (data) => api.post('/factory/apps', data).then((r) => r.data);
+export const fetchFactoryApp = (id) => api.get(`/factory/apps/${id}`).then((r) => r.data);
+export const updateFactoryApp = (id, data) => api.patch(`/factory/apps/${id}`, data).then((r) => r.data);
+export const generateFactoryApp = (id, data = {}) =>
+  api.post(`/factory/apps/${id}/generate`, data, { timeout: 120000 }).then((r) => r.data);
+export const buildFactoryApp = (id) =>
+  api.post(`/factory/apps/${id}/build`, {}, { timeout: 300000 }).then((r) => r.data);
+export const deployFactoryApp = (id) =>
+  api.post(`/factory/apps/${id}/deploy`).then((r) => r.data);
+export const archiveFactoryApp = (id) => api.delete(`/factory/apps/${id}`);
+export const fetchFactoryBuilds = (id) => api.get(`/factory/apps/${id}/builds`).then((r) => r.data);
+export const fetchFactoryTemplates = () => api.get('/factory/templates').then((r) => r.data);
+export const fetchFactoryPortfolio = () => api.get('/factory/portfolio').then((r) => r.data);
+
+// ── Factory File Browser ──────────────────────────────────────
+export const fetchFactoryFiles = (id, path = '') =>
+  api.get(`/factory/apps/${id}/files`, { params: { path } }).then((r) => r.data);
+export const readFactoryFile = (id, path) =>
+  api.get(`/factory/apps/${id}/files/read`, { params: { path } }).then((r) => r.data);
+export const writeFactoryFile = (id, path, content) =>
+  api.put(`/factory/apps/${id}/files/write`, { content }, { params: { path } }).then((r) => r.data);
+export const createFactoryFile = (id, path, content = '') =>
+  api.post(`/factory/apps/${id}/files/create`, { path, content }).then((r) => r.data);
+export const deleteFactoryFile = (id, path) =>
+  api.delete(`/factory/apps/${id}/files/delete`, { params: { path } }).then((r) => r.data);
+export const renameFactoryFile = (id, oldPath, newPath) =>
+  api.post(`/factory/apps/${id}/files/rename`, { old_path: oldPath, new_path: newPath }).then((r) => r.data);
+export const exportFactoryApp = (id) => `${API_URL}/factory/apps/${id}/export`;
+
+// ── Billing ────────────────────────────────────────────────────
+export const createBillingCustomer = (data) => api.post('/billing/customers', data).then((r) => r.data);
+export const fetchBillingRevenue = () => api.get('/billing/revenue').then((r) => r.data);

@@ -526,3 +526,91 @@ class ReviewChatRequest(BaseModel):
     message: str
     project_name: str
     review_data: dict = {}
+
+
+# ── App Factory ──────────────────────────────────────────────────
+
+class AppOut(BaseModel):
+    id: str
+    name: str
+    display_name: str
+    description: str = ""
+    app_type: str = "fullstack"
+    tech_stack: dict = {}
+    spec: dict = {}
+    status: str = "draft"
+    repo_url: str = ""
+    deploy_url: str = ""
+    port: int = 0
+    project_dir: str = ""
+    error_message: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class AppCreate(BaseModel):
+    name: str
+    display_name: Optional[str] = None
+    description: str = ""
+    app_type: str = "fullstack"
+    tech_stack: dict = {}
+    template: Optional[str] = None
+
+
+class AppUpdate(BaseModel):
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    app_type: Optional[str] = None
+    tech_stack: Optional[dict] = None
+    repo_url: Optional[str] = None
+
+
+class AppGenerateRequest(BaseModel):
+    enrich: bool = True
+    template: Optional[str] = None
+
+
+class AppBuildOut(BaseModel):
+    id: str
+    app_id: str
+    version: int = 1
+    step: str
+    status: str = "pending"
+    log: str = ""
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class AppCustomerCreate(BaseModel):
+    app_id: str
+    name: str
+    email: str = ""
+    plan: str = "free"
+
+
+class AppCustomerOut(BaseModel):
+    id: str
+    app_id: str
+    name: str
+    email: str = ""
+    plan: str = "free"
+    stripe_customer_id: str = ""
+    stripe_subscription_id: str = ""
+    mrr: float = 0
+    status: str = "trial"
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class FileWriteRequest(BaseModel):
+    content: str
+
+
+class FileCreateRequest(BaseModel):
+    path: str
+    content: str = ""
+
+
+class FileRenameRequest(BaseModel):
+    old_path: str
+    new_path: str

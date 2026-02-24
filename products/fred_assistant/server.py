@@ -55,6 +55,8 @@ from products.fred_assistant.routers.repo_intel import router as repo_intel_rout
 from products.fred_assistant.routers.platform import router as platform_router
 from products.fred_assistant.routers.usage import router as usage_router
 from products.fred_assistant.routers.sync import router as sync_router
+from products.fred_assistant.routers.factory import router as factory_router
+from products.fred_assistant.routers.billing import router as billing_router
 
 app.include_router(health_router)
 app.include_router(boards_router)
@@ -76,6 +78,8 @@ app.include_router(repo_intel_router)
 app.include_router(platform_router)
 app.include_router(usage_router)
 app.include_router(sync_router)
+app.include_router(factory_router)
+app.include_router(billing_router)
 
 # ── Background sync task (every 5 min when configured) ────────────
 

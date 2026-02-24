@@ -6,8 +6,10 @@ Clones repos on-demand for git details (branches, commits).
 """
 
 import os
+import shutil
 import subprocess
 import logging
+import tarfile
 import time
 
 import httpx
@@ -64,6 +66,24 @@ GH_LANGUAGE_MAP = {
     "HTML": "HTML",
     "CSS": "CSS",
 }
+
+
+# Known deploy URLs for projects
+DEPLOY_URLS = {
+    "managers-dashboard": "https://dashboard.chatterfix.com",
+    "ManagersDashboard": "https://dashboard.chatterfix.com",
+    "FredAI": "https://ai.chatterfix.com",
+}
+
+# Text-like extensions for file browser
+_TEXT_EXTS = {
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css", ".json", ".yaml",
+    ".yml", ".md", ".txt", ".toml", ".cfg", ".ini", ".env", ".sh", ".bash",
+    ".sql", ".xml", ".csv", ".dockerfile", ".service", ".conf", ".gitignore",
+    ".lock", ".log",
+}
+
+_MAX_READ_SIZE = 512_000
 
 
 def _git(repo_path: str, *args, timeout: int = 5) -> str:
@@ -136,6 +156,8 @@ def get_project_info(path: str) -> dict:
         "last_commit_date": None,
         "tech_stack": detect_tech_stack(path),
         "remote_url": None,
+        "repo_html_url": "",
+        "deploy_url": DEPLOY_URLS.get(name, ""),
     }
 
     if info["is_git"]:
@@ -155,8 +177,21 @@ def get_project_info(path: str) -> dict:
         remote = _git(path, "remote", "get-url", "origin")
         if remote:
             info["remote_url"] = remote
+            info["repo_html_url"] = _remote_to_html_url(remote)
 
     return info
+
+
+def _remote_to_html_url(remote: str) -> str:
+    """Convert a git remote URL to a GitHub HTML URL."""
+    url = remote.strip()
+    # git@github.com:user/repo.git → https://github.com/user/repo
+    if url.startswith("git@github.com:"):
+        url = "https://github.com/" + url[len("git@github.com:"):]
+    # strip .git suffix
+    if url.endswith(".git"):
+        url = url[:-4]
+    return url
 
 
 # ── GitHub API ───────────────────────────────────────────────────────
@@ -224,8 +259,12 @@ def _gh_repo_to_project(repo: dict) -> dict:
     if is_cloned:
         tech_stack = detect_tech_stack(local_path) or tech_stack
 
+    clone_url = repo.get("clone_url", "")
+    html_url = repo.get("html_url", "")
+    repo_name = repo["name"]
+
     return {
-        "name": repo["name"],
+        "name": repo_name,
         "path": local_path if is_cloned else "",
         "is_git": True,
         "git_branch": repo.get("default_branch", "main"),
@@ -234,7 +273,9 @@ def _gh_repo_to_project(repo: dict) -> dict:
         "last_commit_msg": None,
         "last_commit_date": (repo.get("pushed_at") or "")[:10] or None,
         "tech_stack": tech_stack,
-        "remote_url": repo.get("clone_url", ""),
+        "remote_url": clone_url,
+        "repo_html_url": html_url or _remote_to_html_url(clone_url),
+        "deploy_url": DEPLOY_URLS.get(repo_name, ""),
         "description": repo.get("description", ""),
         "private": repo.get("private", False),
         "stars": repo.get("stargazers_count", 0),
@@ -394,3 +435,433 @@ def get_branches(path_or_name: str) -> list[dict]:
         if name:
             branches.append({"name": name, "current": name == current})
     return branches
+
+
+# ── File Browser ─────────────────────────────────────────────────────
+
+
+def _resolve_project_path(project_name: str) -> str:
+    """Resolve project name to its absolute directory path."""
+    # Check local projects dir
+    local_path = os.path.join(PROJECTS_DIR, project_name)
+    if os.path.isdir(local_path):
+        return local_path
+    # Check clone dir
+    clone_path = os.path.join(CLONE_DIR, project_name)
+    if os.path.isdir(clone_path):
+        return clone_path
+    # Try cloning from GitHub
+    cloned = _ensure_clone(project_name)
+    if cloned:
+        return cloned
+    raise FileNotFoundError(f"Project not found: {project_name}")
+
+
+def _safe_path(base_dir: str, rel_path: str) -> str:
+    """Prevent path traversal — normpath + startswith check."""
+    resolved = os.path.normpath(os.path.join(base_dir, rel_path))
+    if not resolved.startswith(os.path.normpath(base_dir)):
+        raise PermissionError("Path traversal not allowed")
+    return resolved
+
+
+def list_project_files(project_name: str, rel_path: str = "") -> dict:
+    """List files and directories in a project folder."""
+    base = _resolve_project_path(project_name)
+    abs_path = _safe_path(base, rel_path) if rel_path else base
+    if not os.path.isdir(abs_path):
+        return {"error": "Not a directory"}
+
+    entries = []
+    try:
+        for name in sorted(os.listdir(abs_path)):
+            if name.startswith("."):
+                continue
+            full = os.path.join(abs_path, name)
+            rel = os.path.relpath(full, base)
+            is_dir = os.path.isdir(full)
+            entry = {"name": name, "path": rel, "is_dir": is_dir}
+            if not is_dir:
+                try:
+                    entry["size"] = os.path.getsize(full)
+                except OSError:
+                    entry["size"] = 0
+                entry["ext"] = os.path.splitext(name)[1].lower()
+            entries.append(entry)
+    except OSError as e:
+        return {"error": str(e)}
+
+    entries.sort(key=lambda e: (not e["is_dir"], e["name"].lower()))
+    return {"path": rel_path or ".", "project_dir": base, "entries": entries}
+
+
+def read_project_file(project_name: str, rel_path: str) -> dict:
+    """Read a file's content from a project."""
+    base = _resolve_project_path(project_name)
+    abs_path = _safe_path(base, rel_path)
+    if not os.path.isfile(abs_path):
+        return {"error": "File not found"}
+
+    size = os.path.getsize(abs_path)
+    ext = os.path.splitext(abs_path)[1].lower()
+    is_text = ext in _TEXT_EXTS or ext == "" or size == 0
+
+    if not is_text:
+        return {"path": rel_path, "size": size, "ext": ext, "binary": True, "content": None}
+    if size > _MAX_READ_SIZE:
+        return {"error": f"File too large ({size} bytes, max {_MAX_READ_SIZE})"}
+
+    try:
+        with open(abs_path, "r", errors="replace") as f:
+            content = f.read()
+    except Exception as e:
+        return {"error": str(e)}
+
+    return {"path": rel_path, "size": size, "ext": ext, "binary": False, "content": content}
+
+
+def write_project_file(project_name: str, rel_path: str, content: str) -> dict:
+    """Write/update a file in a project."""
+    base = _resolve_project_path(project_name)
+    abs_path = _safe_path(base, rel_path)
+    try:
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        with open(abs_path, "w") as f:
+            f.write(content)
+        return {"status": "ok", "path": rel_path, "size": len(content)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def create_project_file(project_name: str, rel_path: str, content: str = "") -> dict:
+    """Create a new file or directory in a project."""
+    base = _resolve_project_path(project_name)
+    abs_path = _safe_path(base, rel_path)
+    if os.path.exists(abs_path):
+        return {"error": "Path already exists"}
+    try:
+        if rel_path.endswith("/"):
+            os.makedirs(abs_path, exist_ok=True)
+            return {"status": "ok", "path": rel_path, "is_dir": True}
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        with open(abs_path, "w") as f:
+            f.write(content)
+        return {"status": "ok", "path": rel_path, "size": len(content)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def delete_project_file(project_name: str, rel_path: str) -> dict:
+    """Delete a file or directory from a project."""
+    base = _resolve_project_path(project_name)
+    abs_path = _safe_path(base, rel_path)
+    if not os.path.exists(abs_path):
+        return {"error": "Path not found"}
+    try:
+        if os.path.isdir(abs_path):
+            shutil.rmtree(abs_path)
+        else:
+            os.remove(abs_path)
+        return {"status": "ok", "path": rel_path}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def rename_project_file(project_name: str, old_path: str, new_path: str) -> dict:
+    """Rename/move a file within a project."""
+    base = _resolve_project_path(project_name)
+    abs_old = _safe_path(base, old_path)
+    abs_new = _safe_path(base, new_path)
+    if not os.path.exists(abs_old):
+        return {"error": "Source not found"}
+    if os.path.exists(abs_new):
+        return {"error": "Destination already exists"}
+    try:
+        os.makedirs(os.path.dirname(abs_new), exist_ok=True)
+        os.rename(abs_old, abs_new)
+        return {"status": "ok", "old_path": old_path, "new_path": new_path}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ── AI Project Chat ──────────────────────────────────────────────────
+
+PROJECT_CHAT_SYSTEM = """You are Fred, an AI development assistant. You're discussing the "{project_name}" project with the developer.
+
+Project Info:
+- Tech Stack: {tech_stack}
+- Branch: {branch} ({status}, {changes} uncommitted)
+- Last commit: {last_commit}
+- Health Score: {health_score}/100
+- Deploy URL: {deploy_url}
+
+Top-level files:
+{file_listing}
+
+{review_context}
+
+You can help with:
+1. Analyzing code patterns and architecture
+2. Suggesting improvements and fixes
+3. Creating actionable TODO tasks
+4. Planning features and implementations
+5. Debugging issues
+
+IMPORTANT RESPONSE FORMAT:
+- Always write your response in plain, conversational English first.
+- Use numbered lists and bullet points for clarity.
+- Be concise, actionable, and specific. Reference file paths when relevant.
+- When the user asks you to create tasks or a TODO list, explain what needs to be done in plain English FIRST.
+- Then put TASK: blocks at the VERY END of your response, one per line. These are machine-readable and will be auto-created on the board — the user will NOT see them.
+- TASK format (one per line at the end): TASK: {{"title": "Short action title", "priority": 1-5, "board": "{board_id}", "description": "Brief explanation", "tags": ["project:{project_name}"]}}
+- Priority: 1=critical, 2=high, 3=medium, 4=low, 5=nice-to-have
+- NEVER put TASK: blocks in the middle of your explanation."""
+
+
+def _parse_and_create_tasks(full_text: str, project_name: str, board_id: str = "work") -> list[dict]:
+    """Parse TASK: JSON blocks from AI response text and create them on boards."""
+    import json as _json
+    from products.fred_assistant.services.task_service import create_task
+
+    created = []
+    for line in full_text.splitlines():
+        line = line.strip()
+        if not line.startswith("TASK:"):
+            continue
+        json_str = line[5:].strip()
+        try:
+            t = _json.loads(json_str)
+        except (_json.JSONDecodeError, ValueError):
+            continue
+
+        tags = t.get("tags", [])
+        if f"project:{project_name}" not in tags:
+            tags.append(f"project:{project_name}")
+        try:
+            task = create_task({
+                "board_id": t.get("board", board_id),
+                "title": t.get("title", "Untitled task"),
+                "description": t.get("description", ""),
+                "priority": min(max(int(t.get("priority", 3)), 1), 5),
+                "tags": tags,
+                "category": "ai_generated",
+            })
+            created.append({
+                "task_id": task.get("id"),
+                "title": task.get("title"),
+                "priority": task.get("priority"),
+                "board_id": task.get("board_id"),
+            })
+        except Exception as e:
+            logger.warning("Failed to create task from chat: %s", e)
+
+    return created
+
+
+async def stream_project_chat(message: str, project_name: str, context: dict):
+    """Stream an AI response about a project. Yields {type, data} dicts.
+    After streaming, parses any TASK: blocks and auto-creates them on boards."""
+    from products.fred_assistant.services.llm_shared import get_gemini
+
+    # Gather project info
+    project = get_project(project_name)
+    if not project:
+        yield {"type": "token", "data": f"Project '{project_name}' not found."}
+        yield {"type": "done", "data": ""}
+        return
+
+    # Build file listing
+    file_listing = ""
+    try:
+        files = list_project_files(project_name, "")
+        if "entries" in files:
+            lines = []
+            for e in files["entries"][:30]:
+                prefix = "📁" if e.get("is_dir") else "📄"
+                lines.append(f"  {prefix} {e['name']}")
+            file_listing = "\n".join(lines)
+    except Exception:
+        file_listing = "(unavailable)"
+
+    # Build review context from passed-in context
+    review_context = ""
+    if context.get("action_items"):
+        items = context["action_items"]
+        review_context = "Recent review action items:\n" + "\n".join(
+            f"- [{a.get('severity', 'medium')}] {a.get('title', '')}" for a in items[:8]
+        )
+
+    board_id = context.get("board_id", "work")
+
+    system = PROJECT_CHAT_SYSTEM.format(
+        project_name=project_name,
+        tech_stack=", ".join(project.get("tech_stack", [])) or "Unknown",
+        branch=project.get("git_branch") or "N/A",
+        status=project.get("git_status", "unknown"),
+        changes=project.get("uncommitted_changes", 0),
+        last_commit=project.get("last_commit_msg") or "N/A",
+        health_score=context.get("health_score", "N/A"),
+        deploy_url=project.get("deploy_url") or "N/A",
+        file_listing=file_listing or "(no files)",
+        review_context=review_context,
+        board_id=board_id,
+    )
+
+    full_prompt = f"User question: {message}"
+
+    from products.fred_assistant.services.llm_shared import get_gemini, llm_response
+
+    # Accumulate full response to parse TASK: blocks after streaming
+    full_response = ""
+    streamed = False
+
+    # Try streaming via Gemini first
+    agent = get_gemini()
+    if agent and hasattr(agent, "stream_response"):
+        try:
+            async for chunk in agent.stream_response(full_prompt, system_override=system):
+                if hasattr(chunk, "content") and chunk.content:
+                    full_response += chunk.content
+                    yield {"type": "token", "data": chunk.content}
+                    streamed = True
+                elif isinstance(chunk, str):
+                    full_response += chunk
+                    yield {"type": "token", "data": chunk}
+                    streamed = True
+        except Exception as e:
+            logger.warning("Project chat stream failed: %s — falling back to llm_response", e)
+
+    # If streaming produced nothing, fall back to llm_response (ModelRouter with full fallback chain)
+    if not streamed or not full_response.strip():
+        full_response = ""
+        try:
+            content = await llm_response(full_prompt, system, feature="project_chat")
+            if content:
+                full_response = content
+                chunk_size = 20
+                for i in range(0, len(content), chunk_size):
+                    yield {"type": "token", "data": content[i:i + chunk_size]}
+            else:
+                yield {"type": "token", "data": "AI service is temporarily unavailable. Please try again in a moment."}
+        except Exception as e:
+            logger.warning("Project chat fallback also failed: %s", e)
+            yield {"type": "token", "data": f"Error: {e}"}
+
+    # Auto-create any TASK: blocks found in the response
+    if "TASK:" in full_response:
+        created_tasks = _parse_and_create_tasks(full_response, project_name)
+        if created_tasks:
+            yield {"type": "tasks_created", "data": created_tasks}
+
+    yield {"type": "done", "data": ""}
+
+
+TASK_GEN_SYSTEM = """You are Fred, an AI project planner. Analyze the project and generate actionable tasks.
+
+Project: {project_name}
+Tech Stack: {tech_stack}
+Files: {file_listing}
+
+{instructions}
+
+Return ONLY a JSON array of task objects. Each task must have:
+- title: concise actionable title (imperative, e.g. "Add unit tests for auth module")
+- priority: 1 (critical) to 5 (nice-to-have)
+- description: 1-2 sentence explanation
+- tags: array of strings (always include "project:{project_name}")
+
+Return 3-8 tasks. Return ONLY the JSON array, no markdown fences."""
+
+
+async def generate_project_tasks(project_name: str, instructions: str = "", board_id: str = "work") -> list[dict]:
+    """AI generates tasks for a project and creates them on boards."""
+    import json
+    from products.fred_assistant.services.llm_shared import llm_response
+    from products.fred_assistant.services.task_service import create_task
+
+    project = get_project(project_name)
+    if not project:
+        return []
+
+    # Build file listing
+    file_listing = ""
+    try:
+        files = list_project_files(project_name, "")
+        if "entries" in files:
+            file_listing = ", ".join(e["name"] for e in files["entries"][:30])
+    except Exception:
+        pass
+
+    system = TASK_GEN_SYSTEM.format(
+        project_name=project_name,
+        tech_stack=", ".join(project.get("tech_stack", [])) or "Unknown",
+        file_listing=file_listing or "(unavailable)",
+        instructions=f"User instructions: {instructions}" if instructions else "Generate a comprehensive TODO list for this project.",
+    )
+
+    prompt = f"Analyze the {project_name} project and generate tasks."
+    response = await llm_response(prompt, system)
+    if not response:
+        return []
+
+    # Parse JSON from response
+    try:
+        cleaned = response.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned.rsplit("```", 1)[0]
+        cleaned = cleaned.strip()
+        tasks_data = json.loads(cleaned)
+        if not isinstance(tasks_data, list):
+            return []
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("Failed to parse task generation JSON")
+        return []
+
+    # Create tasks on the board
+    created = []
+    for t in tasks_data[:8]:
+        try:
+            tags = t.get("tags", [])
+            if f"project:{project_name}" not in tags:
+                tags.append(f"project:{project_name}")
+            task = create_task({
+                "board_id": board_id,
+                "title": t.get("title", "Untitled task"),
+                "description": t.get("description", ""),
+                "priority": min(max(int(t.get("priority", 3)), 1), 5),
+                "tags": tags,
+                "category": "ai_generated",
+            })
+            created.append({
+                "task_id": task.get("id"),
+                "title": task.get("title"),
+                "priority": task.get("priority"),
+                "board_id": board_id,
+            })
+        except Exception as e:
+            logger.warning("Failed to create task: %s", e)
+
+    return created
+
+
+def export_project(project_name: str) -> dict:
+    """Create a tar.gz export of a project. Returns path to archive."""
+    base = _resolve_project_path(project_name)
+    export_dir = os.path.join(PROJECTS_DIR, "_exports")
+    os.makedirs(export_dir, exist_ok=True)
+    archive_name = f"{project_name}-export.tar.gz"
+    archive_path = os.path.join(export_dir, archive_name)
+
+    try:
+        with tarfile.open(archive_path, "w:gz") as tar:
+            tar.add(base, arcname=project_name)
+        return {
+            "status": "ok",
+            "archive_path": archive_path,
+            "archive_name": archive_name,
+            "size": os.path.getsize(archive_path),
+        }
+    except Exception as e:
+        return {"error": str(e)}

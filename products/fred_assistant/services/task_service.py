@@ -1,10 +1,32 @@
 """Task and board management service."""
 
 import json
+import logging
 import uuid
 from datetime import datetime, date
 
 from products.fred_assistant.database import get_conn, log_activity
+
+logger = logging.getLogger(__name__)
+
+TASK_REVIEW_SYSTEM = """You are Fred, an AI development assistant. A developer is reviewing a task and wants your advice.
+
+Task: {title}
+Priority: {priority}/5
+Status: {status}
+Board: {board_id}
+Description: {description}
+Notes: {notes}
+{project_context}
+
+Give the developer practical, actionable advice in plain English:
+1. WHY this task matters and its impact
+2. HOW to approach it (specific steps, tools, patterns)
+3. WHAT to watch out for (risks, gotchas, dependencies)
+4. ESTIMATED complexity (small/medium/large)
+
+Be concise, specific, and reference actual files/patterns when possible.
+Do NOT output TASK: blocks — this is advice only."""
 
 
 def _row_to_task(row) -> dict:
@@ -236,3 +258,76 @@ def get_dashboard_stats() -> dict:
             "memories": memories,
             "streak_days": streak,
         }
+
+
+async def stream_task_review(task_id: str):
+    """Stream AI review/advice for a specific task. Yields {type, data} dicts."""
+    from products.fred_assistant.services.llm_shared import get_gemini, llm_response
+
+    task = get_task(task_id)
+    if not task:
+        yield {"type": "error", "data": "Task not found"}
+        return
+
+    # Build project context if task has a project tag
+    project_context = ""
+    project_tags = [t.replace("project:", "") for t in (task.get("tags") or []) if t.startswith("project:")]
+    if project_tags:
+        try:
+            from products.fred_assistant.services.projects_service import get_project
+            proj = get_project(project_tags[0])
+            if proj:
+                project_context = (
+                    f"Project: {project_tags[0]}\n"
+                    f"Tech stack: {', '.join(proj.get('tech_stack', []))}\n"
+                    f"Branch: {proj.get('git_branch', 'N/A')}\n"
+                    f"Last commit: {proj.get('last_commit_msg', 'N/A')}"
+                )
+        except Exception:
+            project_context = f"Project: {project_tags[0]}"
+
+    system = TASK_REVIEW_SYSTEM.format(
+        title=task.get("title", ""),
+        priority=task.get("priority", 3),
+        status=task.get("status", "todo"),
+        board_id=task.get("board_id", "work"),
+        description=task.get("description", "") or "(none)",
+        notes=task.get("notes", "") or "(none)",
+        project_context=project_context,
+    )
+
+    prompt = f"Please review this task and give me your advice: {task['title']}"
+    full_response = ""
+    streamed = False
+
+    # Try streaming via Gemini first
+    agent = get_gemini()
+    if agent and hasattr(agent, "stream_response"):
+        try:
+            async for chunk in agent.stream_response(prompt, system_override=system):
+                if hasattr(chunk, "content") and chunk.content:
+                    full_response += chunk.content
+                    yield {"type": "token", "data": chunk.content}
+                    streamed = True
+                elif isinstance(chunk, str):
+                    full_response += chunk
+                    yield {"type": "token", "data": chunk}
+                    streamed = True
+        except Exception as e:
+            logger.warning("Task review stream failed: %s — falling back", e)
+
+    # Fallback to llm_response
+    if not streamed or not full_response.strip():
+        try:
+            content = await llm_response(prompt, system, feature="task_review")
+            if content:
+                chunk_size = 20
+                for i in range(0, len(content), chunk_size):
+                    yield {"type": "token", "data": content[i:i + chunk_size]}
+            else:
+                yield {"type": "token", "data": "AI service is temporarily unavailable. Please try again."}
+        except Exception as e:
+            logger.warning("Task review fallback failed: %s", e)
+            yield {"type": "token", "data": f"Error: {e}"}
+
+    yield {"type": "done", "data": ""}

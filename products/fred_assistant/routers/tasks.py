@@ -1,4 +1,7 @@
+import json
+
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from typing import Optional
 
 from products.fred_assistant.models import TaskOut, TaskCreate, TaskUpdate, TaskMoveRequest, DashboardStats
@@ -56,6 +59,20 @@ async def move_task(task_id: str, data: TaskMoveRequest):
     if not task:
         raise HTTPException(404, "Task not found")
     return task_service.update_task(task_id, {"status": data.status})
+
+
+@router.post("/{task_id}/review")
+async def review_task(task_id: str):
+    """Stream AI advice about a task."""
+    task = task_service.get_task(task_id)
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    async def generate():
+        async for event in task_service.stream_task_review(task_id):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @router.delete("/{task_id}", status_code=204)

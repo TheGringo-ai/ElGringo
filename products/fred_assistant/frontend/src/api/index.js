@@ -83,6 +83,60 @@ export const fetchProjectCommits = (name, count = 10) =>
 export const fetchProjectBranches = (name) =>
   api.get(`/projects/${name}/branches`).then((r) => r.data);
 
+// ── Project File Browser ─────────────────────────────────────────
+export const fetchProjectFiles = (name, path = '') =>
+  api.get(`/projects/${name}/files`, { params: { path } }).then((r) => r.data);
+export const readProjectFile = (name, path) =>
+  api.get(`/projects/${name}/files/read`, { params: { path } }).then((r) => r.data);
+export const writeProjectFile = (name, path, content) =>
+  api.put(`/projects/${name}/files/write`, { content }, { params: { path } }).then((r) => r.data);
+export const createProjectFile = (name, path, content = '') =>
+  api.post(`/projects/${name}/files/create`, { path, content }).then((r) => r.data);
+export const deleteProjectFile = (name, path) =>
+  api.delete(`/projects/${name}/files/delete`, { params: { path } }).then((r) => r.data);
+export const renameProjectFile = (name, oldPath, newPath) =>
+  api.post(`/projects/${name}/files/rename`, { old_path: oldPath, new_path: newPath }).then((r) => r.data);
+export const exportProject = (name) => `${API_URL}/projects/${name}/export`;
+
+// ── Project AI Chat & Tasks ─────────────────────────────────────────
+export async function streamProjectChat(name, message, context, onToken, onDone, onError, onTasksCreated) {
+  try {
+    const res = await fetch(`${API_URL}/projects/${name}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, context }),
+    });
+    if (!res.ok) throw new Error(`Stream failed: ${res.statusText}`);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const parsed = JSON.parse(line.slice(6).trim());
+          if (parsed.tasks_created && onTasksCreated) onTasksCreated(parsed.tasks_created);
+          if (parsed.token) onToken(parsed.token);
+          if (parsed.done) { onDone(); return; }
+        } catch { /* skip */ }
+      }
+    }
+    onDone();
+  } catch (err) {
+    onError(err.message);
+  }
+}
+
+export const generateProjectTasks = (name, instructions = '', boardId = 'work') =>
+  api.post(`/projects/${name}/generate-tasks`, { instructions, board_id: boardId }).then((r) => r.data);
+
 // ── Calendar ─────────────────────────────────────────────────────
 export const fetchCalendarEvents = (params) => api.get('/calendar/events', { params }).then((r) => r.data);
 export const fetchTodayEvents = () => api.get('/calendar/today').then((r) => r.data);
@@ -273,6 +327,10 @@ export const streamReviewChat = (projectName, message, reviewData, onToken, onDo
   _streamSSE(`${API_URL}/platform/${projectName}/review/chat`, {
     message, project_name: projectName, review_data: reviewData,
   }, onToken, onDone, onError);
+
+// ── Task AI Review ──────────────────────────────────────────────
+export const streamTaskReview = (taskId, onToken, onDone, onError) =>
+  _streamSSE(`${API_URL}/tasks/${taskId}/review`, {}, onToken, onDone, onError);
 
 // ── App Factory ────────────────────────────────────────────────
 export const fetchFactoryApps = () => api.get('/factory/apps').then((r) => r.data);

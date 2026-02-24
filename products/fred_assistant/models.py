@@ -154,6 +154,8 @@ class ProjectOut(BaseModel):
     last_commit_date: Optional[str] = None
     tech_stack: list[str] = []
     remote_url: Optional[str] = None
+    repo_html_url: str = ""
+    deploy_url: str = ""
     is_git: bool = False
 
 
@@ -600,6 +602,16 @@ class AppCustomerOut(BaseModel):
     status: str = "trial"
     created_at: str = ""
     updated_at: str = ""
+
+
+class ProjectChatRequest(BaseModel):
+    message: str
+    context: dict = {}
+
+
+class ProjectTasksRequest(BaseModel):
+    instructions: str = ""
+    board_id: str = "work"
 
 
 class FileWriteRequest(BaseModel):

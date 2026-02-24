@@ -4,16 +4,21 @@ import {
   ChevronDown, ChevronRight, Activity, Zap, ListChecks, Search,
   FileCode, AlertTriangle, ShieldAlert, Wrench, CheckCircle2,
   Shield, TestTube2, BookOpen, Rocket, Layers, Loader2,
+  Globe, FolderOpen, Bot,
 } from 'lucide-react';
 import {
   fetchProjects, fetchProjectCommits, fetchProjectBranches,
   analyzeRepo, fetchLatestAnalysis, generateRepoTasks, reviewRepo,
   auditProject, generateProjectTests, generateProjectDocs, fullProjectReview,
   parseAuditFindings,
+  fetchProjectFiles, readProjectFile, writeProjectFile,
+  createProjectFile, deleteProjectFile, exportProject,
 } from '../api';
 import PlatformStatus from './PlatformStatus';
 import AuditInsightsPanel from './AuditInsightsPanel';
 import ReviewChatPanel from './ReviewChatPanel';
+import ProjectChatPanel from './ProjectChatPanel';
+import FileBrowser from './FileBrowser';
 
 const STATUS_DOT = { clean: 'bg-emerald-400', dirty: 'bg-amber-400' };
 
@@ -262,6 +267,10 @@ function ProjectCard({ project, expanded, onToggle, analysis }) {
   // Audit insights states
   const [parsedFindings, setParsedFindings] = useState(null);
   const [parsingFindings, setParsingFindings] = useState(false);
+  // File browser state
+  const [showFiles, setShowFiles] = useState(false);
+  // Project chat state
+  const [showChat, setShowChat] = useState(false);
 
   useEffect(() => { setLocalAnalysis(analysis); }, [analysis]);
 
@@ -417,6 +426,62 @@ function ProjectCard({ project, expanded, onToggle, analysis }) {
       {/* ── Code Review panel ────────────────────────────────────────── */}
       {review && <CodeReviewPanel review={review} projectName={project.name} />}
 
+      {/* ── Links & Browse Files ────────────────────────────────────── */}
+      {expanded && (
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          {project.repo_html_url && (
+            <a href={project.repo_html_url} target="_blank" rel="noopener noreferrer"
+              className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-1">
+              <GitBranch size={9} /> Repo <ExternalLink size={8} />
+            </a>
+          )}
+          {project.deploy_url && (
+            <a href={project.deploy_url} target="_blank" rel="noopener noreferrer"
+              className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors flex items-center gap-1">
+              <Globe size={9} /> Live <ExternalLink size={8} />
+            </a>
+          )}
+          <button onClick={(e) => { e.stopPropagation(); setShowFiles(!showFiles); }}
+            className={`text-[10px] px-2 py-0.5 rounded-full transition-colors flex items-center gap-1 ${
+              showFiles ? 'bg-yellow-500/20 text-yellow-400' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-300'
+            }`}>
+            <FolderOpen size={9} /> {showFiles ? 'Hide Files' : 'Browse Files'}
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); setShowChat(!showChat); }}
+            className={`text-[10px] px-2 py-0.5 rounded-full transition-colors flex items-center gap-1 ${
+              showChat ? 'bg-purple-500/20 text-purple-400' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-300'
+            }`}>
+            <Bot size={9} /> {showChat ? 'Hide Chat' : 'Ask Fred'}
+          </button>
+        </div>
+      )}
+
+      {/* ── Project AI Chat ────────────────────────────────────────────── */}
+      {showChat && expanded && (
+        <ProjectChatPanel
+          projectName={project.name}
+          context={{
+            health_score: localAnalysis?.health_score,
+            action_items: review?.action_items || localAnalysis?.action_items,
+          }}
+          onClose={() => setShowChat(false)}
+        />
+      )}
+
+      {/* ── File Browser ──────────────────────────────────────────────── */}
+      {showFiles && expanded && (
+        <div className="mt-2">
+          <FileBrowser
+            fetchFiles={(p) => fetchProjectFiles(project.name, p)}
+            readFile={(p) => readProjectFile(project.name, p)}
+            writeFile={(p, c) => writeProjectFile(project.name, p, c)}
+            createFile={(p, c) => createProjectFile(project.name, p, c)}
+            deleteFile={(p) => deleteProjectFile(project.name, p)}
+            exportUrl={exportProject(project.name)}
+          />
+        </div>
+      )}
+
       {/* ── Expanded details ─────────────────────────────────────────── */}
       {expanded && project.is_git && (
         <div className="mt-3 space-y-3 border-t border-white/5 pt-3">
@@ -444,12 +509,6 @@ function ProjectCard({ project, expanded, onToggle, analysis }) {
               ))}
             </div>
           </div>
-          {project.remote_url && (
-            <div className="text-[10px] text-gray-600 flex items-center gap-1">
-              <ExternalLink size={9} />
-              <span className="truncate">{project.remote_url}</span>
-            </div>
-          )}
         </div>
       )}
     </div>

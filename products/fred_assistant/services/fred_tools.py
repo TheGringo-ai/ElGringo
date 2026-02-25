@@ -1186,294 +1186,145 @@ def _resolve_project_path(name: str) -> str | None:
     return None
 
 
-async def _exec_audit_security(params: dict) -> dict:
+async def _resolve_code_for_service(params: dict, max_files: int = 3, extra_data: dict = None) -> tuple[dict | None, str | None]:
+    """Shared helper: resolve file/project to code + language for platform services.
+    Returns (data_dict, project_name) or (error_dict, None)."""
     path = params.get("path")
-    project = params.get("project")
+    project = params.get("project") or params.get("name")
     if not path and not project:
-        return {"success": False, "error": "path (file) or project (name) is required"}
+        return {"success": False, "error": "path (file) or project (name) is required"}, None
 
     if path:
         try:
             resolved = validate_path(path)
         except ValueError as e:
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": str(e)}, None
         if not os.path.isfile(resolved):
-            return {"success": False, "error": f"File not found: {path}"}
+            return {"success": False, "error": f"File not found: {path}"}, None
         try:
             with open(resolved, "r", encoding="utf-8", errors="replace") as f:
                 code = f.read(MAX_FILE_SIZE)
         except Exception as e:
-            return {"success": False, "error": str(e)}
-        language = _detect_language(resolved)
-        result = await _svc("platform_services").call_service("code_audit", "POST", "/audit/security", {
-            "code": code, "language": language, "filename": os.path.basename(resolved),
-        })
+            return {"success": False, "error": str(e)}, None
+        data = {"code": code, "language": _detect_language(resolved), "filename": os.path.basename(resolved)}
     else:
         proj_path = _resolve_project_path(project)
         if not proj_path:
-            return {"success": False, "error": f"Project not found: {project}"}
-        files = _read_project_files(proj_path, max_files=3)
+            return {"success": False, "error": f"Project not found: {project}"}, None
+        files = _read_project_files(proj_path, max_files=max_files)
         if not files:
-            return {"success": False, "error": f"No source files found in {project}"}
+            return {"success": False, "error": f"No source files found in {project}"}, None
         combined = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files)
-        result = await _svc("platform_services").call_service("code_audit", "POST", "/audit/security", {
-            "code": combined, "language": files[0]["language"], "filename": project,
-        })
+        data = {"code": combined, "language": files[0]["language"], "filename": project}
 
+    if extra_data:
+        data.update(extra_data)
+    return data, project or os.path.basename(path)
+
+
+async def _exec_audit_security(params: dict) -> dict:
+    data, name = await _resolve_code_for_service(params)
+    if name is None:
+        return data
+    result = await _svc("platform_services").call_service("code_audit", "POST", "/audit/security", data)
     if "error" in result:
         return {"success": False, "error": result["error"]}
-
-    _svc("platform_services").store_service_result("code_audit", "security", project or os.path.basename(path), result)
+    _svc("platform_services").store_service_result("code_audit", "security", name, result)
     return {
-        "success": True,
-        "findings": result.get("findings", ""),
+        "success": True, "findings": result.get("findings", ""),
         "agents_used": result.get("agents_used", []),
         "message": f"Security audit complete. Agents: {', '.join(result.get('agents_used', []))}",
     }
 
 
 async def _exec_audit_code(params: dict) -> dict:
-    path = params.get("path")
-    project = params.get("project")
-    if not path and not project:
-        return {"success": False, "error": "path (file) or project (name) is required"}
-
-    if path:
-        try:
-            resolved = validate_path(path)
-        except ValueError as e:
-            return {"success": False, "error": str(e)}
-        if not os.path.isfile(resolved):
-            return {"success": False, "error": f"File not found: {path}"}
-        try:
-            with open(resolved, "r", encoding="utf-8", errors="replace") as f:
-                code = f.read(MAX_FILE_SIZE)
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-        language = _detect_language(resolved)
-        result = await _svc("platform_services").call_service("code_audit", "POST", "/audit/review", {
-            "code": code, "language": language, "filename": os.path.basename(resolved),
-        })
-    else:
-        proj_path = _resolve_project_path(project)
-        if not proj_path:
-            return {"success": False, "error": f"Project not found: {project}"}
-        files = _read_project_files(proj_path, max_files=3)
-        if not files:
-            return {"success": False, "error": f"No source files found in {project}"}
-        combined = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files)
-        result = await _svc("platform_services").call_service("code_audit", "POST", "/audit/review", {
-            "code": combined, "language": files[0]["language"], "filename": project,
-        })
-
+    data, name = await _resolve_code_for_service(params)
+    if name is None:
+        return data
+    result = await _svc("platform_services").call_service("code_audit", "POST", "/audit/review", data)
     if "error" in result:
         return {"success": False, "error": result["error"]}
-
-    _svc("platform_services").store_service_result("code_audit", "review", project or os.path.basename(path), result)
+    _svc("platform_services").store_service_result("code_audit", "review", name, result)
     return {
-        "success": True,
-        "findings": result.get("findings", ""),
+        "success": True, "findings": result.get("findings", ""),
         "agents_used": result.get("agents_used", []),
         "message": f"Code review complete. Agents: {', '.join(result.get('agents_used', []))}",
     }
 
 
 async def _exec_generate_tests(params: dict) -> dict:
-    path = params.get("path")
-    project = params.get("project")
-    focus = params.get("focus")
-    if not path and not project:
-        return {"success": False, "error": "path (file) or project (name) is required"}
-
-    if path:
-        try:
-            resolved = validate_path(path)
-        except ValueError as e:
-            return {"success": False, "error": str(e)}
-        if not os.path.isfile(resolved):
-            return {"success": False, "error": f"File not found: {path}"}
-        try:
-            with open(resolved, "r", encoding="utf-8", errors="replace") as f:
-                code = f.read(MAX_FILE_SIZE)
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-        language = _detect_language(resolved)
-        data = {"code": code, "language": language, "filename": os.path.basename(resolved)}
-        if focus:
-            data["focus"] = focus
-        result = await _svc("platform_services").call_service("test_gen", "POST", "/tests/generate", data)
-    else:
-        proj_path = _resolve_project_path(project)
-        if not proj_path:
-            return {"success": False, "error": f"Project not found: {project}"}
-        files = _read_project_files(proj_path, max_files=3)
-        if not files:
-            return {"success": False, "error": f"No source files found in {project}"}
-        combined = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files)
-        data = {"code": combined, "language": files[0]["language"], "filename": project}
-        if focus:
-            data["focus"] = focus
-        result = await _svc("platform_services").call_service("test_gen", "POST", "/tests/generate", data)
-
+    extra = {}
+    if params.get("focus"):
+        extra["focus"] = params["focus"]
+    data, name = await _resolve_code_for_service(params, extra_data=extra)
+    if name is None:
+        return data
+    result = await _svc("platform_services").call_service("test_gen", "POST", "/tests/generate", data)
     if "error" in result:
         return {"success": False, "error": result["error"]}
-
-    _svc("platform_services").store_service_result("test_gen", "generate", project or os.path.basename(path), result)
+    _svc("platform_services").store_service_result("test_gen", "generate", name, result)
     return {
-        "success": True,
-        "tests": result.get("result", ""),
+        "success": True, "tests": result.get("result", ""),
         "framework": result.get("framework", ""),
         "message": f"Tests generated ({result.get('framework', 'unknown')} framework)",
     }
 
 
 async def _exec_analyze_tests(params: dict) -> dict:
-    path = params.get("path")
-    tests_path = params.get("tests_path")
-    project = params.get("project")
-    if not path and not project:
-        return {"success": False, "error": "path (source file) or project (name) is required"}
-
-    code = ""
-    tests = ""
-    language = "python"
-
-    if path:
+    extra = {}
+    if params.get("tests_path"):
         try:
-            resolved = validate_path(path)
-        except ValueError as e:
-            return {"success": False, "error": str(e)}
-        with open(resolved, "r", encoding="utf-8", errors="replace") as f:
-            code = f.read(MAX_FILE_SIZE)
-        language = _detect_language(resolved)
-        if tests_path:
-            try:
-                t_resolved = validate_path(tests_path)
-                with open(t_resolved, "r", encoding="utf-8", errors="replace") as f:
-                    tests = f.read(MAX_FILE_SIZE)
-            except Exception:
-                pass
-    else:
-        proj_path = _resolve_project_path(project)
-        if not proj_path:
-            return {"success": False, "error": f"Project not found: {project}"}
-        files = _read_project_files(proj_path, max_files=3)
-        if not files:
-            return {"success": False, "error": f"No source files found in {project}"}
-        code = "\n\n".join(f"# {f['path']}\n{f['content']}" for f in files)
-        language = files[0]["language"]
-
-    data = {"code": code, "language": language}
-    if tests:
-        data["tests"] = tests
+            t_resolved = validate_path(params["tests_path"])
+            with open(t_resolved, "r", encoding="utf-8", errors="replace") as f:
+                extra["tests"] = f.read(MAX_FILE_SIZE)
+        except Exception:
+            pass
+    data, name = await _resolve_code_for_service(params, extra_data=extra)
+    if name is None:
+        return data
     result = await _svc("platform_services").call_service("test_gen", "POST", "/tests/analyze", data)
-
     if "error" in result:
         return {"success": False, "error": result["error"]}
+    _svc("platform_services").store_service_result("test_gen", "analyze", name, result)
+    return {"success": True, "analysis": result.get("result", ""), "message": "Test coverage analysis complete"}
 
-    _svc("platform_services").store_service_result("test_gen", "analyze", project or os.path.basename(path), result)
+
+async def _exec_doc_gen(params: dict, endpoint: str, doc_type: str, result_key: str, extensions: tuple = None) -> dict:
+    """Shared helper for doc generation functions (readme, api, architecture)."""
+    project = params.get("project") or params.get("name")
+    if not project:
+        return {"success": False, "error": "project name is required"}
+    proj_path = _resolve_project_path(project)
+    if not proj_path:
+        return {"success": False, "error": f"Project not found: {project}"}
+    kw = {"extensions": extensions} if extensions else {}
+    files = _read_project_files(proj_path, max_files=8, **kw)
+    if not files:
+        return {"success": False, "error": f"No source files found in {project}"}
+    file_entries = [{"path": f["path"], "content": f["content"]} for f in files]
+    result = await _svc("platform_services").call_service("doc_gen", "POST", endpoint, {
+        "project_name": project, "files": file_entries,
+    })
+    if "error" in result:
+        return {"success": False, "error": result["error"]}
+    _svc("platform_services").store_service_result("doc_gen", doc_type, project, result)
+    content = result.get("content", "")
     return {
-        "success": True,
-        "analysis": result.get("result", ""),
-        "message": "Test coverage analysis complete",
+        "success": True, result_key: content[:3000], "full_length": len(content),
+        "message": f"{doc_type.replace('_', ' ').title()} generated for {project} ({len(content)} chars)",
     }
 
 
 async def _exec_generate_readme(params: dict) -> dict:
-    project = params.get("project") or params.get("name")
-    if not project:
-        return {"success": False, "error": "project name is required"}
-
-    proj_path = _resolve_project_path(project)
-    if not proj_path:
-        return {"success": False, "error": f"Project not found: {project}"}
-
-    files = _read_project_files(proj_path, max_files=8)
-    if not files:
-        return {"success": False, "error": f"No source files found in {project}"}
-
-    file_entries = [{"path": f["path"], "content": f["content"]} for f in files]
-    result = await _svc("platform_services").call_service("doc_gen", "POST", "/docs/readme", {
-        "project_name": project,
-        "files": file_entries,
-    })
-
-    if "error" in result:
-        return {"success": False, "error": result["error"]}
-
-    _svc("platform_services").store_service_result("doc_gen", "readme", project, result)
-    content = result.get("content", "")
-    return {
-        "success": True,
-        "readme": content[:3000],
-        "full_length": len(content),
-        "message": f"README.md generated for {project} ({len(content)} chars)",
-    }
+    return await _exec_doc_gen(params, "/docs/readme", "readme", "readme")
 
 
 async def _exec_generate_api_docs(params: dict) -> dict:
-    project = params.get("project") or params.get("name")
-    if not project:
-        return {"success": False, "error": "project name is required"}
-
-    proj_path = _resolve_project_path(project)
-    if not proj_path:
-        return {"success": False, "error": f"Project not found: {project}"}
-
-    # Focus on router/route files
-    files = _read_project_files(proj_path, extensions=(".py", ".js", ".ts"), max_files=8)
-    if not files:
-        return {"success": False, "error": f"No source files found in {project}"}
-
-    file_entries = [{"path": f["path"], "content": f["content"]} for f in files]
-    result = await _svc("platform_services").call_service("doc_gen", "POST", "/docs/api", {
-        "project_name": project,
-        "files": file_entries,
-    })
-
-    if "error" in result:
-        return {"success": False, "error": result["error"]}
-
-    _svc("platform_services").store_service_result("doc_gen", "api", project, result)
-    content = result.get("content", "")
-    return {
-        "success": True,
-        "docs": content[:3000],
-        "full_length": len(content),
-        "message": f"API docs generated for {project} ({len(content)} chars)",
-    }
+    return await _exec_doc_gen(params, "/docs/api", "api", "docs", extensions=(".py", ".js", ".ts"))
 
 
 async def _exec_generate_architecture(params: dict) -> dict:
-    project = params.get("project") or params.get("name")
-    if not project:
-        return {"success": False, "error": "project name is required"}
-
-    proj_path = _resolve_project_path(project)
-    if not proj_path:
-        return {"success": False, "error": f"Project not found: {project}"}
-
-    files = _read_project_files(proj_path, max_files=8)
-    if not files:
-        return {"success": False, "error": f"No source files found in {project}"}
-
-    file_entries = [{"path": f["path"], "content": f["content"]} for f in files]
-    result = await _svc("platform_services").call_service("doc_gen", "POST", "/docs/architecture", {
-        "project_name": project,
-        "files": file_entries,
-    })
-
-    if "error" in result:
-        return {"success": False, "error": result["error"]}
-
-    _svc("platform_services").store_service_result("doc_gen", "architecture", project, result)
-    content = result.get("content", "")
-    return {
-        "success": True,
-        "architecture": content[:3000],
-        "full_length": len(content),
-        "message": f"Architecture docs generated for {project} ({len(content)} chars)",
-    }
+    return await _exec_doc_gen(params, "/docs/architecture", "architecture", "architecture")
 
 
 def _exec_platform_status(params: dict) -> dict:

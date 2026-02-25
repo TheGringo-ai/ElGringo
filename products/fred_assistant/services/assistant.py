@@ -114,14 +114,12 @@ def _build_system_prompt(persona: str = "fred") -> str:
     return f"{base}\n\n{tools}"
 
 
-def _build_context(persona: str = "fred") -> str:
-    """Build full context from tasks + memories for the AI."""
+def _build_realtime_context(persona: str = "fred") -> list[str]:
+    """Build real-time context sections shared by both context builders."""
     parts = []
 
-    # Today's date
     parts.append(f"Today is {date.today().strftime('%A, %B %d, %Y')}.\n")
 
-    # Dashboard stats
     stats = _lazy_service("task_service").get_dashboard_stats()
     parts.append(f"## Current Status")
     parts.append(f"- Active tasks: {stats['total_tasks']}")
@@ -131,7 +129,6 @@ def _build_context(persona: str = "fred") -> str:
     parts.append(f"- Completed today: {stats['completed_today']}")
     parts.append(f"- Streak: {stats['streak_days']} days\n")
 
-    # Available boards
     boards = _lazy_service("task_service").list_boards()
     if boards:
         parts.append("## Boards")
@@ -139,7 +136,6 @@ def _build_context(persona: str = "fred") -> str:
             parts.append(f"- **{b['id']}**: {b['name']} ({b.get('task_count', 0)} active tasks)")
         parts.append("")
 
-    # Today's tasks
     today_tasks = _lazy_service("task_service").get_today_tasks()
     if today_tasks:
         parts.append("## Today's Tasks")
@@ -153,7 +149,6 @@ def _build_context(persona: str = "fred") -> str:
             parts.append(f"- {status_icon} [{t['board_id']}] {t['title']} (P{t['priority']}){overdue}")
         parts.append("")
 
-    # Goals context (especially for coach persona)
     if persona == "coach":
         try:
             from products.fred_assistant.services import coach_service
@@ -175,7 +170,6 @@ def _build_context(persona: str = "fred") -> str:
         except Exception:
             pass
 
-    # Inbox count
     try:
         from products.fred_assistant.services import inbox_service
         inbox_count = inbox_service.get_inbox_count()
@@ -187,7 +181,6 @@ def _build_context(persona: str = "fred") -> str:
     except Exception:
         pass
 
-    # Active focus session
     try:
         from products.fred_assistant.services import focus_service
         active = focus_service.get_active_session()
@@ -200,7 +193,6 @@ def _build_context(persona: str = "fred") -> str:
     except Exception:
         pass
 
-    # CRM summary
     try:
         from products.fred_assistant.services import crm_service
         pipeline = crm_service.get_pipeline_summary()
@@ -213,7 +205,6 @@ def _build_context(persona: str = "fred") -> str:
     except Exception:
         pass
 
-    # Platform services status
     try:
         from products.fred_assistant.services import platform_services
         cached = platform_services.get_cached_status()
@@ -222,22 +213,20 @@ def _build_context(persona: str = "fred") -> str:
             total = len(cached)
             parts.append(f"## Platform: {online}/{total} services online")
             for name, s in cached.items():
-                status = "online" if s.get("healthy") else "offline"
-                parts.append(f"- {s.get('label', name)}: {status}")
+                st = "online" if s.get("healthy") else "offline"
+                parts.append(f"- {s.get('label', name)}: {st}")
             parts.append("")
     except Exception:
         pass
 
-    # Recent PR reviews
     try:
         from products.fred_assistant.services import platform_services as ps
         recent = ps.get_recent_results(service="pr_review", limit=3)
         if recent:
             parts.append("## Recent PR Reviews")
             for r in recent:
-                import json as _json
                 try:
-                    data = _json.loads(r.get("result", "{}"))
+                    data = json.loads(r.get("result", "{}"))
                 except (ValueError, TypeError):
                     data = {}
                 verdict = data.get("verdict", r.get("action", ""))
@@ -247,7 +236,13 @@ def _build_context(persona: str = "fred") -> str:
     except Exception:
         pass
 
-    # Memories
+    return parts
+
+
+def _build_context(persona: str = "fred") -> str:
+    """Build full context from tasks + memories for the AI."""
+    parts = _build_realtime_context(persona)
+
     memory_ctx = _lazy_service("memory_service").get_context_for_chat()
     if memory_ctx:
         parts.append(memory_ctx)
@@ -259,143 +254,12 @@ def _build_context_with_rag(user_message: str, persona: str = "fred") -> str:
     """Build context using RAG for semantic retrieval of memories/tasks/results.
 
     Real-time sections (stats, boards, today's tasks, inbox, focus, CRM, platform)
-    stay exactly as in _build_context(). Only memories, backlog tasks, and service
-    results move to semantic retrieval.
+    are shared via _build_realtime_context(). Only memories, backlog tasks, and
+    service results use semantic retrieval.
 
     Falls back to _build_context() if RAG is unavailable.
     """
-    parts = []
-
-    # ── Real-time sections (identical to _build_context) ──────────
-
-    # Today's date
-    parts.append(f"Today is {date.today().strftime('%A, %B %d, %Y')}.\n")
-
-    # Dashboard stats
-    stats = _lazy_service("task_service").get_dashboard_stats()
-    parts.append(f"## Current Status")
-    parts.append(f"- Active tasks: {stats['total_tasks']}")
-    parts.append(f"- In progress: {stats['in_progress']}")
-    parts.append(f"- Due today: {stats['due_today']}")
-    parts.append(f"- Overdue: {stats['overdue']}")
-    parts.append(f"- Completed today: {stats['completed_today']}")
-    parts.append(f"- Streak: {stats['streak_days']} days\n")
-
-    # Available boards
-    boards = _lazy_service("task_service").list_boards()
-    if boards:
-        parts.append("## Boards")
-        for b in boards:
-            parts.append(f"- **{b['id']}**: {b['name']} ({b.get('task_count', 0)} active tasks)")
-        parts.append("")
-
-    # Today's tasks
-    today_tasks = _lazy_service("task_service").get_today_tasks()
-    if today_tasks:
-        parts.append("## Today's Tasks")
-        for t in today_tasks[:15]:
-            status_icon = {"todo": "⬜", "in_progress": "🔵", "review": "🟡", "done": "✅"}.get(
-                t["status"], "⬜"
-            )
-            overdue = ""
-            if t.get("due_date") and t["due_date"] < date.today().isoformat() and t["status"] != "done":
-                overdue = " ⚠️ OVERDUE"
-            parts.append(f"- {status_icon} [{t['board_id']}] {t['title']} (P{t['priority']}){overdue}")
-        parts.append("")
-
-    # Goals context (especially for coach persona)
-    if persona == "coach":
-        try:
-            from products.fred_assistant.services import coach_service
-            goals = coach_service.list_goals(status="active")
-            if goals:
-                parts.append("## Active Goals")
-                for g in goals[:10]:
-                    parts.append(f"- {g['title']} ({g['category']}, {g['progress']}% complete)")
-                parts.append("")
-
-            review = coach_service.get_current_review()
-            if review and review.get("week_start"):
-                parts.append("## This Week's Review")
-                if review.get("wins"):
-                    parts.append(f"- Wins: {', '.join(review['wins'][:3])}")
-                if review.get("challenges"):
-                    parts.append(f"- Challenges: {', '.join(review['challenges'][:3])}")
-                parts.append("")
-        except Exception:
-            pass
-
-    # Inbox count
-    try:
-        from products.fred_assistant.services import inbox_service
-        inbox_count = inbox_service.get_inbox_count()
-        if inbox_count.get("total", 0) > 0:
-            parts.append(f"## Inbox: {inbox_count['total']} items needing attention")
-            for t, c in inbox_count.get("by_type", {}).items():
-                parts.append(f"- {t}: {c}")
-            parts.append("")
-    except Exception:
-        pass
-
-    # Active focus session
-    try:
-        from products.fred_assistant.services import focus_service
-        active = focus_service.get_active_session()
-        if active:
-            parts.append(f"## Active Focus Session")
-            parts.append(f"- Task: {active.get('task_title', 'None')}")
-            parts.append(f"- Started: {active['started_at'][:16]}")
-            parts.append(f"- Planned: {active['planned_minutes']} min")
-            parts.append("")
-    except Exception:
-        pass
-
-    # CRM summary
-    try:
-        from products.fred_assistant.services import crm_service
-        pipeline = crm_service.get_pipeline_summary()
-        if pipeline.get("total_leads", 0) > 0:
-            parts.append(f"## Pipeline: {pipeline['total_leads']} leads (${pipeline['total_pipeline_value']:,.0f} total)")
-            for stage, data in pipeline.get("stages", {}).items():
-                if data["count"] > 0:
-                    parts.append(f"- {stage}: {data['count']} (${data['total_value']:,.0f})")
-            parts.append("")
-    except Exception:
-        pass
-
-    # Platform services status
-    try:
-        from products.fred_assistant.services import platform_services
-        cached = platform_services.get_cached_status()
-        if cached:
-            online = sum(1 for s in cached.values() if s.get("healthy"))
-            total = len(cached)
-            parts.append(f"## Platform: {online}/{total} services online")
-            for name, s in cached.items():
-                status = "online" if s.get("healthy") else "offline"
-                parts.append(f"- {s.get('label', name)}: {status}")
-            parts.append("")
-    except Exception:
-        pass
-
-    # Recent PR reviews
-    try:
-        from products.fred_assistant.services import platform_services as ps
-        recent = ps.get_recent_results(service="pr_review", limit=3)
-        if recent:
-            parts.append("## Recent PR Reviews")
-            for r in recent:
-                import json as _json
-                try:
-                    data = _json.loads(r.get("result", "{}"))
-                except (ValueError, TypeError):
-                    data = {}
-                verdict = data.get("verdict", r.get("action", ""))
-                pr_num = data.get("pr_number", "")
-                parts.append(f"- {r.get('project_name', '?')} PR #{pr_num}: {verdict}")
-            parts.append("")
-    except Exception:
-        pass
+    parts = _build_realtime_context(persona)
 
     # ── RAG sections (semantic retrieval replaces dump-everything) ──
 

@@ -101,7 +101,7 @@ export default function ChatPanel() {
       <div className="flex gap-1 mb-2 overflow-x-auto">
         {quickActions.map((q) => (
           <button key={q} onClick={() => send(q)} disabled={streaming}
-            className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300 disabled:opacity-40">
+            className="flex-shrink-0 text-xs px-2 py-0.5 rounded-full bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300 disabled:opacity-40">
             {q}
           </button>
         ))}
@@ -110,7 +110,7 @@ export default function ChatPanel() {
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-2 mb-2 min-h-0">
         {messages.length === 0 && (
-          <div className="text-[11px] text-gray-700 text-center py-6">
+          <div className="text-xs text-gray-700 text-center py-6">
             {persona === 'coach' ? 'Ask your business coach anything...' : 'Ask Fred anything...'}
           </div>
         )}
@@ -125,7 +125,7 @@ export default function ChatPanel() {
                 ? m.persona === 'coach' ? <TrendingUp size={10} /> : <Bot size={10} />
                 : <User size={10} />}
             </div>
-            <div className={`max-w-[85%] text-xs leading-relaxed px-2.5 py-1.5 rounded-xl whitespace-pre-wrap ${
+            <div className={`max-w-[85%] text-sm leading-relaxed px-2.5 py-1.5 rounded-xl whitespace-pre-wrap ${
               m.role === 'assistant' ? 'bg-white/5 text-gray-300 rounded-tl-sm' : 'bg-blue-500/15 text-blue-100 rounded-tr-sm'
             }`}>{m.content || '...'}</div>
           </div>
@@ -150,7 +150,7 @@ export default function ChatPanel() {
         <input value={input} onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}
           placeholder={persona === 'coach' ? 'Ask your coach...' : 'Talk to Fred...'}
-          disabled={streaming} className="input flex-1 text-xs" />
+          disabled={streaming} className="input flex-1 text-sm" />
         <button onClick={() => send()} disabled={streaming || !input.trim()}
           className="btn-primary disabled:opacity-40 px-2">
           {streaming ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}

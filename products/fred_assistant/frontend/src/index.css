@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 @layer base {
-  body { @apply bg-surface-900 text-gray-100; }
+  body { @apply bg-surface-900 text-gray-100 text-sm; }
   ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { @apply bg-transparent; }
   ::-webkit-scrollbar-thumb { @apply bg-white/10 rounded-full; }

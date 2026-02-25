@@ -23,21 +23,29 @@ import PlaybookView from './components/PlaybookView';
 import UsageView from './components/UsageView';
 import FactoryView from './components/FactoryView';
 
-const NAV = [
-  { id: 'today', label: 'Today', icon: LayoutDashboard },
-  { id: 'inbox', label: 'Inbox', icon: Inbox, badge: true },
-  { id: 'focus', label: 'Focus', icon: Timer },
-  { id: 'chat', label: 'Fred', icon: MessageCircle },
-  { id: 'coach', label: 'Coach', icon: TrendingUp },
-  { id: 'crm', label: 'CRM', icon: Users },
-  { id: 'metrics', label: 'CEO Lens', icon: BarChart3 },
-  { id: 'calendar', label: 'Calendar', icon: Calendar },
-  { id: 'projects', label: 'Projects', icon: FolderGit2 },
-  { id: 'content', label: 'Content', icon: FileText },
-  { id: 'playbooks', label: 'Playbooks', icon: BookOpen },
-  { id: 'factory', label: 'App Factory', icon: Rocket },
-  { id: 'usage', label: 'AI Usage', icon: Activity },
-  { id: 'memory', label: 'Memory', icon: Brain },
+const NAV_GROUPS = [
+  { label: 'Productivity', items: [
+    { id: 'today', label: 'Today', icon: LayoutDashboard },
+    { id: 'inbox', label: 'Inbox', icon: Inbox, badge: true },
+    { id: 'focus', label: 'Focus', icon: Timer },
+    { id: 'calendar', label: 'Calendar', icon: Calendar },
+  ]},
+  { label: 'AI', items: [
+    { id: 'chat', label: 'Fred', icon: MessageCircle },
+    { id: 'coach', label: 'Coach', icon: TrendingUp },
+    { id: 'metrics', label: 'CEO Lens', icon: BarChart3 },
+  ]},
+  { label: 'Projects', items: [
+    { id: 'projects', label: 'Projects', icon: FolderGit2 },
+    { id: 'content', label: 'Content', icon: FileText },
+    { id: 'factory', label: 'App Factory', icon: Rocket },
+  ]},
+  { label: 'System', items: [
+    { id: 'playbooks', label: 'Playbooks', icon: BookOpen },
+    { id: 'usage', label: 'AI Usage', icon: Activity },
+    { id: 'memory', label: 'Memory', icon: Brain },
+    { id: 'crm', label: 'CRM', icon: Users },
+  ]},
 ];
 
 export default function App() {
@@ -77,7 +85,7 @@ export default function App() {
           <h1 className="text-base font-semibold">
             {greeting()}, Fred
           </h1>
-          <p className="text-[11px] text-gray-500">
+          <p className="text-xs text-gray-500">
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </p>
         </div>
@@ -91,35 +99,44 @@ export default function App() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar Nav */}
-        <nav className="w-[200px] flex-shrink-0 border-r border-white/10 p-3 flex flex-col gap-1 overflow-y-auto">
-          {NAV.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => { setView(item.id); setActiveBoard(null); }}
-              className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg text-xs transition-colors ${
-                view === item.id && !activeBoard
-                  ? 'bg-white/10 text-white'
-                  : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
-              }`}
-            >
-              <item.icon size={14} />
-              {item.label}
-              {item.badge && inboxCount > 0 && (
-                <span className="ml-auto text-[9px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded-full font-bold">
-                  {inboxCount}
-                </span>
-              )}
-            </button>
+        <nav className="w-[200px] flex-shrink-0 border-r border-white/10 p-3 flex flex-col overflow-y-auto">
+          {NAV_GROUPS.map((group, gi) => (
+            <div key={group.label} className={gi > 0 ? 'mt-3' : ''}>
+              <div className="mb-1 px-3">
+                <span className="text-[11px] font-semibold text-gray-600 uppercase tracking-wider">{group.label}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {group.items.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => { setView(item.id); setActiveBoard(null); }}
+                    className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                      view === item.id && !activeBoard
+                        ? 'bg-white/10 text-white'
+                        : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+                    }`}
+                  >
+                    <item.icon size={14} />
+                    {item.label}
+                    {item.badge && inboxCount > 0 && (
+                      <span className="ml-auto text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded-full font-bold">
+                        {inboxCount}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
           ))}
 
           <div className="mt-4 mb-1 px-3">
-            <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider">Boards</span>
+            <span className="text-[11px] font-semibold text-gray-600 uppercase tracking-wider">Boards</span>
           </div>
           {boards.map((board) => (
             <button
               key={board.id}
               onClick={() => { setActiveBoard(board); setView('board'); }}
-              className={`flex items-center justify-between w-full text-left px-3 py-1.5 rounded-lg text-xs transition-colors ${
+              className={`flex items-center justify-between w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${
                 activeBoard?.id === board.id
                   ? 'bg-white/10 text-white'
                   : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
@@ -130,7 +147,7 @@ export default function App() {
                 {board.name}
               </span>
               {board.task_count > 0 && (
-                <span className="text-[10px] text-gray-600 bg-white/5 px-1.5 rounded-full">{board.task_count}</span>
+                <span className="text-xs text-gray-600 bg-white/5 px-1.5 rounded-full">{board.task_count}</span>
               )}
             </button>
           ))}

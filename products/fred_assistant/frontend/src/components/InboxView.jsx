@@ -35,7 +35,7 @@ export default function InboxView() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Inbox size={14} className="text-amber-400" />
-          <span className="text-xs font-semibold text-gray-300">Inbox</span>
+          <span className="text-sm font-semibold text-gray-300">Inbox</span>
           {items.length > 0 && (
             <span className="text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded-full font-bold">{items.length}</span>
           )}
@@ -57,7 +57,7 @@ export default function InboxView() {
           <div key={type}>
             <div className="flex items-center gap-1.5 mb-2">
               <Icon size={12} className={config.color} />
-              <h4 className={`text-[11px] font-semibold uppercase tracking-wider ${config.color}`}>
+              <h4 className={`text-xs font-semibold uppercase tracking-wider ${config.color}`}>
                 {config.label} ({typeItems.length})
               </h4>
             </div>
@@ -65,8 +65,8 @@ export default function InboxView() {
               {typeItems.map((item, i) => (
                 <div key={`${item.entity_id}-${i}`}
                   className={`p-2.5 rounded-lg bg-white/[0.02] border-l-2 ${config.bg} animate-slide-up`}>
-                  <div className="text-xs font-medium">{item.title}</div>
-                  <div className="text-[10px] text-gray-600 mt-0.5">{item.description}</div>
+                  <div className="text-sm font-medium">{item.title}</div>
+                  <div className="text-xs text-gray-600 mt-0.5">{item.description}</div>
                 </div>
               ))}
             </div>

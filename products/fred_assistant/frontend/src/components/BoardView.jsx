@@ -33,7 +33,7 @@ function TaskCard({ task, onMove, onDelete }) {
       {/* Header row */}
       <div className="p-2.5">
         <div className="flex items-start justify-between gap-1">
-          <button onClick={() => setExpanded(!expanded)} className="text-xs font-medium leading-snug flex-1 text-left hover:text-blue-300 transition-colors">
+          <button onClick={() => setExpanded(!expanded)} className="text-sm font-medium leading-snug flex-1 text-left hover:text-blue-300 transition-colors">
             {task.title}
           </button>
           <div className="flex items-center gap-0.5">
@@ -60,7 +60,7 @@ function TaskCard({ task, onMove, onDelete }) {
         <select
           value={task.status}
           onChange={(e) => onMove(task.id, e.target.value)}
-          className="mt-1.5 text-[10px] bg-white/5 border border-white/10 rounded px-1 py-0.5 text-gray-500 focus:outline-none"
+          className="mt-1.5 text-xs bg-white/5 border border-white/10 rounded px-1 py-0.5 text-gray-500 focus:outline-none"
         >
           {['todo', 'in_progress', 'review', 'done', 'backlog', 'capture', 'exploring', 'validated', 'parked'].map((s) => (
             <option key={s} value={s}>{s.replace('_', ' ')}</option>
@@ -119,7 +119,7 @@ function Column({ title, tasks, onMove, onDelete }) {
   return (
     <div className="flex-1 min-w-[160px]">
       <div className="flex items-center gap-2 mb-2 px-1">
-        <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">{title.replace('_', ' ')}</h4>
+        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{title.replace('_', ' ')}</h4>
         <span className="text-[10px] text-gray-700 bg-white/5 px-1.5 rounded-full">{tasks.length}</span>
       </div>
       <div className="space-y-1.5 min-h-[80px]">
@@ -200,12 +200,12 @@ export default function BoardView({ board, onRefresh }) {
       {/* Project filter pills */}
       {projectNames.length > 0 && (
         <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-          <span className="text-[10px] text-gray-600 mr-0.5">
+          <span className="text-xs text-gray-600 mr-0.5">
             <FolderGit2 size={10} className="inline -mt-px" /> Filter:
           </span>
           <button
             onClick={() => setProjectFilter('all')}
-            className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${
+            className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
               projectFilter === 'all'
                 ? 'bg-blue-500/20 text-blue-400 font-medium'
                 : 'bg-white/5 text-gray-500 hover:bg-white/10'
@@ -219,7 +219,7 @@ export default function BoardView({ board, onRefresh }) {
               <button
                 key={name}
                 onClick={() => setProjectFilter(name)}
-                className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${
+                className={`text-xs px-2 py-0.5 rounded-full transition-colors ${
                   projectFilter === name
                     ? 'bg-blue-500/20 text-blue-400 font-medium'
                     : 'bg-white/5 text-gray-500 hover:bg-white/10'
@@ -239,7 +239,7 @@ export default function BoardView({ board, onRefresh }) {
           onChange={(e) => setNewTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
           placeholder={`Add task to ${board.name}...`}
-          className="input flex-1 text-xs"
+          className="input flex-1 text-sm"
         />
       </div>
 

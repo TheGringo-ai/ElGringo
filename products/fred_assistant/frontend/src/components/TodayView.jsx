@@ -60,9 +60,9 @@ export default function TodayView({ onRefresh }) {
         <div className="card p-3 border-emerald-500/10">
           <div className="flex items-center gap-1.5 mb-2">
             <Sun size={12} className="text-amber-400" />
-            <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Daily Briefing</span>
+            <span className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider">Daily Briefing</span>
           </div>
-          <div className="text-[11px] text-gray-400 whitespace-pre-wrap leading-relaxed">{briefing.content}</div>
+          <div className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed">{briefing.content}</div>
         </div>
       ) : (
         <button onClick={handleBriefing} disabled={loadingBriefing}
@@ -78,7 +78,7 @@ export default function TodayView({ onRefresh }) {
         <div>
           <div className="flex items-center gap-1.5 mb-2">
             <AlertTriangle size={12} className="text-red-400" />
-            <h4 className="text-[11px] font-semibold text-red-400 uppercase tracking-wider">Overdue</h4>
+            <h4 className="text-xs font-semibold text-red-400 uppercase tracking-wider">Overdue</h4>
           </div>
           {overdue.map((t) => (
             <TaskRow key={t.id} task={t} onToggle={toggle} isOverdue />
@@ -87,14 +87,14 @@ export default function TodayView({ onRefresh }) {
       )}
 
       <div>
-        <h4 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Today's Focus</h4>
+        <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Today's Focus</h4>
         {active.length === 0 && <div className="text-xs text-gray-700 py-3">Nothing scheduled. Add tasks or use quick capture!</div>}
         {active.map((t) => <TaskRow key={t.id} task={t} onToggle={toggle} />)}
       </div>
 
       {done.length > 0 && (
         <div>
-          <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Completed</h4>
+          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Completed</h4>
           {done.map((t) => <TaskRow key={t.id} task={t} onToggle={toggle} />)}
         </div>
       )}
@@ -113,9 +113,9 @@ export default function TodayView({ onRefresh }) {
         <div className="card p-3 border-indigo-500/10">
           <div className="flex items-center gap-1.5 mb-2">
             <Moon size={12} className="text-indigo-400" />
-            <span className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wider">Shutdown Review</span>
+            <span className="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider">Shutdown Review</span>
           </div>
-          <div className="text-[11px] text-gray-400 whitespace-pre-wrap leading-relaxed">{shutdown.content}</div>
+          <div className="text-xs text-gray-400 whitespace-pre-wrap leading-relaxed">{shutdown.content}</div>
         </div>
       )}
     </div>
@@ -135,7 +135,7 @@ function TaskRow({ task, onToggle, isOverdue }) {
     >
       <Icon size={14} className={isDone ? 'text-emerald-400' : isOverdue ? 'text-red-400' : 'text-gray-500'} />
       <div className="flex-1 min-w-0">
-        <span className={`text-xs ${isDone ? 'line-through text-gray-600' : ''}`}>{task.title}</span>
+        <span className={`text-sm ${isDone ? 'line-through text-gray-600' : ''}`}>{task.title}</span>
         <div className="flex gap-2 text-[10px] text-gray-600">
           <span>{task.board_id}</span>
           {task.due_date && <span>{task.due_date}</span>}

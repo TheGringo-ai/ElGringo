@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Plus, Trash2, Clock, MapPin, ChevronLeft, ChevronRight } from 'lucide-react';
 import { fetchCalendarEvents, createCalendarEvent, deleteCalendarEvent, fetchTodayEvents } from '../api';
+import useMediaQuery from '../hooks/useMediaQuery';
 
 const EVENT_COLORS = {
   blue: 'bg-blue-500/20 border-l-blue-400 text-blue-300',
@@ -74,7 +75,8 @@ function DayCell({ date, events, isToday, isCurrentMonth, onDelete }) {
 export default function CalendarView() {
   const [events, setEvents] = useState([]);
   const [todayEvents, setTodayEvents] = useState([]);
-  const [view, setView] = useState('month');
+  const isMobile = useMediaQuery('(max-width: 767px)');
+  const [view, setView] = useState(isMobile ? 'agenda' : 'month');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({
@@ -187,7 +189,7 @@ export default function CalendarView() {
         <div className="card p-3 space-y-2">
           <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })}
             placeholder="Event title..." className="input w-full text-xs" onKeyDown={(e) => e.key === 'Enter' && handleAdd()} />
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <select value={form.event_type} onChange={(e) => setForm({ ...form, event_type: e.target.value })} className="input text-xs">
               {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
             </select>
@@ -214,13 +216,15 @@ export default function CalendarView() {
             <button onClick={() => nav(1)} className="btn-ghost p-1"><ChevronRight size={14} /></button>
           </div>
           {/* Day headers */}
-          <div className="grid grid-cols-7 gap-0.5">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-              <div key={d} className="text-[9px] font-semibold text-gray-600 text-center py-1">{d}</div>
-            ))}
-            {monthGrid.map((cell, i) => (
-              <DayCell key={i} {...cell} onDelete={handleDelete} />
-            ))}
+          <div className="overflow-x-auto">
+            <div className="grid grid-cols-7 gap-0.5 min-w-[500px]">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                <div key={d} className="text-[9px] font-semibold text-gray-600 text-center py-1">{d}</div>
+              ))}
+              {monthGrid.map((cell, i) => (
+                <DayCell key={i} {...cell} onDelete={handleDelete} />
+              ))}
+            </div>
           </div>
         </>
       )}

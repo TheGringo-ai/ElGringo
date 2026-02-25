@@ -260,7 +260,7 @@ export default function CoachView() {
             onKeyDown={(e) => e.key === 'Enter' && handleAdd()} />
           <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
             placeholder="Description (optional)" className="input w-full text-xs" />
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="input text-xs">
               {Object.keys(CATEGORY_COLORS).map((c) => <option key={c} value={c}>{c}</option>)}
             </select>

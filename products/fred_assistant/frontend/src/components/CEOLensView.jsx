@@ -115,10 +115,10 @@ export default function CEOLensView() {
             {history.slice(0, 7).map((s) => (
               <div key={s.id} className="flex items-center justify-between p-2 rounded-lg bg-white/[0.02] text-[10px]">
                 <span className="text-gray-400">{s.date}</span>
-                <div className="flex items-center gap-3 text-gray-500">
+                <div className="flex items-center gap-3 text-gray-500 flex-wrap">
                   <span>MRR: ${s.mrr?.toLocaleString()}</span>
-                  <span>Sprint: {s.sprint_completion_pct}%</span>
-                  <span>Leads: {s.leads_contacted}</span>
+                  <span className="hidden md:inline">Sprint: {s.sprint_completion_pct}%</span>
+                  <span className="hidden md:inline">Leads: {s.leads_contacted}</span>
                 </div>
               </div>
             ))}

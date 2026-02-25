@@ -185,7 +185,7 @@ function CodeReviewPanel({ review, projectName, onFixIssues }) {
                 <span className={`text-[8px] px-1 py-0.5 rounded ${TODO_TYPE_STYLE[t.type] || 'bg-white/5 text-gray-500'}`}>
                   {t.type}
                 </span>
-                <span className="text-[10px] text-gray-500 font-mono flex-shrink-0 w-[120px] truncate" title={`${t.file}:${t.line}`}>
+                <span className="text-[10px] text-gray-500 font-mono flex-shrink-0 max-w-[120px] md:w-[120px] truncate" title={`${t.file}:${t.line}`}>
                   {t.file}{t.line ? `:${t.line}` : ''}
                 </span>
                 <span className="text-[10px] text-gray-400 truncate flex-1" title={t.text}>{t.text}</span>
@@ -335,10 +335,10 @@ function ProjectCard({ project, expanded, onToggle, analysis }) {
 
   return (
     <div className="card-hover p-3 animate-slide-up">
-      <div className="flex items-center gap-2 cursor-pointer" onClick={onToggle}>
+      <div className="flex items-center gap-2 cursor-pointer flex-wrap" onClick={onToggle}>
         {expanded ? <ChevronDown size={12} className="text-gray-500" /> : <ChevronRight size={12} className="text-gray-500" />}
         <FolderGit2 size={14} className="text-blue-400" />
-        <span className="text-xs font-medium flex-1">{project.name}</span>
+        <span className="text-xs font-medium flex-1 min-w-0 truncate">{project.name}</span>
         <HealthBadge score={localAnalysis?.health_score} />
         {project.is_git && (
           <>
@@ -505,10 +505,10 @@ function ProjectCard({ project, expanded, onToggle, analysis }) {
           <div>
             <h5 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Recent Commits</h5>
             {commits.map((c, i) => (
-              <div key={i} className="flex items-center gap-2 py-0.5">
+              <div key={i} className="flex items-center gap-2 py-0.5 flex-wrap">
                 <GitCommit size={10} className="text-gray-600 flex-shrink-0" />
                 <span className="text-[10px] text-gray-500 font-mono flex-shrink-0">{c.hash}</span>
-                <span className="text-[10px] text-gray-400 truncate flex-1">{c.message}</span>
+                <span className="text-[10px] text-gray-400 truncate flex-1 min-w-0">{c.message}</span>
                 <span className="text-[10px] text-gray-600 flex-shrink-0">{c.date}</span>
               </div>
             ))}

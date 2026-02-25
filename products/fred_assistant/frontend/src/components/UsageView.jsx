@@ -107,10 +107,10 @@ function RecentTable({ recent }) {
           <div className="w-2 h-2 rounded-full flex-shrink-0"
                style={{ backgroundColor: PROVIDER_COLORS[r.provider] || PROVIDER_COLORS.unknown }} />
           <span className="text-gray-400 w-28 truncate">{r.model}</span>
-          <span className="text-gray-500 w-12">{r.feature}</span>
-          <span className="text-gray-500 w-16 text-right font-mono">{fmtNum((r.input_tokens || 0) + (r.output_tokens || 0))}</span>
+          <span className="text-gray-500 w-12 hidden md:inline">{r.feature}</span>
+          <span className="text-gray-500 w-16 text-right font-mono hidden md:inline">{fmtNum((r.input_tokens || 0) + (r.output_tokens || 0))}</span>
           <span className="text-emerald-400 w-14 text-right font-mono">{fmt$(r.cost_usd)}</span>
-          <span className="text-gray-600 w-12 text-right">{fmtMs(r.latency_ms)}</span>
+          <span className="text-gray-600 w-12 text-right hidden md:inline">{fmtMs(r.latency_ms)}</span>
           {r.error && <AlertTriangle size={10} className="text-red-400" />}
           <span className="text-gray-600 ml-auto text-[9px]">
             {new Date(r.created_at + 'Z').toLocaleTimeString()}

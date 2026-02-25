@@ -80,13 +80,13 @@ export default function ChatPanel() {
   const personaColor = PERSONAS.find((p) => p.id === persona)?.color || 'text-blue-400';
 
   return (
-    <div className="card h-full flex flex-col p-3">
+    <div className="card h-[calc(100dvh-140px)] md:h-full flex flex-col p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           {/* Persona selector */}
           {PERSONAS.map((p) => (
             <button key={p.id} onClick={() => setPersona(p.id)}
-              className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors ${
+              className={`flex items-center gap-1 text-xs px-3 py-2 md:px-2 md:py-1 rounded-lg transition-colors ${
                 persona === p.id ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-gray-300'
               }`}>
               <p.icon size={12} className={persona === p.id ? p.color : ''} />

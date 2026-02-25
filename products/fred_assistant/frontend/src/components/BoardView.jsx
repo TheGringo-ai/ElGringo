@@ -117,7 +117,7 @@ function TaskCard({ task, onMove, onDelete }) {
 
 function Column({ title, tasks, onMove, onDelete }) {
   return (
-    <div className="flex-1 min-w-[160px]">
+    <div className="flex-1 min-w-[280px] md:min-w-[160px] snap-center">
       <div className="flex items-center gap-2 mb-2 px-1">
         <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{title.replace('_', ' ')}</h4>
         <span className="text-[10px] text-gray-700 bg-white/5 px-1.5 rounded-full">{tasks.length}</span>
@@ -244,7 +244,7 @@ export default function BoardView({ board, onRefresh }) {
       </div>
 
       {/* Kanban columns */}
-      <div className="flex gap-3 flex-1 overflow-x-auto overflow-y-auto">
+      <div className="flex gap-3 flex-1 overflow-x-auto overflow-y-auto snap-x snap-mandatory md:snap-none">
         {columns.map((col) => (
           <Column key={col.key} title={col.key} tasks={col.tasks} onMove={handleMove} onDelete={handleDelete} />
         ))}

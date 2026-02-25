@@ -17,3 +17,27 @@
   .btn-ghost { @apply btn text-gray-400 hover:bg-white/10 hover:text-gray-200; }
   .input { @apply bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500/50; }
 }
+
+/* ── Mobile overrides ─────────────────────────────────────── */
+@media (max-width: 767px) {
+  /* Font floor — override tiny inline sizes */
+  [class*="text-[8px]"],
+  [class*="text-[9px]"],
+  [class*="text-[10px]"] { font-size: 12px !important; }
+  [class*="text-[11px]"] { font-size: 13px !important; }
+  .text-xs { font-size: 13px !important; }
+
+  /* Touch targets */
+  button { min-height: 36px; }
+  .btn, .btn-primary, .btn-ghost { min-height: 44px; }
+
+  /* Grid collapse */
+  .grid-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .grid-cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+
+  /* Card padding */
+  .card { padding: 0.5rem; }
+
+  /* Wider scrollbar thumb for touch */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+}

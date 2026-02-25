@@ -846,6 +846,242 @@ async def generate_project_tasks(project_name: str, instructions: str = "", boar
     return created
 
 
+
+# ── Project Notes ─────────────────────────────────────────────────
+
+import json as _json
+import uuid
+from datetime import datetime
+
+from products.fred_assistant.database import get_conn, log_activity
+
+
+def _row_to_note(row) -> dict:
+    """Convert a sqlite3.Row to a note dict, parsing JSON fields."""
+    d = dict(row)
+    for field in ("tags", "metadata"):
+        try:
+            d[field] = _json.loads(d.get(field) or "{}" if field == "metadata" else d.get(field) or "[]")
+        except (_json.JSONDecodeError, TypeError):
+            d[field] = [] if field == "tags" else {}
+    d["pinned"] = bool(d.get("pinned"))
+    return d
+
+
+def list_project_notes(project_name: str) -> list[dict]:
+    """List all notes for a project — pinned first, then by updated_at DESC."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM project_notes WHERE project_name = ? ORDER BY pinned DESC, updated_at DESC",
+            (project_name,),
+        ).fetchall()
+    return [_row_to_note(r) for r in rows]
+
+
+def get_project_note(note_id: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM project_notes WHERE id = ?", (note_id,)).fetchone()
+    return _row_to_note(row) if row else None
+
+
+def create_project_note(project_name: str, data: dict) -> dict:
+    note_id = str(uuid.uuid4())[:8]
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO project_notes (id, project_name, title, content, note_type, tags, pinned, metadata, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)""",
+            (
+                note_id,
+                project_name,
+                data.get("title", "Untitled"),
+                data.get("content", ""),
+                data.get("note_type", "manual"),
+                _json.dumps(data.get("tags", [])),
+                1 if data.get("pinned") else 0,
+                now,
+                now,
+            ),
+        )
+    log_activity("note_created", "project_note", note_id, {"project": project_name})
+    return get_project_note(note_id)
+
+
+def update_project_note(note_id: str, data: dict) -> dict | None:
+    existing = get_project_note(note_id)
+    if not existing:
+        return None
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    sets, params = [], []
+    if data.get("title") is not None:
+        sets.append("title = ?"); params.append(data["title"])
+    if data.get("content") is not None:
+        sets.append("content = ?"); params.append(data["content"])
+    if data.get("tags") is not None:
+        sets.append("tags = ?"); params.append(_json.dumps(data["tags"]))
+    if data.get("pinned") is not None:
+        sets.append("pinned = ?"); params.append(1 if data["pinned"] else 0)
+    if not sets:
+        return existing
+    sets.append("updated_at = ?"); params.append(now)
+    params.append(note_id)
+    with get_conn() as conn:
+        conn.execute(f"UPDATE project_notes SET {', '.join(sets)} WHERE id = ?", params)
+    return get_project_note(note_id)
+
+
+def delete_project_note(note_id: str) -> bool:
+    with get_conn() as conn:
+        cursor = conn.execute("DELETE FROM project_notes WHERE id = ?", (note_id,))
+    return cursor.rowcount > 0
+
+
+NOTES_GEN_SYSTEM = """You are Fred, a senior engineering AI. Generate intelligent project notes that analyze the current state of the "{project_name}" project.
+
+Project Info:
+- Tech Stack: {tech_stack}
+- Branch: {branch} ({status}, {changes} uncommitted changes)
+- Last commit: {last_commit}
+
+Recent commits:
+{commits_text}
+
+Open tasks:
+{open_tasks_text}
+
+Completed tasks:
+{done_tasks_text}
+
+Health analysis:
+{health_text}
+
+Top-level files:
+{file_listing}
+
+Generate a structured project intelligence report with these sections:
+
+## Status Summary
+Brief health assessment, branch info, recent activity level.
+
+## What's Been Done
+Key accomplishments from recent commits and completed tasks.
+
+## What's Pending
+Open tasks, backlog items, work in progress.
+
+## Improvement Suggestions
+Based on health findings, missing tests, CI gaps, security items, code quality.
+
+## Next Steps
+Top 3 priorities the developer should tackle next.
+
+Be concise, specific, and actionable. Reference actual file paths when relevant. Write like a senior engineer briefing the team."""
+
+
+async def generate_project_notes(project_name: str) -> dict | None:
+    """AI-generate intelligent project notes by gathering context from multiple sources."""
+    from products.fred_assistant.services.llm_shared import llm_response
+
+    project = get_project(project_name)
+    if not project:
+        return None
+
+    # 1. Recent commits
+    commits = get_recent_commits(project_name, count=10)
+    commits_text = "\n".join(
+        f"- {c['hash']} {c['date']}: {c['message']}" for c in commits
+    ) if commits else "(no recent commits)"
+
+    # 2. Tasks filtered by project tag
+    open_tasks_text = "(none)"
+    done_tasks_text = "(none)"
+    try:
+        from products.fred_assistant.services.task_service import list_tasks
+        all_tasks = list_tasks()
+        project_tag = f"project:{project_name}"
+        open_tasks = [t for t in all_tasks if t.get("status") != "done" and project_tag in (t.get("tags") or [])]
+        done_tasks = [t for t in all_tasks if t.get("status") == "done" and project_tag in (t.get("tags") or [])]
+        if open_tasks:
+            open_tasks_text = "\n".join(f"- [{t.get('priority', 3)}] {t['title']}" for t in open_tasks[:10])
+        if done_tasks:
+            done_tasks_text = "\n".join(f"- {t['title']}" for t in done_tasks[:10])
+    except Exception:
+        pass
+
+    # 3. Health analysis
+    health_text = "(no analysis available)"
+    try:
+        from products.fred_assistant.services.repo_intelligence_service import get_latest_analysis
+        analysis = get_latest_analysis(project_name)
+        if analysis:
+            health_text = f"Score: {analysis.get('health_score', 'N/A')}/100"
+            actions = analysis.get("action_items") or []
+            if isinstance(actions, str):
+                try:
+                    actions = _json.loads(actions)
+                except Exception:
+                    actions = []
+            if actions:
+                health_text += "\nAction items:\n" + "\n".join(
+                    f"- [{a.get('severity', 'medium')}] {a.get('title', '')}" for a in actions[:8]
+                )
+    except Exception:
+        pass
+
+    # 4. File listing
+    file_listing = "(unavailable)"
+    try:
+        files = list_project_files(project_name, "")
+        if "entries" in files:
+            file_listing = "\n".join(
+                f"  {'dir' if e.get('is_dir') else 'file'}: {e['name']}" for e in files["entries"][:30]
+            )
+    except Exception:
+        pass
+
+    system = NOTES_GEN_SYSTEM.format(
+        project_name=project_name,
+        tech_stack=", ".join(project.get("tech_stack", [])) or "Unknown",
+        branch=project.get("git_branch") or "N/A",
+        status=project.get("git_status", "unknown"),
+        changes=project.get("uncommitted_changes", 0),
+        last_commit=project.get("last_commit_msg") or "N/A",
+        commits_text=commits_text,
+        open_tasks_text=open_tasks_text,
+        done_tasks_text=done_tasks_text,
+        health_text=health_text,
+        file_listing=file_listing,
+    )
+
+    prompt = f"Generate intelligent project notes for {project_name}."
+
+    try:
+        content = await llm_response(prompt, system, feature="project_notes")
+    except Exception as e:
+        logger.warning("AI note generation failed: %s", e)
+        content = ""
+
+    if not content:
+        content = (
+            f"## Status Summary\n"
+            f"Project: {project_name} | Branch: {project.get('git_branch', 'N/A')} | "
+            f"Status: {project.get('git_status', 'unknown')}\n\n"
+            f"## Recent Activity\n{commits_text}\n\n"
+            f"## Open Tasks\n{open_tasks_text}\n\n"
+            f"*AI analysis unavailable — showing raw data.*"
+        )
+
+    title = f"Project Intelligence — {project_name} ({datetime.utcnow().strftime('%Y-%m-%d %H:%M')})"
+    note = create_project_note(project_name, {
+        "title": title,
+        "content": content,
+        "note_type": "ai_generated",
+        "tags": ["ai", "intelligence"],
+        "pinned": False,
+    })
+    return note
+
+
 def export_project(project_name: str) -> dict:
     """Create a tar.gz export of a project. Returns path to archive."""
     base = _resolve_project_path(project_name)

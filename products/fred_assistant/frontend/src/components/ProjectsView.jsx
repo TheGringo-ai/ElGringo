@@ -4,7 +4,7 @@ import {
   ChevronDown, ChevronRight, Activity, Zap, ListChecks, Search,
   FileCode, AlertTriangle, ShieldAlert, Wrench, CheckCircle2,
   Shield, TestTube2, BookOpen, Rocket, Layers, Loader2,
-  Globe, FolderOpen, Bot,
+  Globe, FolderOpen, Bot, StickyNote,
 } from 'lucide-react';
 import {
   fetchProjects, fetchProjectCommits, fetchProjectBranches,
@@ -19,6 +19,7 @@ import AuditInsightsPanel from './AuditInsightsPanel';
 import ReviewChatPanel from './ReviewChatPanel';
 import ProjectChatPanel from './ProjectChatPanel';
 import FileBrowser from './FileBrowser';
+import ProjectNotesPanel from './ProjectNotesPanel';
 
 const STATUS_DOT = { clean: 'bg-emerald-400', dirty: 'bg-amber-400' };
 
@@ -271,6 +272,8 @@ function ProjectCard({ project, expanded, onToggle, analysis }) {
   const [showFiles, setShowFiles] = useState(false);
   // Project chat state
   const [showChat, setShowChat] = useState(false);
+  // Project notes state
+  const [showNotes, setShowNotes] = useState(false);
 
   useEffect(() => { setLocalAnalysis(analysis); }, [analysis]);
 
@@ -453,6 +456,12 @@ function ProjectCard({ project, expanded, onToggle, analysis }) {
             }`}>
             <Bot size={9} /> {showChat ? 'Hide Chat' : 'Ask Fred'}
           </button>
+          <button onClick={(e) => { e.stopPropagation(); setShowNotes(!showNotes); }}
+            className={`text-[10px] px-2 py-0.5 rounded-full transition-colors flex items-center gap-1 ${
+              showNotes ? 'bg-amber-500/20 text-amber-400' : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-300'
+            }`}>
+            <StickyNote size={9} /> {showNotes ? 'Hide Notes' : 'Notes'}
+          </button>
         </div>
       )}
 
@@ -465,6 +474,14 @@ function ProjectCard({ project, expanded, onToggle, analysis }) {
             action_items: review?.action_items || localAnalysis?.action_items,
           }}
           onClose={() => setShowChat(false)}
+        />
+      )}
+
+      {/* ── Project Notes ──────────────────────────────────────────────── */}
+      {showNotes && expanded && (
+        <ProjectNotesPanel
+          projectName={project.name}
+          onClose={() => setShowNotes(false)}
         />
       )}
 

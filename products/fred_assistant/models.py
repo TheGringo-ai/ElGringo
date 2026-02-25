@@ -626,3 +626,18 @@ class FileCreateRequest(BaseModel):
 class FileRenameRequest(BaseModel):
     old_path: str
     new_path: str
+
+
+class ProjectNoteCreate(BaseModel):
+    title: str
+    content: str = ""
+    note_type: str = "manual"
+    tags: list[str] = []
+    pinned: bool = False
+
+
+class ProjectNoteUpdate(BaseModel):
+    title: str | None = None
+    content: str | None = None
+    tags: list[str] | None = None
+    pinned: bool | None = None

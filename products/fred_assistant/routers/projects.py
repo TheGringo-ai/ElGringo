@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from products.fred_assistant.models import (
     FileWriteRequest, FileCreateRequest, FileRenameRequest,
     ProjectChatRequest, ProjectTasksRequest,
+    ProjectNoteCreate, ProjectNoteUpdate,
 )
 from products.fred_assistant.services import projects_service
 
@@ -161,3 +162,48 @@ def export_project(project_name: str):
         filename=result["archive_name"],
         media_type="application/gzip",
     )
+
+
+# ── Project Notes ─────────────────────────────────────────────────
+
+
+@router.get("/{project_name}/notes")
+def list_notes(project_name: str):
+    return projects_service.list_project_notes(project_name)
+
+
+@router.post("/{project_name}/notes")
+def create_note(project_name: str, body: ProjectNoteCreate):
+    note = projects_service.create_project_note(project_name, body.model_dump())
+    return note
+
+
+@router.post("/{project_name}/notes/generate")
+async def generate_notes(project_name: str):
+    note = await projects_service.generate_project_notes(project_name)
+    if not note:
+        raise HTTPException(404, "Project not found or generation failed")
+    return note
+
+
+@router.get("/{project_name}/notes/{note_id}")
+def get_note(project_name: str, note_id: str):
+    note = projects_service.get_project_note(note_id)
+    if not note:
+        raise HTTPException(404, "Note not found")
+    return note
+
+
+@router.patch("/{project_name}/notes/{note_id}")
+def update_note(project_name: str, note_id: str, body: ProjectNoteUpdate):
+    note = projects_service.update_project_note(note_id, body.model_dump(exclude_none=True))
+    if not note:
+        raise HTTPException(404, "Note not found")
+    return note
+
+
+@router.delete("/{project_name}/notes/{note_id}")
+def delete_note(project_name: str, note_id: str):
+    if not projects_service.delete_project_note(note_id):
+        raise HTTPException(404, "Note not found")
+    return {"status": "ok"}

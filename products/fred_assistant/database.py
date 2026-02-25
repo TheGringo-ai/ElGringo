@@ -398,6 +398,21 @@ def init_db():
             FOREIGN KEY (app_id) REFERENCES apps(id)
         );
         CREATE INDEX IF NOT EXISTS idx_app_customers_app ON app_customers(app_id);
+
+        -- Project Notes: AI-generated and manual notes per project
+        CREATE TABLE IF NOT EXISTS project_notes (
+            id TEXT PRIMARY KEY,
+            project_name TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL DEFAULT '',
+            note_type TEXT DEFAULT 'ai_generated',
+            tags TEXT DEFAULT '[]',
+            pinned INTEGER DEFAULT 0,
+            metadata TEXT DEFAULT '{}',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_project_notes_project ON project_notes(project_name);
         """)
 
         # Idempotent ALTER TABLE migrations

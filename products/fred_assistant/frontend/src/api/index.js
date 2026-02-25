@@ -137,6 +137,18 @@ export async function streamProjectChat(name, message, context, onToken, onDone,
 export const generateProjectTasks = (name, instructions = '', boardId = 'work') =>
   api.post(`/projects/${name}/generate-tasks`, { instructions, board_id: boardId }).then((r) => r.data);
 
+// ── Project Notes ───────────────────────────────────────────────
+export const fetchProjectNotes = (name) =>
+  api.get(`/projects/${name}/notes`).then((r) => r.data);
+export const createProjectNote = (name, data) =>
+  api.post(`/projects/${name}/notes`, data).then((r) => r.data);
+export const generateProjectNotes = (name) =>
+  api.post(`/projects/${name}/notes/generate`).then((r) => r.data);
+export const updateProjectNote = (name, noteId, data) =>
+  api.patch(`/projects/${name}/notes/${noteId}`, data).then((r) => r.data);
+export const deleteProjectNote = (name, noteId) =>
+  api.delete(`/projects/${name}/notes/${noteId}`);
+
 // ── Calendar ─────────────────────────────────────────────────────
 export const fetchCalendarEvents = (params) => api.get('/calendar/events', { params }).then((r) => r.data);
 export const fetchTodayEvents = () => api.get('/calendar/today').then((r) => r.data);

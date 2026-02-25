@@ -297,4 +297,4 @@ See [SECURITY.md](SECURITY.md) for the full security model, tool permissions, an
 
 Apache 2.0 - see [LICENSE](LICENSE)
 
-Copyright 2024-2026 Fred Taylor
+Copyright 2024-2026 TheGringo AI

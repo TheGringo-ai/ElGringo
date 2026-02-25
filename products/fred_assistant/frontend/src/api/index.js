@@ -18,6 +18,8 @@ export const deleteTask = (id) => api.delete(`/tasks/${id}`);
 // ── Quick Capture ────────────────────────────────────────────────
 export const quickCapture = (text, board_id) =>
   api.post('/capture', { text, board_id }).then((r) => r.data);
+export const previewCapture = (text, board_id) =>
+  api.post('/capture/preview', { text, board_id }).then((r) => r.data);
 
 // ── Memory ───────────────────────────────────────────────────────
 export const fetchMemories = (category) =>

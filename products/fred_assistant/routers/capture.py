@@ -19,3 +19,14 @@ async def quick_capture(data: QuickCaptureRequest):
     if not parsed.get("board_id"):
         parsed["board_id"] = data.board_id or "work"
     return task_service.create_task(parsed)
+
+
+@router.post("/preview")
+async def preview_capture(data: QuickCaptureRequest):
+    """Parse text and return structured fields without creating a task."""
+    parsed = await parse_capture_text(data.text, data.board_id)
+    if parsed.get("priority") is None:
+        parsed["priority"] = 3
+    if not parsed.get("board_id"):
+        parsed["board_id"] = data.board_id or "work"
+    return parsed

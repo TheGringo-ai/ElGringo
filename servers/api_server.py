@@ -778,6 +778,85 @@ def memory_stats():
 
 
 # ============================================
+# Meeting Data RAG Endpoints
+# ============================================
+
+@app.route('/api/meetings/index', methods=['POST'])
+def index_meeting_data():
+    """Index meeting data (agendas, daily briefs, meeting notes) into RAG.
+
+    Called by managers-dashboard after saving/updating meeting data.
+    Accepts a single meeting item or a batch.
+
+    Body:
+        items: list of meeting dicts, each with:
+            id, type ("agenda"|"daily_brief"|"meeting_note"),
+            client_id, title/summary, content, date
+    """
+    data = request.get_json() or {}
+    items = data.get("items", [])
+
+    if not items:
+        # Single item mode
+        if data.get("id"):
+            items = [data]
+        else:
+            return jsonify({"success": False, "error": "No items provided"}), 400
+
+    try:
+        from products.fred_assistant.services.rag_service import get_rag
+        rag = get_rag()
+        indexed = 0
+        for item in items:
+            if rag.index_meeting(item):
+                indexed += 1
+        return jsonify({
+            "success": True,
+            "indexed": indexed,
+            "total": len(items),
+        })
+    except Exception as e:
+        logger.error(f"Meeting index failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/meetings/search', methods=['GET'])
+def search_meetings():
+    """Search indexed meeting data via RAG semantic search.
+
+    Query params:
+        q: search query (required)
+        client_id: filter by client (optional)
+        limit: max results (default 10)
+    """
+    query = request.args.get("q", "")
+    client_id = request.args.get("client_id", "")
+    limit = int(request.args.get("limit", "10"))
+
+    if not query:
+        return jsonify({"success": False, "error": "q parameter required"}), 400
+
+    try:
+        from products.fred_assistant.services.rag_service import get_rag
+        rag = get_rag()
+        where = {"client_id": client_id} if client_id else None
+        results = rag.query(
+            query_text=query,
+            collections=["fred_meetings"],
+            n_results=limit,
+            where=where,
+        )
+        return jsonify({
+            "success": True,
+            "results": results,
+            "count": len(results),
+        })
+    except Exception as e:
+        logger.error(f"Meeting search failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ============================================
 # Coding Knowledge Hub Endpoints
 # ============================================
 

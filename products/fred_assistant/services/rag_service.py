@@ -59,6 +59,7 @@ class RAGService:
                     "fred_chat",
                     "fred_service_results",
                     "fred_projects",
+                    "fred_meetings",
                 ]
                 for name in collection_names:
                     self._collections[name] = self._client.get_or_create_collection(
@@ -209,6 +210,58 @@ class RAGService:
             return True
         except Exception as e:
             logger.debug("index_service_result failed: %s", e)
+            return False
+
+    def index_meeting(self, meeting_dict: dict) -> bool:
+        """Index a meeting item (agenda, daily brief, or meeting note).
+
+        meeting_dict keys:
+            id: unique identifier
+            type: "agenda" | "daily_brief" | "meeting_note"
+            client_id: client identifier
+            title/summary: main text content
+            content: detailed content (topics, talking points, notes)
+            date: date string
+        """
+        if not self._ensure_initialized():
+            return False
+        try:
+            mid = str(meeting_dict["id"])
+            mtype = meeting_dict.get("type", "meeting")
+            client_id = meeting_dict.get("client_id", "")
+            date = meeting_dict.get("date", "")
+            title = meeting_dict.get("title", meeting_dict.get("summary", ""))
+            content = meeting_dict.get("content", "")
+
+            doc = f"[{mtype}] {title}"
+            if content:
+                doc += f": {content[:1500]}"
+            if date:
+                doc += f" (date: {date})"
+
+            self._collections["fred_meetings"].upsert(
+                ids=[mid],
+                documents=[doc],
+                embeddings=[self._embed_single(doc)],
+                metadatas=[{
+                    "type": mtype,
+                    "client_id": client_id,
+                    "date": date,
+                }],
+            )
+            return True
+        except Exception as e:
+            logger.debug("index_meeting failed: %s", e)
+            return False
+
+    def delete_meeting(self, meeting_id: str) -> bool:
+        if not self._ensure_initialized():
+            return False
+        try:
+            self._collections["fred_meetings"].delete(ids=[str(meeting_id)])
+            return True
+        except Exception as e:
+            logger.debug("delete_meeting failed: %s", e)
             return False
 
     def index_project(self, project_id: str, project_dict: dict) -> int:
@@ -400,11 +453,12 @@ class RAGService:
         n_tasks: int = 10,
         n_service_results: int = 5,
         n_projects: int = 5,
+        n_meetings: int = 5,
         relevance_threshold: float = 1.2,
     ) -> dict:
         """Purpose-built query for context building. Returns categorized results."""
         if not self._ensure_initialized():
-            return {"memories": [], "tasks": [], "service_results": [], "projects": []}
+            return {"memories": [], "tasks": [], "service_results": [], "projects": [], "meetings": []}
 
         embedding = self._embed_single(user_message)
 
@@ -441,6 +495,7 @@ class RAGService:
             "tasks": _query_collection("fred_tasks", n_tasks),
             "service_results": _query_collection("fred_service_results", n_service_results),
             "projects": _query_collection("fred_projects", n_projects),
+            "meetings": _query_collection("fred_meetings", n_meetings),
         }
 
     # ── Background sync ──────────────────────────────────────────

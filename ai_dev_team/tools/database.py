@@ -11,12 +11,11 @@ Capabilities:
 """
 
 import asyncio
-import json
 import logging
 import os
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 from .base import Tool, ToolResult, PermissionManager
 

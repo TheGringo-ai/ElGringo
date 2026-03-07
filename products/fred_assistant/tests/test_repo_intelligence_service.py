@@ -5,10 +5,7 @@ Tests for analysis engine, health scoring, and task generation.
 """
 
 import os
-import json
 import pytest
-import tempfile
-import shutil
 
 from products.fred_assistant.services import repo_intelligence_service as ris
 

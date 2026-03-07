@@ -10,7 +10,6 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from products.fred_assistant.database import get_conn, log_activity
@@ -227,7 +226,7 @@ async def generate_app(app_id: str, enrich: bool = True, template: Optional[str]
         os.makedirs(project_dir, exist_ok=True)
 
         # Build an AppProject spec from the app metadata
-        from ai_dev_team.app_builder.models import AppProject, create_default_project
+        from ai_dev_team.app_builder.models import create_default_project
 
         app_type_map = {
             "api": "crud",
@@ -312,7 +311,7 @@ async def generate_app(app_id: str, enrich: bool = True, template: Optional[str]
 def _generate_dockerfile(app: dict) -> str:
     """Generate a simple Dockerfile based on app type."""
     port = app.get("port", 8000)
-    name = app.get("name", "app")
+    app.get("name", "app")
     if app.get("app_type") == "api" or app.get("app_type") == "fullstack":
         return f"""FROM python:3.12-slim
 WORKDIR /app

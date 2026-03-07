@@ -11,7 +11,7 @@ from ai_dev_team.orchestrator import AIDevTeam
 
 async def consult_team(task: str, mode: str = "parallel"):
     """Quick consultation with the AI team"""
-    print(f"\n🤖 Consulting AI Team...")
+    print("\n🤖 Consulting AI Team...")
     print(f"📋 Task: {task}")
     print(f"🎯 Mode: {mode}\n")
     

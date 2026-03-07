@@ -5,17 +5,14 @@ Feedback Trainer
 Triggers MLX fine-tuning with accumulated feedback data.
 """
 
-import asyncio
-import json
 import logging
-import os
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .capture import FeedbackCapture, get_feedback_capture
+from .capture import get_feedback_capture
 
 logger = logging.getLogger(__name__)
 

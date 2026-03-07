@@ -1,6 +1,5 @@
 """Tests for metrics_service — CEO Lens metrics."""
 
-import pytest
 from products.fred_assistant.services import metrics_service
 
 
@@ -41,6 +40,6 @@ def test_log_metric_custom():
 
 def test_save_and_retrieve_snapshot():
     metrics_service.log_metric("mrr", 8000)
-    snapshot = metrics_service.save_snapshot()
+    metrics_service.save_snapshot()
     snapshots = metrics_service.get_snapshots(days=1)
     assert len(snapshots) >= 1

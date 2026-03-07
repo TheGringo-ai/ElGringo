@@ -10,8 +10,8 @@ Usage:
     4. Run with: uvicorn app:app --reload
 """
 
-from fastapi import FastAPI, HTTPException, Query, Path, Depends
-from pydantic import BaseModel, Field, validator
+from fastapi import FastAPI, HTTPException, Query, Path
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum

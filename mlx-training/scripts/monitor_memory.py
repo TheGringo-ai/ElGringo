@@ -88,17 +88,17 @@ def main():
             if available_gb < 2:
                 print(f"\033[2K\r\033[91m⚠️  CRITICAL: Only {available_gb:.1f}GB available! STOP TRAINING!\033[0m")
             elif available_gb < 4:
-                print(f"\033[2K\r\033[91m⚠️  WARNING: Memory pressure high. Consider stopping.\033[0m")
+                print("\033[2K\r\033[91m⚠️  WARNING: Memory pressure high. Consider stopping.\033[0m")
             elif available_gb < 6:
-                print(f"\033[2K\r\033[93m⚡ Training zone - monitor closely.\033[0m")
+                print("\033[2K\r\033[93m⚡ Training zone - monitor closely.\033[0m")
             else:
-                print(f"\033[2K\r\033[92m✓ Memory looks good.\033[0m")
+                print("\033[2K\r\033[92m✓ Memory looks good.\033[0m")
 
             # Show Python processes
             python_procs = get_python_processes()
             if python_procs:
-                print(f"\033[2K\r")
-                print(f"\033[2K\rPython processes:")
+                print("\033[2K\r")
+                print("\033[2K\rPython processes:")
                 for proc in python_procs[:3]:
                     print(f"\033[2K\r  PID {proc['pid']}: {proc['mem_gb']:.1f}GB")
 

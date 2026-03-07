@@ -12,7 +12,6 @@ Features:
 - Stream lifecycle management
 """
 
-import asyncio
 import json
 import logging
 import queue
@@ -22,7 +21,7 @@ import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Dict, Generator, List, Optional, Set
+from typing import Any, Dict, Generator, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 

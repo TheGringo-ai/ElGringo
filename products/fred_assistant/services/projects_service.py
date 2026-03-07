@@ -164,7 +164,7 @@ def get_project_info(path: str) -> dict:
         info["git_branch"] = _git(path, "rev-parse", "--abbrev-ref", "HEAD") or None
 
         status = _git(path, "status", "--porcelain")
-        changes = [l for l in status.splitlines() if l.strip()]
+        changes = [ln for ln in status.splitlines() if ln.strip()]
         info["uncommitted_changes"] = len(changes)
         info["git_status"] = "dirty" if changes else "clean"
 
@@ -709,7 +709,7 @@ async def stream_project_chat(message: str, project_name: str, context: dict):
 
     full_prompt = f"User question: {message}"
 
-    from products.fred_assistant.services.llm_shared import get_gemini, llm_response
+    from products.fred_assistant.services.llm_shared import llm_response
 
     # Accumulate full response to parse TASK: blocks after streaming
     full_response = ""
@@ -914,16 +914,21 @@ def update_project_note(note_id: str, data: dict) -> dict | None:
     now = datetime.utcnow().isoformat(timespec="seconds")
     sets, params = [], []
     if data.get("title") is not None:
-        sets.append("title = ?"); params.append(data["title"])
+        sets.append("title = ?")
+        params.append(data["title"])
     if data.get("content") is not None:
-        sets.append("content = ?"); params.append(data["content"])
+        sets.append("content = ?")
+        params.append(data["content"])
     if data.get("tags") is not None:
-        sets.append("tags = ?"); params.append(_json.dumps(data["tags"]))
+        sets.append("tags = ?")
+        params.append(_json.dumps(data["tags"]))
     if data.get("pinned") is not None:
-        sets.append("pinned = ?"); params.append(1 if data["pinned"] else 0)
+        sets.append("pinned = ?")
+        params.append(1 if data["pinned"] else 0)
     if not sets:
         return existing
-    sets.append("updated_at = ?"); params.append(now)
+    sets.append("updated_at = ?")
+    params.append(now)
     params.append(note_id)
     with get_conn() as conn:
         conn.execute(f"UPDATE project_notes SET {', '.join(sets)} WHERE id = ?", params)

@@ -1,6 +1,5 @@
 """Tests for crm_service — Revenue CRM Lite."""
 
-import pytest
 from products.fred_assistant.services import crm_service
 
 

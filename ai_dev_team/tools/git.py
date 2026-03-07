@@ -19,7 +19,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Callable
+from typing import Dict, List, Optional, Callable
 
 from .base import Tool, ToolResult, PermissionManager
 

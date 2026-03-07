@@ -6,10 +6,7 @@ One-click project generation with best practices baked in.
 """
 
 import os
-import json
-import shutil
-from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from datetime import datetime
 
 

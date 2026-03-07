@@ -25,9 +25,9 @@ Usage:
 import ast
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Set, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)

@@ -1,6 +1,5 @@
 """Tests for coach_service — goals, weekly reviews, accountability."""
 
-import pytest
 from products.fred_assistant.services import coach_service
 
 

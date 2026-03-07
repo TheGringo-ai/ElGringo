@@ -1,13 +1,11 @@
 """Tests for tasks router — HTTP endpoint integration tests."""
 
 import os
-import pytest
 
 os.environ["FRED_DB_PATH"] = ":memory:"
 
 from fastapi.testclient import TestClient
 
-import products.fred_assistant.database as db
 from products.fred_assistant.server import app
 
 client = TestClient(app)

@@ -8,13 +8,12 @@ Provides health status for intelligent routing and failover decisions.
 Based on AI Team consensus recommendations.
 """
 
-import asyncio
 import json
 import logging
 import os
 import time
 from collections import deque
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path

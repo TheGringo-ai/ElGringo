@@ -14,13 +14,11 @@ Features:
 
 import json
 import logging
-import os
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
-import difflib
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

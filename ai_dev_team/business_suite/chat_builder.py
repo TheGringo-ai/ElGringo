@@ -5,9 +5,8 @@ AI Chat Builder
 Tools for building and configuring custom AI chatbots.
 """
 
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
-import json
+from dataclasses import dataclass
+from typing import List, Dict, Optional
 
 
 # ============================================================

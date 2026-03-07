@@ -19,12 +19,11 @@ Endpoints:
 """
 
 import asyncio
-import json
 import logging
 import os
 from datetime import datetime
 from functools import wraps
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -390,7 +389,7 @@ async def collaborate():
 
     prompt = data.get('prompt', '')
     mode = data.get('mode', 'parallel')  # parallel, sequential, consensus
-    context = data.get('context', {})
+    data.get('context', {})
 
     if not prompt:
         return jsonify({

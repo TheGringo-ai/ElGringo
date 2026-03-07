@@ -30,9 +30,7 @@ import asyncio
 import hashlib
 import json
 import logging
-import os
 import re
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -313,7 +311,7 @@ Summary:"""
             summary_parts.append(" ".join(first_para[:3]))
 
         # Get section headers (markdown style)
-        headers = [l.strip() for l in lines if l.strip().startswith('#')]
+        headers = [ln.strip() for ln in lines if ln.strip().startswith('#')]
         if headers:
             summary_parts.append("\n\nSections:")
             summary_parts.extend([f"  - {h.lstrip('#').strip()}" for h in headers[:10]])

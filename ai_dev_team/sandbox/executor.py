@@ -14,12 +14,9 @@ Two execution modes:
 """
 
 import asyncio
-import json
 import logging
 import os
 import resource
-import signal
-import subprocess
 import sys
 import tempfile
 import time
@@ -27,7 +24,6 @@ import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from enum import Enum
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -300,7 +296,7 @@ class CodeExecutor:
             '--rm',  # Remove container after execution
             '--network', 'none',  # No network access
             f'--memory={self.limits.max_memory_mb}m',
-            f'--cpus=0.5',  # Limit to half a CPU
+            '--cpus=0.5',  # Limit to half a CPU
             '--pids-limit', str(self.limits.max_processes),
             '--read-only',  # Read-only filesystem
             '--security-opt', 'no-new-privileges',

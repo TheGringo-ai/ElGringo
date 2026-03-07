@@ -8,7 +8,7 @@ Connects to ChatterFix's knowledge base for shared learnings.
 import os
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 
 # ChatterFix paths
 CHATTERFIX_ROOT = Path(os.path.expanduser(
@@ -139,10 +139,10 @@ class ChatterFixConnector:
         lessons = self.get_lessons()
 
         return [
-            l for l in lessons
-            if query in l.title.lower() or
-               query in l.problem.lower() or
-               query in l.solution.lower()
+            item for item in lessons
+            if query in item.title.lower() or
+               query in item.problem.lower() or
+               query in item.solution.lower()
         ]
 
     def get_prevention_advice(self, context: str) -> Optional[str]:

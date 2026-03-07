@@ -126,7 +126,6 @@ def format_plan(plan) -> str:
 def run_async(coro):
     """Run async code in sync context, handling nested event loops."""
     import concurrent.futures
-    import threading
 
     def run_in_new_loop():
         """Run coroutine in a fresh event loop."""
@@ -371,9 +370,9 @@ async def _handle_smart_commit(message: str) -> str:
 
         # Count changes
         lines = status.stdout.strip().split('\n')
-        added = sum(1 for l in lines if l.startswith('A') or l.startswith('?'))
-        modified = sum(1 for l in lines if l.startswith('M'))
-        deleted = sum(1 for l in lines if l.startswith('D'))
+        added = sum(1 for ln in lines if ln.startswith('A') or ln.startswith('?'))
+        modified = sum(1 for ln in lines if ln.startswith('M'))
+        deleted = sum(1 for ln in lines if ln.startswith('D'))
 
         # Stage changes selectively (exclude secrets)
         SECRET_PATTERNS = [".env", ".env.*", "*.pem", "*.key", "*.p12",
@@ -1012,12 +1011,10 @@ def respond_stream(message: str, history: list):
     # Stream from the best agent for natural language input
     t = get_team()
     try:
-        import concurrent.futures
         import threading
         import queue as queue_mod
 
         token_queue = queue_mod.Queue()
-        error_holder = [None]
 
         async def _stream_worker():
             try:

@@ -4,8 +4,7 @@ GitHub Integration - Auto-review PRs and learn from outcomes
 
 import logging
 import os
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -411,7 +410,7 @@ Provide a comprehensive review including:
 
 **Title:** {issue.title}
 **State:** {issue.state}
-**Labels:** {', '.join(l.name for l in issue.labels)}
+**Labels:** {', '.join(lb.name for lb in issue.labels)}
 **Created by:** {issue.user.login}
 
 **Description:**

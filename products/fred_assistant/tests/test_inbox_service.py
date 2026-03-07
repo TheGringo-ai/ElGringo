@@ -1,6 +1,5 @@
 """Tests for inbox_service — unified prioritized inbox."""
 
-import pytest
 from datetime import date, timedelta
 
 from products.fred_assistant.services import inbox_service, task_service, crm_service, calendar_service, coach_service

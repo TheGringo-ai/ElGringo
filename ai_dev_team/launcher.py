@@ -16,11 +16,9 @@ Opens:
 """
 
 import multiprocessing
-import os
 import sys
 import time
 import webbrowser
-from pathlib import Path
 
 # Load environment
 from dotenv import load_dotenv

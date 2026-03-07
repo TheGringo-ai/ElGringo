@@ -4,7 +4,7 @@ Data models for the PR Review Bot.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional
+from typing import List
 
 
 class ReviewVerdict(str, Enum):

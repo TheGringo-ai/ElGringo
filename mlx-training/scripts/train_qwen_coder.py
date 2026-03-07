@@ -31,7 +31,7 @@ def main():
     print()
 
     # Check memory
-    available = check_memory()
+    check_memory()
     print()
 
     # Training parameters optimized for 18GB RAM

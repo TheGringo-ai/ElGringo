@@ -17,7 +17,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from .cost_optimizer import CostOptimizer, CostEstimate, BudgetStatus, MODEL_COSTS
+from .cost_optimizer import CostOptimizer, CostEstimate, MODEL_COSTS
 
 logger = logging.getLogger(__name__)
 

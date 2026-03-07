@@ -4,13 +4,11 @@ Self-Correction Engine for Autonomous AI Agents
 Automatically detects failures, analyzes issues, and retries with adaptive strategies.
 """
 
-import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, List, Dict, Any, Callable
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 

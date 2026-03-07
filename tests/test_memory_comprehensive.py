@@ -5,13 +5,10 @@ Comprehensive Memory System Tests
 Extended tests for memory system with higher coverage.
 """
 
-import asyncio
-import json
 import os
 import pytest
 import sys
 from datetime import datetime, timezone
-from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -20,7 +17,6 @@ from ai_dev_team.memory.system import (
     MistakeType,
     MistakeRecord,
     SolutionRecord,
-    Interaction,
     OutcomeRating,
     tokenize,
     compute_tf_idf_score,

@@ -7,7 +7,6 @@ import sqlite3
 import json
 import os
 from contextlib import contextmanager
-from datetime import datetime
 
 DB_PATH = os.path.expanduser("~/.fred-assistant/fred.db")
 

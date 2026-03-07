@@ -96,7 +96,7 @@ class SyncService:
                 total = 0
                 for table, ts_col, _ in SYNCABLE_TABLES:
                     row = conn.execute(
-                        f"SELECT last_push FROM sync_meta WHERE table_name = ?",
+                        "SELECT last_push FROM sync_meta WHERE table_name = ?",
                         (table,),
                     ).fetchone()
                     since = row["last_push"] if row else "2000-01-01"

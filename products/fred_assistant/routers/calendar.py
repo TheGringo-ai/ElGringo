@@ -1,7 +1,7 @@
 """Calendar router — events, time blocks, deadlines."""
 
 from fastapi import APIRouter, HTTPException, Query
-from products.fred_assistant.models import CalendarEventOut, CalendarEventCreate, CalendarEventUpdate
+from products.fred_assistant.models import CalendarEventCreate, CalendarEventUpdate
 from products.fred_assistant.services import calendar_service
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])

@@ -6,7 +6,6 @@ Auto-discovers products by scanning products/*/config.py for PRODUCT_CONFIG inst
 """
 
 import importlib
-import pkgutil
 from pathlib import Path
 from typing import Dict, List, Optional
 

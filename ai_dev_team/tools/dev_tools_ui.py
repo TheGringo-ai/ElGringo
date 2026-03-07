@@ -8,7 +8,6 @@ Gradio UI for project scaffolding, deployment, and export.
 import gradio as gr
 import os
 import subprocess
-from typing import Dict, List, Any
 
 from .scaffolding import ProjectScaffolder, PROJECT_TEMPLATES
 from .quick_deploy import QuickDeployer

@@ -24,18 +24,15 @@ Supported Languages:
     - PHP (.php)
 """
 
-import asyncio
 import json
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .memory.system import MemorySystem, MistakeType
-from .agents.base import AgentResponse
+from .memory.system import MemorySystem
 
 logger = logging.getLogger(__name__)
 
@@ -492,7 +489,7 @@ Respond with a JSON array of issues, or empty array if none found."""
 
         context = ""
         if solutions:
-            context = f"Similar past solutions:\n"
+            context = "Similar past solutions:\n"
             for sol in solutions[:2]:
                 context += f"- {sol.problem_pattern}: {', '.join(sol.solution_steps[:2])}\n"
 

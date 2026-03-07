@@ -14,7 +14,6 @@ Features:
 
 import asyncio
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -376,7 +375,7 @@ async def benchmark_mlx(model_name: str, prompt: str = "Write a Python hello wor
     avg_tokens = sum(tokens) / len(tokens)
     avg_speed = avg_tokens / avg_time
 
-    print(f"\nBenchmark Results:")
+    print("\nBenchmark Results:")
     print(f"  Average speed: {avg_speed:.1f} tokens/sec")
     print(f"  Memory used: {response.memory_used_mb:.1f} MB")
 

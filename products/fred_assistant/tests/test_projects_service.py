@@ -1,8 +1,6 @@
 """Tests for projects_service — project discovery, GitHub API, tech stack detection."""
 
-import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from products.fred_assistant.services import projects_service
 

@@ -1,14 +1,12 @@
 """Tests for platform router — cross-service integration endpoints."""
 
 import os
-import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock
 
 os.environ["FRED_DB_PATH"] = ":memory:"
 
 from fastapi.testclient import TestClient
 
-import products.fred_assistant.database as db
 from products.fred_assistant.server import app
 from products.fred_assistant.services import platform_services, task_service
 

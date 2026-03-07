@@ -1,6 +1,5 @@
 """Tests for content_service — content creation and social media management."""
 
-import pytest
 from products.fred_assistant.services import content_service
 
 

@@ -1,6 +1,5 @@
 """Content queue and generation router."""
 
-import asyncio
 import concurrent.futures
 import json
 import logging
@@ -14,7 +13,6 @@ from products.command_center.models import (
     ContentGenerateRequest,
     ContentItemOut,
     ContentJobOut,
-    ContentStatusUpdate,
 )
 from products.command_center.services import get_content_generator, get_content_queue
 

@@ -5,7 +5,6 @@ Download and prepare Hugging Face datasets for MLX fine-tuning
 
 import json
 import os
-import sys
 from datasets import load_dataset
 
 # Available datasets
@@ -60,7 +59,7 @@ def download_and_prepare(dataset_key: str, max_examples: int = 5000):
     ds_format = ds_info["format"]
 
     print(f"Downloading: {ds_name}")
-    print(f"This may take a few minutes...")
+    print("This may take a few minutes...")
     print()
 
     try:
@@ -81,7 +80,7 @@ def download_and_prepare(dataset_key: str, max_examples: int = 5000):
     valid_file = os.path.join(base_dir, "data", "valid.jsonl")
 
     # Convert to MLX format
-    print(f"Converting to Qwen chat format...")
+    print("Converting to Qwen chat format...")
 
     train_examples = []
     valid_examples = []
@@ -113,7 +112,7 @@ def download_and_prepare(dataset_key: str, max_examples: int = 5000):
             else:
                 train_examples.append(formatted)
 
-        except Exception as e:
+        except Exception:
             continue
 
     # Write files
@@ -125,7 +124,7 @@ def download_and_prepare(dataset_key: str, max_examples: int = 5000):
 
     print()
     print("=" * 60)
-    print(f"SUCCESS!")
+    print("SUCCESS!")
     print(f"  Training examples: {len(train_examples)}")
     print(f"  Validation examples: {len(valid_examples)}")
     print(f"  Saved to: {output_file}")

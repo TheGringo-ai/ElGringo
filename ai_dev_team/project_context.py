@@ -8,7 +8,6 @@ collaborate calls and specialize agent behavior per project.
 
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 

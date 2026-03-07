@@ -14,7 +14,6 @@ Demonstrates the different collaboration modes available in the AI Team Platform
 """
 
 import asyncio
-import os
 from ai_dev_team import AIDevTeam, CollaborationMode
 
 

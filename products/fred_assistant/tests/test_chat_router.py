@@ -1,14 +1,12 @@
 """Tests for chat router — HTTP endpoint integration tests."""
 
 import os
-import pytest
 from unittest.mock import patch, AsyncMock
 
 os.environ["FRED_DB_PATH"] = ":memory:"
 
 from fastapi.testclient import TestClient
 
-import products.fred_assistant.database as db
 from products.fred_assistant.server import app
 from products.fred_assistant.services import assistant
 

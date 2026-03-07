@@ -17,7 +17,6 @@ from typing import Any, Dict, List, Optional
 
 from .agents import (
     AIAgent,
-    AgentConfig,
     AgentResponse,
     ChatGPTAgent,
     ClaudeAgent,
@@ -26,11 +25,10 @@ from .agents import (
     OllamaAgent,
     ModelType,
     # Llama Cloud agents
-    LlamaCloudAgent,
     create_llama_70b,
     create_llama_fast,
 )
-from .agents.ollama import create_local_agent, create_local_coder, LOCAL_MODELS
+from .agents.ollama import create_local_agent, create_local_coder
 from .apple.smart_router import ModelTier
 from .routing import TaskRouter, CostOptimizer, get_performance_tracker, RoutingDecision, get_decision_logger
 from .routing.cost_tracker import get_cost_tracker
@@ -1135,7 +1133,7 @@ class AIDevTeam:
                     self._session_learner.record_outcome(outcome)
                 # Auto-save learning data
                 self._session_learner.save()
-                collaboration_log.append(f"Session learning updated and saved")
+                collaboration_log.append("Session learning updated and saved")
 
             return result
 
@@ -1314,7 +1312,6 @@ class AIDevTeam:
 
         async def stream_agent(agent):
             agent_contents[agent.name] = []
-            yield_start = {"type": "agent_start", "agent": agent.name}
             start = _time.time()
             try:
                 async for chunk in agent.generate_stream(prompt, context):
@@ -1431,7 +1428,7 @@ class AIDevTeam:
 
                 # If consensus reached early, we can stop
                 if consensus_result.consensus_reached and iteration > 0:
-                    log.append(f"  Consensus reached - stopping early")
+                    log.append("  Consensus reached - stopping early")
                     break
 
                 # If disagreements found, initiate debate

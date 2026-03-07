@@ -90,7 +90,7 @@ class UIAgent:
             await self.page.wait_for_timeout(2000)
             action.result = f"Navigated to {url}"
             action.success = True
-        except Exception as e:
+        except Exception:
             # Try with domcontentloaded as fallback
             try:
                 await self.page.goto(url, wait_until="domcontentloaded", timeout=10000)
@@ -550,7 +550,7 @@ async def run_ai_agent_tests(base_url: str = "http://127.0.0.1:7861"):
             print(f"\nErrors: {result.errors}")
 
         if result.screenshots:
-            print(f"\nScreenshots saved:")
+            print("\nScreenshots saved:")
             for ss in result.screenshots:
                 print(f"  📸 {ss}")
 

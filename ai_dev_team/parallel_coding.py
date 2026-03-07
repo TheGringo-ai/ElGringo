@@ -11,16 +11,14 @@ This is the core engine that powers automated multi-agent development.
 import asyncio
 import json
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-from .agents import AIAgent, AgentResponse
-from .orchestrator import AIDevTeam, CollaborationResult
+from .orchestrator import AIDevTeam
 
 logger = logging.getLogger(__name__)
 
@@ -486,7 +484,7 @@ class ParallelCodingEngine:
                 TASK: {task.description}
                 TYPE: {task.task_type.value}
 
-                {f'CODE TO REVIEW:' if task.code_snippet else ''}
+                {'CODE TO REVIEW:' if task.code_snippet else ''}
                 {task.code_snippet or ''}
 
                 CONTEXT:

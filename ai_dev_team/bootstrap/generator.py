@@ -8,9 +8,8 @@ Templates are minimal and production-ready.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -283,7 +282,7 @@ Return only the improved code, no explanation.""",
         if spec.app_type == "fastapi":
             steps.append("uvicorn app.main:app --reload")
         elif spec.app_type == "cli":
-            steps.append(f"python -m src.cli --help")
+            steps.append("python -m src.cli --help")
 
         if "tests" in spec.features:
             steps.append("pytest")

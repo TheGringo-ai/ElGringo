@@ -3,11 +3,10 @@ GitHub API client for fetching PR data and posting reviews.
 """
 
 import logging
-from typing import Optional
 
 import httpx
 
-from .models import PRInfo, ReviewResult, InlineComment, ReviewVerdict
+from .models import PRInfo, ReviewResult, ReviewVerdict
 
 logger = logging.getLogger(__name__)
 

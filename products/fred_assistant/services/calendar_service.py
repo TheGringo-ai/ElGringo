@@ -2,7 +2,6 @@
 Calendar Service — events, time blocking, deadlines.
 """
 
-import json
 import uuid
 from datetime import date, datetime, timedelta
 

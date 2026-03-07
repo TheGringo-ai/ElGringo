@@ -250,7 +250,7 @@ def print_summary(results: Dict):
         elif improvement < 0:
             print(f"⚠️ {models[0]} is {-improvement:.1%} worse than {models[1]}")
         else:
-            print(f"➡️ Both models perform equally")
+            print("➡️ Both models perform equally")
 
 
 def main():

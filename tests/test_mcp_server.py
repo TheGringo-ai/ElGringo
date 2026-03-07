@@ -5,8 +5,6 @@ Tests for MCP Server
 Unit tests for the AI Team Platform MCP server.
 """
 
-import asyncio
-import json
 import pytest
 import sys
 import os
@@ -36,7 +34,7 @@ class TestToolDefinitions:
     def test_all_tools_have_required_fields(self):
         """All tools must have name, description, and inputSchema"""
         for tool in TOOLS:
-            assert "name" in tool, f"Tool missing name"
+            assert "name" in tool, "Tool missing name"
             assert "description" in tool, f"Tool {tool.get('name')} missing description"
             assert "inputSchema" in tool, f"Tool {tool.get('name')} missing inputSchema"
 

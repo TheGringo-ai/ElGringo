@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from .system import MemorySystem, MistakeType, OutcomeRating, tokenize
+from .system import MemorySystem, MistakeType, tokenize
 
 logger = logging.getLogger(__name__)
 

@@ -25,14 +25,13 @@ import ast
 import hashlib
 import json
 import logging
-import os
 import random
 import re
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -432,7 +431,7 @@ class KnowledgeHubExtractor:
             # Extract error fixes
             for fix in hub._error_fixes:
                 instruction = f"How do I fix this error: {fix.error_pattern}"
-                response = f"To fix this error:\n\n"
+                response = "To fix this error:\n\n"
                 response += "\n".join(f"{i+1}. {step}" for i, step in enumerate(fix.fix_steps))
                 if fix.fix_code:
                     response += f"\n\nExample fix:\n```{fix.language}\n{fix.fix_code}\n```"
@@ -454,9 +453,9 @@ class KnowledgeHubExtractor:
                 instruction = f"Show me the {pattern.pattern_name} pattern for {pattern.framework}"
                 response = f"{pattern.description}\n\n```\n{pattern.code_template}\n```"
                 if pattern.use_cases:
-                    response += f"\n\nUse cases:\n" + "\n".join(f"- {uc}" for uc in pattern.use_cases)
+                    response += "\n\nUse cases:\n" + "\n".join(f"- {uc}" for uc in pattern.use_cases)
                 if pattern.anti_patterns:
-                    response += f"\n\nAvoid:\n" + "\n".join(f"- {ap}" for ap in pattern.anti_patterns)
+                    response += "\n\nAvoid:\n" + "\n".join(f"- {ap}" for ap in pattern.anti_patterns)
 
                 examples.append(TrainingExample(
                     instruction=instruction,
@@ -707,7 +706,7 @@ class TrainingDataGenerator:
         with open(self.output_dir / "stats.json", "w") as f:
             json.dump(stats, f, indent=2)
 
-        logger.info(f"\nGenerated training data:")
+        logger.info("\nGenerated training data:")
         logger.info(f"  Total examples: {len(self.examples)}")
         logger.info(f"  Training: {len(train_examples)}")
         logger.info(f"  Validation: {len(valid_examples)}")
@@ -789,10 +788,10 @@ def main():
     logger.info("Summary")
     logger.info("=" * 60)
     logger.info(f"Total examples: {stats['total_examples']}")
-    logger.info(f"\nBy category:")
+    logger.info("\nBy category:")
     for cat, count in sorted(stats['categories'].items(), key=lambda x: -x[1]):
         logger.info(f"  {cat}: {count}")
-    logger.info(f"\nBy language:")
+    logger.info("\nBy language:")
     for lang, count in sorted(stats['languages'].items(), key=lambda x: -x[1]):
         logger.info(f"  {lang}: {count}")
     logger.info(f"\nOutput: {output_dir}")

@@ -14,8 +14,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, TypeVar, Generic
 
-from ..monitoring import get_health_monitor, HealthStatus
-from .circuit_breaker import get_circuit_breaker, CircuitState
+from ..monitoring import get_health_monitor
+from .circuit_breaker import get_circuit_breaker
 
 logger = logging.getLogger(__name__)
 

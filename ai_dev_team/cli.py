@@ -855,7 +855,7 @@ class AITeamCLI:
             print(f"  {Colors.CYAN}/run file <path>{Colors.RESET}     - Run a file")
             print(f"\n{Colors.BOLD}Examples:{Colors.RESET}")
             print(f"  {Colors.DIM}/run python print('Hello, World!')")
-            print(f"  /run js console.log(2 + 2)")
+            print("  /run js console.log(2 + 2)")
             print(f"  /run python for i in range(5): print(i){Colors.RESET}")
             print()
             return
@@ -958,7 +958,7 @@ class AITeamCLI:
         print(f"  {Colors.CYAN}/new <description>{Colors.RESET}      - AI generates project")
         print(f"\n{Colors.BOLD}Examples:{Colors.RESET}")
         print(f"  {Colors.DIM}/new fastapi my-api")
-        print(f"  /new react my-dashboard")
+        print("  /new react my-dashboard")
         print(f"  /new Build a task manager with user auth{Colors.RESET}")
         print()
 
@@ -1053,7 +1053,7 @@ class AITeamCLI:
             print(f"  {Colors.CYAN}/analyze <path> arch{Colors.RESET}      - Analyze architecture diagram")
             print(f"\n{Colors.BOLD}Examples:{Colors.RESET}")
             print(f"  {Colors.DIM}/analyze ~/Desktop/screenshot.png")
-            print(f"  /analyze ./mockup.png Convert to React")
+            print("  /analyze ./mockup.png Convert to React")
             print(f"  /analyze error.png error{Colors.RESET}")
             print()
             return

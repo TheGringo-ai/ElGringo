@@ -13,15 +13,9 @@ from pathlib import Path
 import tempfile
 
 from ai_dev_team.workflows import (
-    PreCommitWorkflow,
-    CICDWorkflow,
-    CodeReviewPipeline,
-    WorkflowResult,
-    WorkflowStatus,
     create_pre_commit_workflow,
     create_cicd_workflow,
     create_code_review_pipeline,
-    run_pre_commit,
 )
 from ai_dev_team.agents import (
     create_security_auditor,
@@ -83,7 +77,7 @@ def process(data):
             test_enabled=False,  # Skip tests for demo
         )
 
-        print(f"\nWorkflow configuration:")
+        print("\nWorkflow configuration:")
         print(f"  Security scanning: {workflow.security_enabled}")
         print(f"  Quality checks: {workflow.quality_enabled}")
         print(f"  Linting: {workflow.lint_enabled}")
@@ -142,7 +136,7 @@ async def demonstrate_cicd_workflow():
             environment="staging",
         )
 
-        print(f"\nCI/CD Pipeline Configuration:")
+        print("\nCI/CD Pipeline Configuration:")
         print(f"  Environment: {workflow.environment}")
         print(f"  Project: {tmpdir}")
 
@@ -224,7 +218,7 @@ class UserService:
     print("-" * 40)
 
     # Create review pipeline
-    pipeline = create_code_review_pipeline()
+    create_code_review_pipeline()
 
     # Create specialized agents
     security_auditor = create_security_auditor()

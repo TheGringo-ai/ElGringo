@@ -10,10 +10,9 @@ Capabilities:
 - Fill forms (with permission)
 """
 
-import asyncio
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 from urllib.parse import urljoin, urlparse
 
 from .base import Tool, ToolResult, PermissionManager

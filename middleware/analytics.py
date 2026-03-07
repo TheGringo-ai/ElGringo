@@ -21,7 +21,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timezone
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any, Deque, Dict, List, Optional
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
@@ -364,7 +364,7 @@ def flask_analytics_hooks(flask_app, store: Optional[AnalyticsStore] = None):
 
     @flask_app.before_request
     def _analytics_before():
-        from flask import request, g
+        from flask import g
         g._analytics_start = time.perf_counter()
 
     @flask_app.after_request

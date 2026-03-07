@@ -18,11 +18,11 @@ import uvicorn
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -770,8 +770,8 @@ async def health_check():
 
 if __name__ == "__main__":
     print("🚀 Starting AI Team Platform - Ultimate Application Generator")
-    print(f"💰 Platform Value: $250M+")
-    print(f"🤖 AI Team: 5 models ready")
-    print(f"📱 Applications: Unlimited generation capability")
+    print("💰 Platform Value: $250M+")
+    print("🤖 AI Team: 5 models ready")
+    print("📱 Applications: Unlimited generation capability")
     
     uvicorn.run(app, host="0.0.0.0", port=8080)

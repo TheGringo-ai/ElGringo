@@ -11,10 +11,8 @@ Integrates AI Team with Apple Shortcuts for:
 Enables natural language interaction via "Hey Siri, ask AI Team..."
 """
 
-import asyncio
 import json
 import logging
-import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path

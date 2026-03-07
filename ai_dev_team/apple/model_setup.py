@@ -13,7 +13,7 @@ Usage:
 import asyncio
 import logging
 import subprocess
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 

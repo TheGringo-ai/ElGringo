@@ -8,7 +8,6 @@ Stores in MLX-compatible JSONL format with ChatML template.
 
 import json
 import logging
-import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path

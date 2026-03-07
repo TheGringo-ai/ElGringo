@@ -8,7 +8,6 @@ the receiving side (accept push/pull requests).
 import logging
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
-from typing import Optional
 
 from products.fred_assistant.database import get_conn
 

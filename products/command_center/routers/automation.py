@@ -1,6 +1,5 @@
 """Scheduler and standup automation router."""
 
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -94,7 +93,7 @@ async def list_standups(days: int = Query(7, ge=1, le=30)):
 async def generate_standup():
     sg = get_standup_generator()
     data = sg.generate_standup()
-    path = sg.save_standup(data)
+    sg.save_standup(data)
     return StandupOut(
         date=data["date"],
         formatted=sg.format_standup(data),

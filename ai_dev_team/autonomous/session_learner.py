@@ -5,10 +5,8 @@ Real-time learning that tracks agent performance during a session,
 adapts routing, and shares successful solutions across the team.
 """
 
-import asyncio
 import logging
-import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any, Callable, Tuple
 from datetime import datetime
 from collections import defaultdict

@@ -18,7 +18,6 @@ Features:
 - Support for multiple LLM backends
 """
 
-import asyncio
 import json
 import logging
 import re
@@ -27,7 +26,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .tools import Tool, ToolRegistry, ToolResult, get_tool_registry
+from .tools import ToolRegistry, get_tool_registry
 
 logger = logging.getLogger(__name__)
 

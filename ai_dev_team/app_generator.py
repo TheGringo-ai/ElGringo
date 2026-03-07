@@ -22,19 +22,15 @@ Usage:
     )
 """
 
-import asyncio
 import json
 import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from .orchestrator import AIDevTeam
 from .tools import create_all_tools
-from .tools.filesystem import FileSystemTools
-from .tools.git import GitTools
-from .tools.package import PackageTools
 
 logger = logging.getLogger(__name__)
 
@@ -396,7 +392,7 @@ Respond with just the name, nothing else."""
         """Generate code files using AI team collaboration."""
 
         files_created = []
-        template_info = APP_TEMPLATES.get(template, APP_TEMPLATES["react"])
+        APP_TEMPLATES.get(template, APP_TEMPLATES["react"])
 
         # Determine which files to generate based on template
         files_to_generate = self._get_files_to_generate(template, requirements)
@@ -638,7 +634,7 @@ Use proper Markdown formatting."""
     ) -> Dict[str, Any]:
         """Setup deployment configuration."""
 
-        deploy_tools = self.tools["deploy"]
+        self.tools["deploy"]
         deploy_info = {"target": target, "configured": False}
 
         try:
@@ -898,7 +894,7 @@ Return ONLY the file content, no markdown formatting or explanation."""
         deps_added = plan.get("dependencies_to_add", [])
         if deps_added:
             try:
-                pkg_tools = self.tools["package"]
+                self.tools["package"]
                 # Detect project type by checking for requirements.txt or package.json
                 if (path / "requirements.txt").exists():
                     req_path = path / "requirements.txt"

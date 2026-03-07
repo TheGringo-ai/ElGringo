@@ -10,13 +10,9 @@ Demonstrates the infrastructure management capabilities:
 
 import asyncio
 from ai_dev_team.tools import (
-    KubernetesTools,
-    TerraformTools,
-    GCPTools,
     create_kubernetes_tools,
     create_terraform_tools,
     create_gcp_tools,
-    create_all_tools,
 )
 
 
@@ -37,7 +33,7 @@ def demonstrate_kubernetes_tools():
         context="my-cluster",  # Optional: specific kubeconfig context
     )
 
-    print(f"\nKubernetes Tools Configuration:")
+    print("\nKubernetes Tools Configuration:")
     print(f"  Namespace: {k8s.namespace}")
     print(f"  Context: {k8s.context or 'default'}")
     print(f"  Operations available: {len(k8s._operations)}")
@@ -142,7 +138,7 @@ def demonstrate_terraform_tools():
         var_file="production.tfvars",
     )
 
-    print(f"\nTerraform Tools Configuration:")
+    print("\nTerraform Tools Configuration:")
     print(f"  Working Directory: {tf.working_dir}")
     print(f"  Var File: {tf.var_file or 'none'}")
     print(f"  Operations available: {len(tf._operations)}")
@@ -239,7 +235,7 @@ def demonstrate_gcp_tools():
         region="us-central1",
     )
 
-    print(f"\nGCP Tools Configuration:")
+    print("\nGCP Tools Configuration:")
     print(f"  Project: {gcp.project}")
     print(f"  Region: {gcp.region}")
     print(f"  Operations available: {len(gcp._operations)}")

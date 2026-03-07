@@ -5,7 +5,6 @@ Generates 500+ diverse examples with variations.
 """
 
 import json
-import random
 from pathlib import Path
 from typing import List, Dict
 

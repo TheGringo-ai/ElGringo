@@ -1,6 +1,5 @@
 """Tests for memory_service — persistent memory system."""
 
-import pytest
 from products.fred_assistant.services import memory_service
 
 

@@ -9,23 +9,19 @@ Provides automated development workflows for:
 - Code quality gates
 """
 
-import asyncio
-import json
 import logging
-import os
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .agents.specialists import (
-    SecurityAuditor, CodeReviewer, SolutionArchitect,
+    SolutionArchitect,
     create_security_auditor, create_code_reviewer,
     Severity, SecurityFinding, CodeReviewComment
 )
-from .security import validate_tool_call, get_security_validator
 
 logger = logging.getLogger(__name__)
 

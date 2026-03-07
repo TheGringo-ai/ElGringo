@@ -1,6 +1,5 @@
 """Tests for calendar_service — events, time blocking, deadlines."""
 
-import pytest
 from datetime import date, timedelta
 from products.fred_assistant.services import calendar_service
 

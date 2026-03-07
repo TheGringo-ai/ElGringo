@@ -50,21 +50,18 @@ GOLDEN SCHEMA (What all reports expect):
 """
 
 import csv
-import json
 import logging
 import re
-from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # Import comprehensive CMMS schemas
 from .cmms_schemas import (
     COMPREHENSIVE_ALIASES,
     identify_vendor,
-    get_vendor_fields,
-    get_all_known_fields,
 )
 
 logger = logging.getLogger(__name__)
@@ -708,7 +705,7 @@ if __name__ == "__main__":
 
     print(ingestor.generate_mapping_report(analysis))
 
-    print(f"\n\nSample mappings for code:")
+    print("\n\nSample mappings for code:")
     print("{")
     for m in analysis.mappings:
         print(f'    "{m.source_column}": "{m.target_column}",')

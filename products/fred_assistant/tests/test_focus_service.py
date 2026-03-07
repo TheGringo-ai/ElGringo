@@ -1,6 +1,5 @@
 """Tests for focus_service — Focus Mode sessions."""
 
-import pytest
 from products.fred_assistant.services import focus_service, task_service
 
 

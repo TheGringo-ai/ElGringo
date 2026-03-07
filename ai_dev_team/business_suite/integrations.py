@@ -6,7 +6,7 @@ API keys, webhooks, and embed code generation for chatbot deployment.
 """
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 from datetime import datetime
 import uuid
 import secrets

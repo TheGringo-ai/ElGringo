@@ -24,7 +24,8 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 # MCP Protocol imports
 try:
@@ -48,13 +49,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from ai_dev_team import AIDevTeam, FredFix, ParallelCodingEngine
 from ai_dev_team.memory import MemorySystem
-from ai_dev_team.project_context import ProjectContextManager, ProjectProfile
+from ai_dev_team.project_context import ProjectContextManager
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.FileHandler('/tmp/ai_team_mcp.log'), logging.StreamHandler(sys.stderr)]
+    handlers=[logging.FileHandler('/tmp/ai_team_mcp.log')]
 )
 logger = logging.getLogger("ai-team-mcp")
 
@@ -758,7 +759,7 @@ def format_intelligence_report(intel: Dict[str, Any], result) -> str:
     if mem.get("prevention_applied"):
         lines.append("")
         lines.append("  !! MISTAKE PREVENTION ACTIVE !!")
-        lines.append(f"  Blocked a known failure pattern from being repeated.")
+        lines.append("  Blocked a known failure pattern from being repeated.")
         summary = mem.get("prevention_summary", "")
         if summary:
             lines.append(f"  Context: {summary[:150]}")
@@ -769,7 +770,7 @@ def format_intelligence_report(intel: Dict[str, Any], result) -> str:
         lines.append("")
         lines.append(f"AGENT PERSPECTIVES ({len(agents)} agents):")
         for a in agents:
-            status = "OK" if a.get("success") else "FAILED"
+            "OK" if a.get("success") else "FAILED"
             cost_entry = next(
                 (c for c in intel.get("cost", {}).get("breakdown", []) if c["agent"] == a["name"]),
                 None,
@@ -1220,7 +1221,6 @@ Think outside the box and explore unconventional approaches."""
 
         elif name == "verify_code":
             import subprocess
-            import tempfile
             project_path = arguments["project_path"]
             check_type = arguments.get("check_type", "all")
             files = arguments.get("files", [])
@@ -1312,11 +1312,8 @@ Think outside the box and explore unconventional approaches."""
             project_filter = arguments.get("project", "all")
             dry_run = arguments.get("dry_run", True)
 
-            stats_before = memory.get_statistics()
+            memory.get_statistics()
             solutions = memory._solutions_cache
-            curated_count = 0
-            pruned_count = 0
-            consolidated = []
 
             # Find solutions with overly long steps (auto-captured full responses)
             verbose_solutions = []
@@ -1351,7 +1348,7 @@ Think outside the box and explore unconventional approaches."""
                     tokenize(f"{s.problem_pattern} {' '.join(s.solution_steps)}")
                     for s in kept
                 ]
-                pruned_count = len(verbose_solutions) + len(duplicates)
+                len(verbose_solutions) + len(duplicates)
 
             return json.dumps({
                 "success": True,
@@ -1657,7 +1654,7 @@ def main():
 ║  📊 STATUS:                                                               ║
 ║    • ai_team_status         - Team status and performance metrics         ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
-    """, file=sys.stderr)
+    """, file=open('/tmp/ai_team_mcp.log', 'a'))
 
     try:
         asyncio.run(run_mcp_server())

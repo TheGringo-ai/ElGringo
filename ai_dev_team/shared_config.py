@@ -375,7 +375,7 @@ export const DEFAULT_PROVIDER = '{self.default_provider}';
         if config._config_path.exists():
             try:
                 with open(config._config_path) as f:
-                    data = json.load(f)
+                    json.load(f)
                 # Don't load masked API keys
             except Exception:
                 pass

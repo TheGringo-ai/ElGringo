@@ -14,7 +14,6 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 from .code_validator import ValidationError, ValidationResult, ValidationWarning
 
@@ -121,7 +120,6 @@ class TypeScriptValidator:
         in_string = False
         string_char = None
         in_template = False
-        in_comment = False
         in_multiline_comment = False
 
         for line_num, line in enumerate(lines, 1):

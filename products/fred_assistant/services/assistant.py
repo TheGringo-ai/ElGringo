@@ -6,11 +6,10 @@ Supports ACTION: execution loop for real task/memory/git/file operations.
 
 import logging
 import json
-import os
-from datetime import date, datetime
+from datetime import date
 
 from products.fred_assistant.database import get_conn
-from products.fred_assistant.services.llm_shared import get_gemini as _get_gemini, llm_response as _llm_response
+from products.fred_assistant.services.llm_shared import llm_response as _llm_response
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +120,7 @@ def _build_realtime_context(persona: str = "fred") -> list[str]:
     parts.append(f"Today is {date.today().strftime('%A, %B %d, %Y')}.\n")
 
     stats = _lazy_service("task_service").get_dashboard_stats()
-    parts.append(f"## Current Status")
+    parts.append("## Current Status")
     parts.append(f"- Active tasks: {stats['total_tasks']}")
     parts.append(f"- In progress: {stats['in_progress']}")
     parts.append(f"- Due today: {stats['due_today']}")
@@ -185,7 +184,7 @@ def _build_realtime_context(persona: str = "fred") -> list[str]:
         from products.fred_assistant.services import focus_service
         active = focus_service.get_active_session()
         if active:
-            parts.append(f"## Active Focus Session")
+            parts.append("## Active Focus Session")
             parts.append(f"- Task: {active.get('task_title', 'None')}")
             parts.append(f"- Started: {active['started_at'][:16]}")
             parts.append(f"- Planned: {active['planned_minutes']} min")

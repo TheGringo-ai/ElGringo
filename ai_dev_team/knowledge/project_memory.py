@@ -13,7 +13,6 @@ Allows users to:
 import os
 import json
 import hashlib
-import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -587,13 +586,13 @@ class ProjectMemoryManager:
 
         # Add recent lessons
         if project.memory.lessons:
-            context_parts.append(f"\n**Recent Lessons:**")
+            context_parts.append("\n**Recent Lessons:**")
             for lesson in project.memory.lessons[-3:]:
                 context_parts.append(f"- {lesson}")
 
         # Add architecture notes
         if project.memory.architecture_notes:
-            context_parts.append(f"\n**Architecture Notes:**")
+            context_parts.append("\n**Architecture Notes:**")
             for note in project.memory.architecture_notes[-2:]:
                 context_parts.append(f"- {note}")
 
@@ -601,7 +600,7 @@ class ProjectMemoryManager:
         if task and self.rag:
             results = self.search_projects(task, project_id=project_id, limit=3)
             if results:
-                context_parts.append(f"\n**Relevant Code:**")
+                context_parts.append("\n**Relevant Code:**")
                 for r in results:
                     context_parts.append(f"\n`{r['file_path']}` ({r['language']}):")
                     context_parts.append(f"```\n{r['content'][:300]}...\n```")

@@ -12,7 +12,7 @@ import concurrent.futures
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import streamlit as st
 

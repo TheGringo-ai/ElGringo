@@ -21,14 +21,12 @@ Usage:
 """
 
 import ast
-import json
 import logging
 import os
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +206,7 @@ class TypeScriptDocExtractor:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            file_name = Path(file_path).name
+            Path(file_path).name
 
             # Match JSDoc comments
             jsdoc_pattern = r'/\*\*\s*(.*?)\s*\*/\s*(?:export\s+)?(?:async\s+)?(?:function|class|const|let|var|interface|type)\s+(\w+)'

@@ -4,7 +4,6 @@ Basic usage example for AI Development Team
 """
 
 import asyncio
-import os
 
 # Ensure you have API keys set
 # export ANTHROPIC_API_KEY=your_key

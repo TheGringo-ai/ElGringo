@@ -26,7 +26,6 @@ def reject_content(content_id: str, reason: str = "") -> dict | None:
         row = conn.execute("SELECT * FROM content_items WHERE id=?", (content_id,)).fetchone()
         if not row:
             return None
-        notes = reason or "Rejected"
         conn.execute(
             "UPDATE content_items SET approval_status='rejected', updated_at=? WHERE id=?",
             (datetime.now().isoformat(), content_id),

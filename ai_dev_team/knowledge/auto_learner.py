@@ -10,14 +10,13 @@ import asyncio
 import json
 import logging
 import os
-import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-from .teaching import TeachingSystem, Lesson
-from .data_manager import DataManager, DataLimits, get_data_manager
+from .teaching import TeachingSystem
+from .data_manager import DataLimits, get_data_manager
 
 logger = logging.getLogger(__name__)
 

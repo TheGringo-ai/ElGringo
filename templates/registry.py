@@ -13,11 +13,9 @@ Usage:
     combined = registry.combine(["backend/fastapi/crud_api", "backend/auth/jwt_auth"])
 """
 
-import os
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
-import json
 
 TEMPLATES_DIR = Path(__file__).parent
 

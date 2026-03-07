@@ -13,7 +13,6 @@ import logging
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 from .code_validator import ValidationError, ValidationResult, ValidationWarning
 

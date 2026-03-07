@@ -4,8 +4,6 @@ Platform Services Integration Tests
 Tests for the platform services client, service results storage, and tools.
 """
 
-import json
-import os
 import pytest
 
 from products.fred_assistant.services import platform_services

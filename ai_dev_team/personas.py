@@ -23,7 +23,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .agents.base import AIAgent, AgentConfig, AgentResponse, ModelType
+from .agents.base import AIAgent, AgentConfig, ModelType
 
 logger = logging.getLogger(__name__)
 

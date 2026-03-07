@@ -3,7 +3,6 @@ Base AI Agent - Abstract foundation for all AI model integrations
 """
 
 import logging
-import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone

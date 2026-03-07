@@ -1,16 +1,11 @@
 """Tests for rag_service — semantic retrieval for Fred Assistant."""
 
-import os
-import sys
-import shutil
-import threading
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
 from products.fred_assistant.services import memory_service, task_service
-from products.fred_assistant.services.platform_services import store_service_result
 from products.fred_assistant.services import rag_service as rag_mod
 from products.fred_assistant.services.rag_service import RAGService, _set_rag, get_rag
 

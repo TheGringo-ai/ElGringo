@@ -13,7 +13,6 @@ Flow:
 This turns El Gringo from an advisory chatbot into a real coding agent.
 """
 
-import asyncio
 import logging
 import os
 import time
@@ -21,7 +20,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -364,7 +363,7 @@ class CodingAgentEngine:
         if request.auto_commit and files_changed:
             if test_result is None or test_result.passed:
                 commit_msg = f"El Gringo: {request.task[:80]}"
-                git_output = self.tools.git_commit(commit_msg)
+                self.tools.git_commit(commit_msg)
                 git_commit_msg = commit_msg
 
         # Determine status
@@ -401,7 +400,7 @@ class CodingAgentEngine:
         info = self.tools.get_project_info()
         parts.append(f"PROJECT: {info['project_path']}")
         parts.append(f"FILES: {info['files_count']} | LANGUAGES: {info['languages']}")
-        parts.append(f"STRUCTURE:\n" + "\n".join(f"  {s}" for s in info["structure"]))
+        parts.append("STRUCTURE:\n" + "\n".join(f"  {s}" for s in info["structure"]))
         parts.append("")
 
         # Read specific files
@@ -466,7 +465,7 @@ Rules:
 """
 
         if errors:
-            prompt += f"\n\nPREVIOUS ATTEMPTS FAILED. Fix these errors:\n"
+            prompt += "\n\nPREVIOUS ATTEMPTS FAILED. Fix these errors:\n"
             for e in errors:
                 prompt += f"\n{e}\n"
 

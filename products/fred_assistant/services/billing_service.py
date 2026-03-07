@@ -5,12 +5,10 @@ Plans: Free ($0), Starter ($29/mo), Pro ($99/mo).
 Handles customer creation, subscriptions, webhooks, and revenue reporting.
 """
 
-import json
 import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from products.fred_assistant.database import get_conn, log_activity
 

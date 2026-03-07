@@ -27,12 +27,11 @@ Usage:
 """
 
 import difflib
-import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -259,7 +258,7 @@ class SemanticDeltaExtractor:
         delta = SemanticDelta(
             file_path=file_path,
             file_type=file_type,
-            total_lines_changed=len([l for l in diff if l.startswith('+') or l.startswith('-')]),
+            total_lines_changed=len([ln for ln in diff if ln.startswith('+') or ln.startswith('-')]),
             compressed_size=compressed_size,
             original_size=original_size,
             compression_ratio=compression_ratio,
@@ -322,8 +321,8 @@ class SemanticDeltaExtractor:
         """Analyze a diff hunk and extract semantic changes."""
         changes = []
 
-        additions = [l[1:] for l in hunk if l.startswith('+')]
-        deletions = [l[1:] for l in hunk if l.startswith('-')]
+        additions = [ln[1:] for ln in hunk if ln.startswith('+')]
+        deletions = [ln[1:] for ln in hunk if ln.startswith('-')]
 
         # Classify the change
         added_text = '\n'.join(additions)

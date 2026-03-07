@@ -6,7 +6,6 @@ Creates 500+ diverse examples for LLM fine-tuning.
 
 import json
 import random
-from pathlib import Path
 
 # Additional examples to supplement the base set
 ADDITIONAL_EXAMPLES = []

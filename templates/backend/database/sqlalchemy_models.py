@@ -15,8 +15,8 @@ Usage:
 from datetime import datetime
 from typing import Optional, List
 from sqlalchemy import (
-    Column, String, Integer, Float, Boolean, DateTime, Text,
-    ForeignKey, JSON, Enum as SQLEnum, Index, UniqueConstraint
+    String, Integer, Boolean, DateTime, Text,
+    ForeignKey, JSON, Enum as SQLEnum, Index
 )
 from sqlalchemy.orm import relationship, declarative_base, Mapped, mapped_column
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker

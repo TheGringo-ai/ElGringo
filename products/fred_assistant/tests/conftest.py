@@ -1,7 +1,6 @@
 """Test configuration — uses a temporary in-memory DB for all tests."""
 
 import os
-import sqlite3
 import pytest
 
 # Override DB path BEFORE importing any modules

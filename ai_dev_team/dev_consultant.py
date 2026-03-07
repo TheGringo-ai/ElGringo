@@ -4,7 +4,7 @@ Use El Gringo agents during development sessions
 """
 
 import asyncio
-from typing import Optional, Dict, Any
+from typing import Optional
 from ai_dev_team.orchestrator import AIDevTeam
 
 

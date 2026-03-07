@@ -1,6 +1,5 @@
 """Sprint and task management router."""
 
-from dataclasses import asdict
 from datetime import datetime
 from typing import Optional
 

@@ -44,7 +44,7 @@ class CodingAgent:
         # Tools will check permissions, but we'll work within safe paths
         self.fs_tools = FileSystemTools(self.permission_manager)
         
-        print(f"🤖 El Gringo Coding Agent initialized")
+        print("🤖 El Gringo Coding Agent initialized")
         print(f"📁 Project: {self.project_path}")
         print(f"👥 AI Team: {', '.join(self.team.agents.keys())}")
         print()

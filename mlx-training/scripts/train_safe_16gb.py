@@ -7,7 +7,6 @@ Optimized settings to prevent crashes on M3 Pro 16GB.
 Based on tested parameters that keep memory under 12GB.
 """
 
-import os
 import sys
 import subprocess
 import argparse
@@ -77,7 +76,7 @@ def get_data_stats(data_path: Path):
                     # Rough token estimate (chars / 4)
                     tokens = len(text) // 4
                     stats["max_length"] = max(stats["max_length"], tokens)
-                except:
+                except Exception:
                     pass
 
     if valid_file.exists():

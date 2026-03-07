@@ -6,8 +6,6 @@ Convert MLX fine-tuned LoRA adapter to Ollama-compatible format
 import os
 import sys
 import subprocess
-import tempfile
-import shutil
 
 def main():
     print("=" * 60)
@@ -60,13 +58,13 @@ def main():
     print("Step 3: Creating Ollama Modelfile...")
     os.makedirs(output_dir, exist_ok=True)
 
-    modelfile_content = f"""# Ollama Modelfile for Fine-tuned Qwen Coder
+    modelfile_content = """# Ollama Modelfile for Fine-tuned Qwen Coder
 FROM ./qwen-coder-finetuned.gguf
 
 TEMPLATE \"\"\"<|im_start|>system
-{{{{ .System }}}}<|im_end|>
+{{ .System }}<|im_end|>
 <|im_start|>user
-{{{{ .Prompt }}}}<|im_end|>
+{{ .Prompt }}<|im_end|>
 <|im_start|>assistant
 \"\"\"
 

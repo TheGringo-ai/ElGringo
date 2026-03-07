@@ -20,8 +20,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from functools import wraps
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -493,7 +492,6 @@ def _register_builtin_tools(registry: ToolRegistry):
     )
     def run_python(code: str) -> str:
         import io
-        import sys
         from contextlib import redirect_stdout, redirect_stderr
 
         stdout = io.StringIO()

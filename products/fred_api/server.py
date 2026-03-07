@@ -15,7 +15,6 @@ Endpoints:
 Run: uvicorn products.fred_api.server:app --port 8080
 """
 
-import asyncio
 import json
 import logging
 import os
@@ -23,7 +22,7 @@ import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware

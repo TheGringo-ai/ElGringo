@@ -666,7 +666,7 @@ class ConsensusBuilder:
 
         return {
             "consensus_level": avg_confidence,
-            "agreements": [f"All agents responded successfully"],
+            "agreements": ["All agents responded successfully"],
             "conflicts": [],
         }
 

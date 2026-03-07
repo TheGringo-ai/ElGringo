@@ -14,12 +14,10 @@ Capabilities:
 """
 
 import asyncio
-import json
 import logging
 import os
-import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from .base import Tool, ToolResult, PermissionManager
 

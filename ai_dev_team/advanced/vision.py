@@ -13,15 +13,13 @@ This enables incredible capabilities:
 Most developers don't know they can just paste images into AI!
 """
 
-import asyncio
 import base64
-import io
 import logging
 import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 logger = logging.getLogger(__name__)
 

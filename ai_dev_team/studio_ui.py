@@ -24,7 +24,6 @@ import os
 import subprocess
 import re
 import webbrowser
-from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -494,7 +493,7 @@ def get_file_list(directory):
                     size_str = f"{size // (1024 * 1024)}MB"
                 items.append([icon, item.name, ext[1:] if ext else "", size_str])
         return items
-    except Exception as e:
+    except Exception:
         return []
 
 
@@ -769,7 +768,7 @@ class ProcessManager:
     def get_output(self):
         """Get all output so far."""
         if self.process:
-            new_output = self._read_output()
+            self._read_output()
         return "".join(self.output_lines[-100:])  # Return last 100 lines
 
     def stop(self):
@@ -940,7 +939,7 @@ def create_app_builder_ui(app_project_state, current_page_idx, home_dir):
     from ai_dev_team.app_builder import (
         AppProject, Page, Component, DataModel, DataField,
         create_default_project, COMPONENT_PALETTE, APP_TYPE_TEMPLATES,
-        COMPONENT_TEMPLATES, VisualAppBuilder
+        VisualAppBuilder
     )
     from ai_dev_team.app_builder.components import FULL_APP_TEMPLATES, COMPONENT_TEMPLATES, count_components
 
@@ -989,7 +988,7 @@ def create_app_builder_ui(app_project_state, current_page_idx, home_dir):
     gr.Markdown("## No-Code App Builder")
     gr.Markdown(f"*{count_components()} components • 6 full app templates • AI-powered generation*")
 
-    with gr.Tabs() as builder_tabs:
+    with gr.Tabs():
         # ==========================================
         # TAB 1: QUICK START WITH TEMPLATES
         # ==========================================
@@ -1094,7 +1093,7 @@ def create_app_builder_ui(app_project_state, current_page_idx, home_dir):
                             interactive=False,
                             row_count=8
                         )
-                        add_component_btn = gr.Button("+ Add Selected", variant="secondary", size="sm")
+                        gr.Button("+ Add Selected", variant="secondary", size="sm")
 
                     with gr.Accordion("💬 Natural Language", open=True):
                         nl_input = gr.Textbox(
@@ -1113,7 +1112,7 @@ def create_app_builder_ui(app_project_state, current_page_idx, home_dir):
                             label="Current Page",
                             scale=3
                         )
-                        page_auth = gr.Checkbox(label="Requires Login", value=False, scale=1)
+                        gr.Checkbox(label="Requires Login", value=False, scale=1)
 
                     page_components = gr.Textbox(
                         label="Page Components",
@@ -1123,28 +1122,28 @@ def create_app_builder_ui(app_project_state, current_page_idx, home_dir):
                     )
 
                     with gr.Row():
-                        preview_page_btn = gr.Button("👁️ Preview Page", size="sm")
-                        clear_page_btn = gr.Button("🗑️ Clear Page", size="sm")
+                        gr.Button("👁️ Preview Page", size="sm")
+                        gr.Button("🗑️ Clear Page", size="sm")
 
                 # === RIGHT: Preview & Database ===
                 with gr.Column(scale=2):
                     with gr.Tabs():
                         with gr.Tab("👁️ Preview"):
-                            device_mode = gr.Radio(["Desktop", "Mobile"], value="Desktop", label="Device")
-                            app_preview = gr.HTML(
+                            gr.Radio(["Desktop", "Mobile"], value="Desktop", label="Device")
+                            gr.HTML(
                                 value="<div style='padding:2rem;text-align:center;color:#666;border:1px dashed #ccc;border-radius:8px;min-height:300px;'><h3>App Preview</h3><p>Create a project to see preview</p></div>"
                             )
 
                         with gr.Tab("📊 Data Models"):
-                            models_display = gr.Dataframe(
+                            gr.Dataframe(
                                 headers=["Model", "Fields"],
                                 datatype=["str", "str"],
                                 value=[],
                                 interactive=False
                             )
                             with gr.Row():
-                                new_model_name = gr.Textbox(placeholder="Model name (e.g., tasks)", scale=3, show_label=False)
-                                add_model_btn = gr.Button("+ Add", size="sm", scale=1)
+                                gr.Textbox(placeholder="Model name (e.g., tasks)", scale=3, show_label=False)
+                                gr.Button("+ Add", size="sm", scale=1)
 
                         with gr.Tab("🗄️ Database"):
                             db_type = gr.Radio(["SQLite", "Firestore"], value="SQLite", label="Database Type")
@@ -1159,8 +1158,8 @@ def create_app_builder_ui(app_project_state, current_page_idx, home_dir):
             gr.Markdown("---")
             with gr.Row():
                 generate_btn = gr.Button("🚀 Generate Full App", variant="primary", size="lg")
-                export_btn = gr.Button("📦 Export ZIP", size="lg")
-                run_btn = gr.Button("▶️ Run Locally", size="lg")
+                gr.Button("📦 Export ZIP", size="lg")
+                gr.Button("▶️ Run Locally", size="lg")
 
             generation_log = gr.Textbox(label="Generation Log", lines=5, visible=True)
 
@@ -1187,7 +1186,7 @@ def create_app_builder_ui(app_project_state, current_page_idx, home_dir):
                         lines=15
                     )
 
-            add_comp_template_btn = gr.Button("+ Add to Current Page", variant="primary")
+            gr.Button("+ Add to Current Page", variant="primary")
 
         # ==========================================
         # TAB 4: DEPLOY
@@ -1204,8 +1203,8 @@ Run your app locally for testing:
 - **Frontend:** Static HTML served
 - **Database:** SQLite file or Firestore
                     """)
-                    run_local_btn = gr.Button("▶️ Run Locally", variant="primary", size="lg")
-                    local_output = gr.Textbox(label="Server Output", lines=4, interactive=False)
+                    gr.Button("▶️ Run Locally", variant="primary", size="lg")
+                    gr.Textbox(label="Server Output", lines=4, interactive=False)
 
                 with gr.Column():
                     gr.Markdown("""
@@ -1215,9 +1214,9 @@ Export your complete application:
 - Docker configuration
 - README with setup instructions
                     """)
-                    export_zip_btn = gr.Button("📦 Export as ZIP", size="lg")
-                    export_docker_btn = gr.Button("🐳 Export with Docker", size="lg")
-                    export_status = gr.Textbox(label="Export Status", lines=2, interactive=False)
+                    gr.Button("📦 Export as ZIP", size="lg")
+                    gr.Button("🐳 Export with Docker", size="lg")
+                    gr.Textbox(label="Export Status", lines=2, interactive=False)
 
     # === Event Handlers ===
 
@@ -1606,7 +1605,7 @@ def create_studio_ui():
         start_dir = projects_dir if os.path.isdir(projects_dir) else home_dir
         current_dir = gr.State(value=start_dir)
         current_file_path = gr.State(value=None)
-        open_files = gr.State(value={})
+        gr.State(value={})
 
         # App Builder State
         app_project_state = gr.State(value=None)
@@ -1634,7 +1633,7 @@ def create_studio_ui():
                 interactive=True,
                 scale=3
             )
-            theme_toggle = gr.Radio(
+            gr.Radio(
                 choices=["☀️ Light", "🌙 Dark"],
                 value="☀️ Light",
                 label="Theme",
@@ -1771,7 +1770,7 @@ def create_studio_ui():
                         btn_new_api = gr.Button("")
 
                 # === CENTER PANEL: Code Editor (Primary Focus ~65%) ===
-                with gr.Column(scale=4) as center_panel:
+                with gr.Column(scale=4):
 
                     # Compact toolbar: File info + actions
                     with gr.Row():
@@ -1804,7 +1803,7 @@ def create_studio_ui():
                     # Status bar (compact)
                     with gr.Row():
                         status_bar = gr.Textbox(value="Ready", label="", interactive=False, scale=3)
-                        encoding_display = gr.Textbox(value="Ln 1, Col 1 | UTF-8", label="", interactive=False, scale=2)
+                        gr.Textbox(value="Ln 1, Col 1 | UTF-8", label="", interactive=False, scale=2)
 
                     # Terminal Output (always visible, collapsible)
                     with gr.Accordion("🖥️ Output", open=True) as run_preview_panel:
@@ -1831,7 +1830,7 @@ def create_studio_ui():
                         refresh_preview_btn = gr.Button("")
                         web_preview = gr.HTML(value="")
                         server_type = gr.Radio(choices=["Auto", "Python", "Node.js", "Static HTML"], value="Auto")
-                        auto_reload = gr.Checkbox(value=True)
+                        gr.Checkbox(value=True)
 
                 # === RIGHT PANEL: AI Assistant + Tools (~20%) ===
                 with gr.Column(scale=2, min_width=280) as right_panel:
@@ -1878,7 +1877,7 @@ def create_studio_ui():
                                 git_create_branch_btn = gr.Button("")
                                 git_checkout_btn = gr.Button("")
                                 git_smart_commit_btn = gr.Button("")
-                            git_branch_row = gr.Row(visible=False)
+                            gr.Row(visible=False)
 
                         # 🧪 TEST - Quick test runner
                         with gr.Tab("🧪 Test", id="test-tab"):
@@ -1936,7 +1935,7 @@ def create_studio_ui():
                                     docker_restart_btn = gr.Button("")
 
                             with gr.Accordion("⚙️ Environment", open=False):
-                                env_profile = gr.Radio(choices=["dev", "staging", "prod"], value="dev", label="")
+                                gr.Radio(choices=["dev", "staging", "prod"], value="dev", label="")
                                 env_content = gr.Code(label="", language="shell", lines=4, value="# KEY=value")
                                 with gr.Row():
                                     load_env_btn = gr.Button("Load", size="sm")
@@ -2680,7 +2679,7 @@ def create_studio_ui():
         # Editor operations
         format_btn.click(format_code, inputs=[code_editor, language_select], outputs=[code_editor, status_bar])
         lint_btn.click(lint_code, inputs=[code_editor, language_select], outputs=[status_bar])
-        language_select.change(lambda l: gr.Code(language=l), inputs=[language_select], outputs=[code_editor])
+        language_select.change(lambda lang: gr.Code(language=lang), inputs=[language_select], outputs=[code_editor])
 
         # Run & Preview Panel
         run_btn.click(

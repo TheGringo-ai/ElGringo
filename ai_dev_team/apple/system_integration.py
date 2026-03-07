@@ -14,10 +14,7 @@ Deep integration with macOS and Apple Intelligence features:
 import asyncio
 import json
 import logging
-import os
-import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -507,7 +504,7 @@ class AppleIntelligenceHub:
 
         # Show system info
         info = self.get_system_info()
-        print(f"\nSystem Capabilities:")
+        print("\nSystem Capabilities:")
         print(f"  Apple Silicon: {'✓' if info['apple_silicon'] else '✗'}")
         print(f"  Neural Engine: {'✓' if info['neural_engine'] else '✗'}")
         print(f"  Core ML: {'✓' if info['coreml_available'] else '✗'}")

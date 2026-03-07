@@ -6,16 +6,13 @@ Gradio UI components for the business development suite.
 """
 
 import gradio as gr
-from typing import Dict, List, Any, Optional
-import json
 from datetime import datetime
 
 from .models import (
-    Client, Project, ChatBot, KnowledgeBase, Deployment,
-    BusinessDataStore, create_client, create_project, create_chatbot
+    BusinessDataStore, create_client
 )
 from .chat_builder import (
-    ChatBotBuilder, PERSONA_TEMPLATES, FLOW_TEMPLATES, INDUSTRY_PRESETS
+    ChatBotBuilder, PERSONA_TEMPLATES, INDUSTRY_PRESETS
 )
 from .integrations import (
     APIKeyManager, WebhookManager, EmbedCodeGenerator, get_available_integrations
@@ -69,7 +66,7 @@ def create_business_suite_ui():
     gr.Markdown("## AI Business Development Suite")
     gr.Markdown("*Build, deploy, and manage AI chat solutions for your clients*")
 
-    with gr.Tabs() as main_tabs:
+    with gr.Tabs():
 
         # ==========================================
         # TAB 1: DASHBOARD
@@ -106,7 +103,7 @@ def create_business_suite_ui():
                     """)
 
             gr.Markdown("### Recent Activity")
-            activity_log = gr.Dataframe(
+            gr.Dataframe(
                 headers=["Time", "Activity", "Client", "Details"],
                 value=[
                     [datetime.now().strftime("%H:%M"), "System Started", "-", "Business Suite initialized"],
@@ -161,7 +158,7 @@ def create_business_suite_ui():
             with gr.Row():
                 with gr.Column(scale=1):
                     gr.Markdown("### Projects")
-                    project_list = gr.Dataframe(
+                    gr.Dataframe(
                         headers=["ID", "Name", "Client", "Status", "Budget"],
                         value=[],
                         interactive=False
@@ -169,15 +166,15 @@ def create_business_suite_ui():
 
                 with gr.Column(scale=2):
                     with gr.Tab("➕ New Project"):
-                        proj_client_id = gr.Textbox(label="Client ID")
-                        proj_name = gr.Textbox(label="Project Name", placeholder="AI Chatbot for Support")
-                        proj_description = gr.Textbox(label="Description", lines=3)
-                        proj_budget = gr.Number(label="Budget ($)", value=0)
+                        gr.Textbox(label="Client ID")
+                        gr.Textbox(label="Project Name", placeholder="AI Chatbot for Support")
+                        gr.Textbox(label="Description", lines=3)
+                        gr.Number(label="Budget ($)", value=0)
                         with gr.Row():
-                            proj_start = gr.Textbox(label="Start Date", placeholder="2024-01-15")
-                            proj_target = gr.Textbox(label="Target Date", placeholder="2024-03-15")
-                        create_project_btn = gr.Button("Create Project", variant="primary")
-                        project_status = gr.Textbox(label="Status", interactive=False)
+                            gr.Textbox(label="Start Date", placeholder="2024-01-15")
+                            gr.Textbox(label="Target Date", placeholder="2024-03-15")
+                        gr.Button("Create Project", variant="primary")
+                        gr.Textbox(label="Status", interactive=False)
 
         # ==========================================
         # TAB 4: CHAT BUILDER
@@ -189,7 +186,7 @@ def create_business_suite_ui():
                     gr.Markdown("### Build Your Chatbot")
 
                     with gr.Accordion("🏢 Client Info", open=True):
-                        cb_project_id = gr.Textbox(label="Project ID")
+                        gr.Textbox(label="Project ID")
                         cb_company_name = gr.Textbox(label="Company Name", placeholder="Acme Corp")
                         cb_industry = gr.Dropdown(
                             choices=list(INDUSTRY_PRESETS.keys()),
@@ -206,22 +203,22 @@ def create_business_suite_ui():
                         persona_preview = gr.Markdown("*Select a persona to see details*")
 
                     with gr.Accordion("⚙️ Model Settings", open=False):
-                        model_select = gr.Dropdown(
+                        gr.Dropdown(
                             choices=["claude-sonnet", "claude-opus", "gpt-4o", "gemini-pro", "grok"],
                             value="claude-sonnet",
                             label="AI Model"
                         )
-                        temperature = gr.Slider(0, 1, value=0.7, label="Temperature")
-                        max_tokens = gr.Slider(256, 4096, value=1024, step=256, label="Max Tokens")
+                        gr.Slider(0, 1, value=0.7, label="Temperature")
+                        gr.Slider(256, 4096, value=1024, step=256, label="Max Tokens")
 
                     with gr.Accordion("🎨 Widget Style", open=False):
-                        primary_color = gr.ColorPicker(label="Primary Color", value="#3b82f6")
-                        position = gr.Radio(
+                        gr.ColorPicker(label="Primary Color", value="#3b82f6")
+                        gr.Radio(
                             choices=["bottom-right", "bottom-left"],
                             value="bottom-right",
                             label="Position"
                         )
-                        header_text = gr.Textbox(label="Header Text", value="Chat with us")
+                        gr.Textbox(label="Header Text", value="Chat with us")
 
                 # Center: Preview & Test
                 with gr.Column(scale=2):
@@ -238,20 +235,20 @@ def create_business_suite_ui():
 
                     # Chat preview
                     gr.Markdown("### Test Chat")
-                    chat_preview = gr.Chatbot(height=300, label="Test Conversation")
+                    gr.Chatbot(height=300, label="Test Conversation")
                     with gr.Row():
-                        test_message = gr.Textbox(
+                        gr.Textbox(
                             placeholder="Type a test message...",
                             show_label=False,
                             scale=4
                         )
-                        send_test_btn = gr.Button("Send", scale=1)
+                        gr.Button("Send", scale=1)
 
                     with gr.Row():
-                        save_chatbot_btn = gr.Button("💾 Save Chatbot", variant="primary")
-                        deploy_chatbot_btn = gr.Button("🚀 Deploy", variant="secondary")
+                        gr.Button("💾 Save Chatbot", variant="primary")
+                        gr.Button("🚀 Deploy", variant="secondary")
 
-                    chatbot_status = gr.Textbox(label="Status", interactive=False)
+                    gr.Textbox(label="Status", interactive=False)
 
         # ==========================================
         # TAB 5: KNOWLEDGE BASE
@@ -260,7 +257,7 @@ def create_business_suite_ui():
             with gr.Row():
                 with gr.Column(scale=1):
                     gr.Markdown("### Knowledge Bases")
-                    kb_list = gr.Dataframe(
+                    gr.Dataframe(
                         headers=["ID", "Name", "Sources", "Chunks", "Status"],
                         value=[],
                         interactive=False
@@ -269,23 +266,23 @@ def create_business_suite_ui():
                 with gr.Column(scale=2):
                     with gr.Tabs():
                         with gr.Tab("➕ Create"):
-                            kb_name = gr.Textbox(label="Name", placeholder="Company FAQ")
-                            kb_description = gr.Textbox(label="Description", lines=2)
-                            create_kb_btn = gr.Button("Create Knowledge Base", variant="primary")
+                            gr.Textbox(label="Name", placeholder="Company FAQ")
+                            gr.Textbox(label="Description", lines=2)
+                            gr.Button("Create Knowledge Base", variant="primary")
 
                         with gr.Tab("📄 Add Documents"):
-                            kb_id_select = gr.Textbox(label="Knowledge Base ID")
-                            doc_upload = gr.File(label="Upload Documents", file_count="multiple")
-                            url_input = gr.Textbox(label="Or enter URLs (one per line)", lines=3)
-                            process_docs_btn = gr.Button("Process Documents", variant="primary")
+                            gr.Textbox(label="Knowledge Base ID")
+                            gr.File(label="Upload Documents", file_count="multiple")
+                            gr.Textbox(label="Or enter URLs (one per line)", lines=3)
+                            gr.Button("Process Documents", variant="primary")
 
                         with gr.Tab("❓ FAQ Builder"):
-                            faq_kb_id = gr.Textbox(label="Knowledge Base ID")
-                            faq_question = gr.Textbox(label="Question")
-                            faq_answer = gr.Textbox(label="Answer", lines=3)
-                            add_faq_btn = gr.Button("Add FAQ", variant="primary")
+                            gr.Textbox(label="Knowledge Base ID")
+                            gr.Textbox(label="Question")
+                            gr.Textbox(label="Answer", lines=3)
+                            gr.Button("Add FAQ", variant="primary")
 
-                    kb_status = gr.Textbox(label="Status", interactive=False)
+                    gr.Textbox(label="Status", interactive=False)
 
         # ==========================================
         # TAB 6: DEPLOYMENTS
@@ -294,7 +291,7 @@ def create_business_suite_ui():
             with gr.Row():
                 with gr.Column(scale=1):
                     gr.Markdown("### Active Deployments")
-                    deployment_list = gr.Dataframe(
+                    gr.Dataframe(
                         headers=["ID", "Chatbot", "Environment", "Status", "URL"],
                         value=[],
                         interactive=False
@@ -342,11 +339,11 @@ def create_business_suite_ui():
         with gr.Tab("📈 Analytics"):
             gr.Markdown("### Conversation Analytics")
             with gr.Row():
-                analytics_deployment = gr.Dropdown(
+                gr.Dropdown(
                     choices=[],
                     label="Select Deployment"
                 )
-                analytics_range = gr.Radio(
+                gr.Radio(
                     choices=["Today", "7 Days", "30 Days", "All Time"],
                     value="7 Days",
                     label="Date Range"
@@ -355,19 +352,19 @@ def create_business_suite_ui():
             with gr.Row():
                 with gr.Column():
                     gr.Markdown("**Total Conversations**")
-                    total_convos = gr.Number(value=0, interactive=False)
+                    gr.Number(value=0, interactive=False)
                 with gr.Column():
                     gr.Markdown("**Avg. Messages/Conversation**")
-                    avg_messages = gr.Number(value=0, interactive=False)
+                    gr.Number(value=0, interactive=False)
                 with gr.Column():
                     gr.Markdown("**Resolution Rate**")
-                    resolution_rate = gr.Textbox(value="0%", interactive=False)
+                    gr.Textbox(value="0%", interactive=False)
                 with gr.Column():
                     gr.Markdown("**Satisfaction Score**")
-                    satisfaction = gr.Textbox(value="N/A", interactive=False)
+                    gr.Textbox(value="N/A", interactive=False)
 
             gr.Markdown("### Recent Conversations")
-            recent_convos = gr.Dataframe(
+            gr.Dataframe(
                 headers=["ID", "Started", "Messages", "Resolved", "Rating"],
                 value=[],
                 interactive=False
@@ -402,13 +399,13 @@ def create_business_suite_ui():
             with gr.Row():
                 with gr.Column():
                     gr.Markdown("**Monthly Recurring Revenue**")
-                    mrr_display = gr.Number(value=0, interactive=False, label="MRR ($)")
+                    gr.Number(value=0, interactive=False, label="MRR ($)")
                 with gr.Column():
                     gr.Markdown("**Active Subscriptions**")
-                    active_subs = gr.Number(value=0, interactive=False, label="Subscriptions")
+                    gr.Number(value=0, interactive=False, label="Subscriptions")
 
             gr.Markdown("### Client Billing")
-            billing_table = gr.Dataframe(
+            gr.Dataframe(
                 headers=["Client", "Plan", "Monthly ($)", "Usage", "Status"],
                 value=[],
                 interactive=False

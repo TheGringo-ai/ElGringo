@@ -5,16 +5,13 @@ Agent Tests
 Tests for AI agent base classes and implementations.
 """
 
-import asyncio
 import os
 import pytest
 import sys
-from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ai_dev_team.agents.base import (
-    AIAgent,
     AgentConfig,
     AgentResponse,
     ModelType,

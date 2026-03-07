@@ -9,7 +9,6 @@ Validates Firebase/Firestore code for:
 """
 
 import re
-from typing import List, Optional
 
 from .code_validator import ValidationResult, ValidationWarning
 

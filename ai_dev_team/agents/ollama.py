@@ -16,7 +16,7 @@ import json
 import logging
 import os
 import time
-from typing import AsyncIterator, Dict, List, Optional
+from typing import AsyncIterator, List, Optional
 
 import aiohttp
 

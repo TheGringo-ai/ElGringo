@@ -1,7 +1,6 @@
 """Platform router — cross-service integration endpoints."""
 
 import json
-import os
 
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
@@ -15,10 +14,10 @@ from products.fred_assistant.models import (
     AuditChatRequest,
     ReviewChatRequest,
 )
-from products.fred_assistant.services import platform_services, repo_intelligence_service, task_service
+from products.fred_assistant.services import platform_services, task_service
 from products.fred_assistant.services import audit_insights_service
 from products.fred_assistant.services.fred_tools import _resolve_project_path, _read_project_files
-from products.fred_assistant.database import get_conn, log_activity
+from products.fred_assistant.database import log_activity
 
 router = APIRouter(prefix="/platform", tags=["platform"])
 

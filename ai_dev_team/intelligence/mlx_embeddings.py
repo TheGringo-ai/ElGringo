@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 MLX_AVAILABLE = False
 try:
     import mlx.core as mx
-    import mlx.nn as nn
+    import mlx.nn as nn  # noqa: F401
     MLX_AVAILABLE = True
     logger.info("MLX is available - using Apple Silicon optimization")
 except ImportError:
@@ -110,7 +110,7 @@ class MLXCodeEmbeddings:
         """Load sentence-transformers and convert to MLX"""
         try:
             from sentence_transformers import SentenceTransformer
-            import numpy as np
+            import numpy as np  # noqa: F401
 
             # Load the model
             self._model = SentenceTransformer(self.model_name)

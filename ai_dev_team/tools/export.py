@@ -7,11 +7,8 @@ Package projects for client handoff with documentation.
 
 import os
 import zipfile
-import shutil
-import json
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 
 
 class ProjectExporter:

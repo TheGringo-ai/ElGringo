@@ -86,7 +86,7 @@ class TeachingSystem:
         """Save knowledge to disk"""
         try:
             with open(self.storage_dir / "lessons.json", "w") as f:
-                json.dump([asdict(l) for l in self._lessons], f, indent=2)
+                json.dump([asdict(lesson) for lesson in self._lessons], f, indent=2)
 
             with open(self.storage_dir / "patterns.json", "w") as f:
                 json.dump([asdict(p) for p in self._patterns], f, indent=2)
@@ -220,14 +220,14 @@ class TeachingSystem:
 
     def get_lessons_for_domain(self, domain: str) -> List[Lesson]:
         """Get all lessons for a domain"""
-        return [l for l in self._lessons if l.domain == domain]
+        return [lesson for lesson in self._lessons if lesson.domain == domain]
 
     def get_lessons_for_topic(self, topic: str) -> List[Lesson]:
         """Search lessons by topic"""
         topic_lower = topic.lower()
         return [
-            l for l in self._lessons
-            if topic_lower in l.topic.lower() or topic_lower in l.content.lower()
+            lesson for lesson in self._lessons
+            if topic_lower in lesson.topic.lower() or topic_lower in lesson.content.lower()
         ]
 
     def get_patterns_for_domains(self, domains: List[str]) -> List[ProjectPattern]:
@@ -321,7 +321,7 @@ class TeachingSystem:
             # Learn good patterns
             return self.add_lesson(
                 domain=domain,
-                topic=f"Approved code pattern",
+                topic="Approved code pattern",
                 content=f"This code pattern was approved:\n```\n{code[:500]}\n```\n\nFeedback: {review_feedback}",
                 best_practices=[review_feedback[:200]],
                 source="code_review",
@@ -330,7 +330,7 @@ class TeachingSystem:
             # Learn what to avoid
             return self.add_lesson(
                 domain=domain,
-                topic=f"Code review rejection",
+                topic="Code review rejection",
                 content=f"This code needed changes:\n```\n{code[:500]}\n```\n\nFeedback: {review_feedback}",
                 anti_patterns=[review_feedback[:200]],
                 source="code_review",
@@ -351,7 +351,7 @@ class TeachingSystem:
             "custom_domains": len(self._custom_domains),
             "domains_covered": list(domains_covered),
             "lessons_by_domain": {
-                domain: len([l for l in self._lessons if l.domain == domain])
+                domain: len([lesson for lesson in self._lessons if lesson.domain == domain])
                 for domain in domains_covered
             },
         }

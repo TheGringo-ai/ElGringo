@@ -13,14 +13,13 @@ Supports converting and running models optimized for M1/M2/M3 chips.
 
 import asyncio
 import logging
-import os
 import platform
 import subprocess
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +128,7 @@ class CoreMLAgent:
 
         try:
             # Check if coremltools is installed
-            import coremltools
+            import coremltools  # noqa: F401
             return True
         except ImportError:
             logger.debug("coremltools not installed")

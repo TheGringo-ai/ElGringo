@@ -8,15 +8,14 @@ based on task complexity, latency requirements, and hardware capabilities.
 Optimized for Apple Silicon Macs.
 """
 
-import asyncio
 import logging
 import os
 import platform
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

@@ -13,12 +13,9 @@ Demonstrates the security features of the AI Team Platform:
 import asyncio
 from ai_dev_team.security import (
     SecurityValidator,
-    ValidationResult,
     ThreatLevel,
-    validate_tool_call,
-    get_security_validator,
 )
-from ai_dev_team.tools.base import OperationRisk, PermissionManager
+from ai_dev_team.tools.base import OperationRisk
 
 
 def demonstrate_basic_validation():

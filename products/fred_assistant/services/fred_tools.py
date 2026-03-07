@@ -8,9 +8,7 @@ import logging
 import os
 import re
 import subprocess
-import uuid
-from datetime import date, datetime, timedelta
-from pathlib import Path
+from datetime import date
 
 from products.fred_assistant.database import get_conn, log_activity
 # Lazy service placeholders — set to None so @patch() can find them for tests,
@@ -719,8 +717,8 @@ def _exec_search_files(params: dict) -> dict:
         lines = result.stdout.strip().split("\n")[:20]
         return {
             "success": True,
-            "matches": [l for l in lines if l],
-            "count": len([l for l in lines if l]),
+            "matches": [ln for ln in lines if ln],
+            "count": len([ln for ln in lines if ln]),
             "message": f"Found matches for '{query}' in {resolved}",
         }
     except Exception as e:
@@ -864,7 +862,7 @@ def _exec_schedule_followup(params: dict) -> dict:
 def _exec_list_leads(params: dict) -> dict:
     stage = params.get("stage")
     leads = _svc("crm_service").list_leads(stage=stage)
-    summary = [f"[{l['id']}] {l['name']} ({l['company'] or 'no co.'}) — {l['pipeline_stage']}, ${l['deal_value']:,.0f}" for l in leads[:20]]
+    summary = [f"[{lead['id']}] {lead['name']} ({lead['company'] or 'no co.'}) — {lead['pipeline_stage']}, ${lead['deal_value']:,.0f}" for lead in leads[:20]]
     return {"success": True, "count": len(leads), "leads": summary, "message": f"Found {len(leads)} leads" + (f" in {stage}" if stage else "")}
 
 

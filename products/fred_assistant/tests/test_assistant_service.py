@@ -2,7 +2,7 @@
 
 import os
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock
 from datetime import date
 
 os.environ["FRED_DB_PATH"] = ":memory:"

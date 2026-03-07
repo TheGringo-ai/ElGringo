@@ -10,7 +10,6 @@ import logging
 import os
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
 
 from .auth import GitHubAppAuth, verify_webhook_signature
 from .config import PRReviewBotSettings

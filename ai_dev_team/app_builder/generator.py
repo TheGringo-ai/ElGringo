@@ -8,13 +8,8 @@ Generates complete applications from AppProject definitions.
 - Database schema (SQLite/Firestore)
 """
 
-import os
-import re
-import json
-import asyncio
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from pathlib import Path
-from datetime import datetime
 
 from .models import AppProject, Page, Component, DataModel, DataField
 

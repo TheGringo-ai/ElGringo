@@ -5,13 +5,10 @@ FredFix Tests
 Comprehensive tests for the autonomous code fixer.
 """
 
-import asyncio
-import json
 import os
 import pytest
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -314,7 +311,7 @@ line: 25
                 "description": "Test issue",
             },
         ]'''
-        issues = fixer._parse_issues(response, "/project")
+        fixer._parse_issues(response, "/project")
         # Should handle gracefully (either parse or fall back to text)
         # The cleaned JSON parser should handle this
 

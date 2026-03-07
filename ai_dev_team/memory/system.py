@@ -934,18 +934,18 @@ class MemorySystem:
                             >= self._solutions_cache[j].success_rate
                         ) else (j, i)
                         w = self._solutions_cache[winner]
-                        l = self._solutions_cache[loser]
+                        loser_solution = self._solutions_cache[loser]
                         # Merge unique steps from loser
                         existing = set(w.solution_steps)
-                        for step in l.solution_steps:
+                        for step in loser_solution.solution_steps:
                             if step not in existing:
                                 w.solution_steps.append(step)
                         # Merge projects
-                        for p in l.projects_used:
+                        for p in loser_solution.projects_used:
                             if p not in w.projects_used:
                                 w.projects_used.append(p)
-                        w.merged_from.append(l.solution_id)
-                        w.access_count += l.access_count
+                        w.merged_from.append(loser_solution.solution_id)
+                        w.access_count += loser_solution.access_count
                         to_remove.add(loser)
                         report["solutions_merged"] += 1
 

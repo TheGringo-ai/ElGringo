@@ -5,11 +5,9 @@ Collaboration Engine Tests
 Tests for collaboration patterns and weighted consensus.
 """
 
-import asyncio
 import os
 import pytest
 import sys
-from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

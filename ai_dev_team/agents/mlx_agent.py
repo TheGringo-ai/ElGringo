@@ -15,7 +15,6 @@ Usage:
     response = await agent.generate_response("Write a Python hello world")
 """
 
-import asyncio
 import logging
 import time
 from typing import AsyncIterator, Optional

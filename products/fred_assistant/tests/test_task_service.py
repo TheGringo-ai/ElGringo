@@ -1,8 +1,7 @@
 """Tests for task_service — task + board management."""
 
 import json
-import pytest
-from datetime import date, datetime, timedelta
+from datetime import date
 
 from products.fred_assistant.services import task_service
 

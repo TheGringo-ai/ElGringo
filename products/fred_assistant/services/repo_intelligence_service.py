@@ -7,10 +7,9 @@ score and prioritized task list with revenue awareness.
 import json
 import logging
 import os
-import re
 import subprocess
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from products.fred_assistant.database import get_conn
 
@@ -163,7 +162,6 @@ def _check_tests(path: str, entries: set) -> dict:
 def _check_docs(path: str, entries: set) -> dict:
     """Check for documentation."""
     has_readme = "README.md" in entries or "readme.md" in entries or "README.rst" in entries
-    has_docs = "docs" in entries or "CHANGELOG.md" in entries
     if has_readme:
         return {"severity": "low", "detected": True}
     return {"severity": "low", "detected": False}
@@ -210,7 +208,7 @@ def _check_git_health(path: str) -> dict:
     """Check git health — uncommitted changes, last commit age, branch count."""
     info = {}
     status = _run(["git", "status", "--porcelain"], path)
-    changes = [l for l in status.splitlines() if l.strip()]
+    changes = [ln for ln in status.splitlines() if ln.strip()]
     info["uncommitted_changes"] = len(changes)
 
     log_date = _run(["git", "log", "-1", "--format=%ai"], path)
@@ -356,7 +354,7 @@ def _check_dependency_count(path: str) -> dict:
     if os.path.isfile(req_txt):
         try:
             with open(req_txt, "r") as f:
-                lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+                lines = [ln.strip() for ln in f if ln.strip() and not ln.startswith("#")]
             if len(lines) > 50:
                 items.append(f"requirements.txt: {len(lines)} dependencies")
         except Exception:
@@ -745,7 +743,7 @@ def generate_tasks_from_analysis(analysis_id: str, create_tasks: bool = False) -
         for item in large.get("items", [])[:5]:
             tasks.append({
                 "title": f"[{project}] Reduce {item['file']} ({item['size_mb']}MB)",
-                "description": f"File is over 1MB. Consider git LFS, compression, or removal.",
+                "description": "File is over 1MB. Consider git LFS, compression, or removal.",
                 "priority": 3,
                 "board": "elgringo",
                 "category": "optimization",

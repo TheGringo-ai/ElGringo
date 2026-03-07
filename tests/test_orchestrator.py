@@ -10,15 +10,13 @@ import asyncio
 import os
 import pytest
 import sys
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Dict, List, Optional, Any
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ai_dev_team.orchestrator import AIDevTeam, CollaborationResult
-from ai_dev_team.agents.base import AIAgent, AgentConfig, AgentResponse, ModelType
+from ai_dev_team.agents.base import AIAgent, AgentResponse, ModelType
 
 
 # =============================================================================
@@ -168,7 +166,7 @@ class TestAIDevTeamInit:
     def test_init_auto_setup_disabled(self):
         """Test initialization with auto_setup disabled"""
         with patch.object(AIDevTeam, 'setup_agents') as mock_setup:
-            team = AIDevTeam(auto_setup=False)
+            AIDevTeam(auto_setup=False)
             mock_setup.assert_not_called()
 
     def test_init_creates_tools(self):
@@ -295,7 +293,7 @@ class TestSetupAgents:
                 mock_instance.name = "claude"
                 MockClaude.return_value = mock_instance
 
-                team = AIDevTeam(auto_setup=True)
+                AIDevTeam(auto_setup=True)
 
                 # Claude should be registered
                 MockClaude.assert_called()
@@ -306,7 +304,7 @@ class TestSetupAgents:
             with patch('ai_dev_team.orchestrator.logger') as mock_logger:
                 with patch.object(AIDevTeam, '_setup_llama_cloud_agents'):
                     with patch.object(AIDevTeam, '_setup_local_agents'):
-                        team = AIDevTeam(auto_setup=True)
+                        AIDevTeam(auto_setup=True)
 
                         # Should have logged a warning
                         mock_logger.warning.assert_called()
@@ -317,7 +315,7 @@ class TestSetupAgents:
         with patch.dict(os.environ, env, clear=True):
             with patch('ai_dev_team.orchestrator.ClaudeAgent') as MockClaude:
                 with patch.object(AIDevTeam, '_setup_local_agents') as mock_local:
-                    team = AIDevTeam(local_only=True)
+                    AIDevTeam(local_only=True)
 
                     # Claude should NOT be registered in local-only mode
                     MockClaude.assert_not_called()
@@ -438,7 +436,7 @@ class TestAsk:
             mock_agent.execute = AsyncMock(return_value=mock_agent_response)
             mock_agent.generate_response = AsyncMock(return_value=mock_agent_response)
 
-            response = await team.ask("What is Python?", agent="mock-agent")
+            await team.ask("What is Python?", agent="mock-agent")
 
             # Verify agent was called (either method)
             assert mock_agent.execute.called or mock_agent.generate_response.called
@@ -460,7 +458,7 @@ class TestAsk:
             team._task_router = MagicMock()
             team._task_router.classify.return_value = mock_classification
 
-            response = await team.ask("What is Python?")
+            await team.ask("What is Python?")
 
             # Verify agent was called (either method)
             assert mock_agent.execute.called or mock_agent.generate_response.called

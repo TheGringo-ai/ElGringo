@@ -156,7 +156,7 @@ def save_review(data: dict) -> dict:
 async def generate_weekly_review() -> dict:
     """Use AI to generate a weekly review based on activity."""
     stats = task_service.get_dashboard_stats()
-    today_tasks = task_service.get_today_tasks()
+    task_service.get_today_tasks()
     goals = list_goals(status="active")
 
     context = (

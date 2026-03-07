@@ -15,7 +15,7 @@ Features:
 import json
 import logging
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -384,7 +384,7 @@ class FeedbackCollector:
                     language=language,
                     task_description=f"User correction for {feedback.task_type or 'task'}",
                 )
-                logger.debug(f"Stored correction as code snippet")
+                logger.debug("Stored correction as code snippet")
         except Exception as e:
             logger.warning(f"Could not store correction in coding hub: {e}")
 

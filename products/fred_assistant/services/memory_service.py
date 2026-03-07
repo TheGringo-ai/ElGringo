@@ -1,6 +1,5 @@
 """Persistent memory service — Fred never forgets."""
 
-import json
 import uuid
 from datetime import datetime
 

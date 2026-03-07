@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from products import list_products, get_product
 from products.pr_review_bot.auth import verify_webhook_signature
-from products.pr_review_bot.models import ReviewVerdict, InlineComment
+from products.pr_review_bot.models import ReviewVerdict
 from products.pr_review_bot.reviewer import PRReviewer
 
 

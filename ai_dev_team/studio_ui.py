@@ -2906,11 +2906,12 @@ def create_studio_ui():
         # === GIT EVENT HANDLERS ===
         def run_git_command(cmd, cwd=None):
             """Run git command and return output."""
+            import shlex
             import subprocess
             try:
                 cwd = cwd or os.getcwd()
                 result = subprocess.run(
-                    cmd, shell=True, cwd=cwd,
+                    shlex.split(cmd), shell=False, cwd=cwd,
                     capture_output=True, text=True, timeout=30
                 )
                 output = result.stdout + result.stderr
@@ -2976,10 +2977,11 @@ def create_studio_ui():
         # === DOCKER EVENT HANDLERS ===
         def run_docker_command(cmd):
             """Run docker command and return output."""
+            import shlex
             import subprocess
             try:
                 result = subprocess.run(
-                    cmd, shell=True,
+                    shlex.split(cmd), shell=False,
                     capture_output=True, text=True, timeout=60
                 )
                 output = result.stdout + result.stderr
@@ -3040,19 +3042,19 @@ def create_studio_ui():
             import subprocess
             try:
                 if framework == "pytest":
-                    cmd = f"cd {current_dir} && pytest {path}" + (" -v" if verbose else "")
+                    cmd = ["pytest", path] + (["-v"] if verbose else [])
                 elif framework == "unittest":
-                    cmd = f"cd {current_dir} && python -m unittest discover {path}" + (" -v" if verbose else "")
+                    cmd = ["python", "-m", "unittest", "discover", path] + (["-v"] if verbose else [])
                 elif framework == "vitest":
-                    cmd = f"cd {current_dir} && npx vitest run {path}"
+                    cmd = ["npx", "vitest", "run", path]
                 elif framework == "jest":
-                    cmd = f"cd {current_dir} && npx jest {path}" + (" --verbose" if verbose else "")
+                    cmd = ["npx", "jest", path] + (["--verbose"] if verbose else [])
                 elif framework == "playwright":
-                    cmd = f"cd {current_dir} && npx playwright test {path}"
+                    cmd = ["npx", "playwright", "test", path]
                 else:
                     return f"Unknown framework: {framework}"
 
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
+                result = subprocess.run(cmd, shell=False, capture_output=True, text=True, timeout=120, cwd=current_dir)
                 return result.stdout + result.stderr
             except subprocess.TimeoutExpired:
                 return "Test execution timed out (120s limit)"
@@ -3064,15 +3066,15 @@ def create_studio_ui():
             import subprocess
             try:
                 if framework == "pytest":
-                    cmd = f"cd {current_dir} && pytest {path} --cov --cov-report=term-missing"
+                    cmd = ["pytest", path, "--cov", "--cov-report=term-missing"]
                 elif framework == "vitest":
-                    cmd = f"cd {current_dir} && npx vitest run --coverage"
+                    cmd = ["npx", "vitest", "run", "--coverage"]
                 elif framework == "jest":
-                    cmd = f"cd {current_dir} && npx jest --coverage"
+                    cmd = ["npx", "jest", "--coverage"]
                 else:
                     return f"Coverage not configured for {framework}"
 
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=180)
+                result = subprocess.run(cmd, shell=False, capture_output=True, text=True, timeout=180, cwd=current_dir)
                 return result.stdout + result.stderr
             except Exception as e:
                 return f"Error: {e}"
@@ -3082,13 +3084,13 @@ def create_studio_ui():
             import subprocess
             try:
                 if framework == "pytest":
-                    cmd = f"cd {current_dir} && pytest -k '{pattern}' -v"
+                    cmd = ["pytest", "-k", pattern, "-v"]
                 elif framework == "jest":
-                    cmd = f"cd {current_dir} && npx jest --testNamePattern='{pattern}'"
+                    cmd = ["npx", "jest", f"--testNamePattern={pattern}"]
                 else:
                     return f"Pattern matching not configured for {framework}"
 
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
+                result = subprocess.run(cmd, shell=False, capture_output=True, text=True, timeout=120, cwd=current_dir)
                 return result.stdout + result.stderr
             except Exception as e:
                 return f"Error: {e}"

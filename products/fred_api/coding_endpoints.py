@@ -173,18 +173,17 @@ class ProjectTools:
 
     def run_command(self, command: str, timeout: int = 120) -> Dict[str, Any]:
         """Run a shell command in the project directory."""
+        import shlex
         import subprocess
 
-        # Security: block dangerous commands
-        dangerous = ["rm -rf /", "rm -rf ~", "mkfs", "dd if=/dev", "> /dev/sda"]
-        cmd_lower = command.lower()
-        for d in dangerous:
-            if d in cmd_lower:
-                return {"exit_code": 1, "stdout": "", "stderr": f"Blocked dangerous command: {command}"}
+        try:
+            cmd_args = shlex.split(command)
+        except ValueError as e:
+            return {"exit_code": 1, "stdout": "", "stderr": f"Invalid command: {e}"}
 
         try:
             result = subprocess.run(
-                command, shell=True, capture_output=True, text=True,
+                cmd_args, shell=False, capture_output=True, text=True,
                 cwd=str(self.root), timeout=timeout,
                 env={**os.environ, "PYTHONPATH": str(self.root)},
             )

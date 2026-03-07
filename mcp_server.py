@@ -12,7 +12,7 @@ Setup in ~/.claude/mcp.json or project .mcp.json:
       "args": ["/Users/fredtaylor/Development/Projects/ElGringo/mcp_server.py"],
       "env": {
         "ELGRINGO_API_URL": "https://ai.chatterfix.com",
-        "ELGRINGO_API_KEY": "K0-FkrsM2qiJRl-oD8V-k0LHA9gvveBo4icSvwS3Cqc"
+        "ELGRINGO_API_KEY": "your-api-key-here"
       }
     }
   }
@@ -120,12 +120,21 @@ def _fmt_review(result: dict) -> str:
 def elgringo_collaborate(prompt: str, context: str = "", mode: str = "parallel") -> str:
     """
     Multi-agent AI collaboration. Sends a task to El Gringo's AI team
-    (ChatGPT + Grok + Llama) and returns their consensus answer.
+    (ChatGPT + Grok + Llama + Claude if configured) and returns their merged answer.
 
     Args:
         prompt: The task or question for the AI team
         context: Additional context (code snippets, error messages, etc.)
-        mode: Collaboration mode -- parallel, sequential, consensus, single
+        mode: Collaboration mode:
+            - parallel        Fast (~12s). All agents answer simultaneously, results merged.
+            - sequential      Each agent builds on the previous answer.
+            - single          Fastest (~2s). Auto-routes to one best-fit agent.
+            - debate          Slow (~60s). Agents argue positions, best argument wins.
+            - consensus       Slow (60s+). Agents must reach agreement.
+            - peer_review     Agents critique and refine a draft answer.
+            - brainstorming   Creative ideation — agents generate diverse ideas.
+            - expert_panel    Each agent acts as a domain expert, panel discussion.
+            - devils_advocate Slow (~30s). One agent steelmans the opposite position.
     """
     return _fmt_collaborate(_api("POST", "/v1/collaborate", {
         "prompt": prompt, "context": context, "mode": mode,
@@ -165,7 +174,7 @@ def elgringo_review(project_path: str, focus: str = "bugs", glob_pattern: str = 
         focus: Review focus -- bugs, security, performance, quality
         glob_pattern: File pattern to review (e.g. **/*.py, routers/*.py)
     """
-    return _fmt_review(_api("POST", "/v1/code/review", params={
+    return _fmt_review(_api("POST", "/v1/code/review", body={
         "project_path": project_path, "focus": focus, "glob_pattern": glob_pattern,
     }))
 
@@ -246,14 +255,17 @@ def elgringo_ask(prompt: str, context: str = "") -> str:
 
 @mcp.tool()
 def ai_team_health() -> str:
-    """Check El Gringo API health and list available agents."""
-    result = _api("GET", "/v1/health")
-    if "error" in result:
-        return f"Error: {result['error']}"
-    status = result.get("status", "unknown")
-    agents = result.get("agents", result.get("available_agents", []))
-    agent_list = ", ".join(agents) if isinstance(agents, list) else str(agents)
-    return f"Status: {status}\nAgents: {agent_list}"
+    """Check El Gringo API health and list available agents with their capabilities."""
+    health = _api("GET", "/v1/health")
+    if "error" in health:
+        return f"Error: {health['error']}"
+    agents_result = _api("GET", "/v1/agents")
+    if isinstance(agents_result, list):
+        agent_lines = [f"  - {a['name']} ({a['role']}): {', '.join(a.get('capabilities', []))}" for a in agents_result]
+        agent_str = "\n".join(agent_lines)
+    else:
+        agent_str = "  (unavailable)"
+    return f"Status: {health.get('status', 'unknown')} | v{health.get('version', '?')}\nAgents:\n{agent_str}"
 
 
 @mcp.tool()
@@ -279,8 +291,19 @@ def ai_team_execute(prompt: str, context: str = "", agents: str = "", mode: str 
     Args:
         prompt: The task to execute
         context: Additional context
-        agents: Comma-separated agent names (empty = all agents)
-        mode: Collaboration mode -- parallel, sequential, consensus, single
+        agents: Comma-separated agent names (empty = all agents).
+                Available: chatgpt-coder, gemini-creative, grok-reasoner, grok-coder,
+                llama-llama-3-3-70b-groq, claude-analyst (requires ANTHROPIC_API_KEY on server)
+        mode: Collaboration mode:
+            - parallel        Fast (~12s). All agents answer simultaneously, results merged.
+            - sequential      Each agent builds on the previous answer.
+            - single          Fastest (~2s). Auto-routes to one best-fit agent.
+            - debate          Agents argue positions, best argument wins.
+            - consensus       Slow (60s+). Agents must reach agreement.
+            - peer_review     One agent drafts, others critique and refine.
+            - brainstorming   Creative ideation — agents generate diverse ideas.
+            - expert_panel    Each agent acts as a domain expert, panel discussion.
+            - devils_advocate One agent steelmans the opposite position.
     """
     body: dict = {"prompt": prompt, "context": context, "mode": mode}
     if agents:
@@ -321,7 +344,7 @@ def ai_team_review(project_path: str, focus: str = "bugs", glob_pattern: str = "
         focus: Review focus -- bugs, security, performance, quality
         glob_pattern: File pattern to review
     """
-    return _fmt_review(_api("POST", "/v1/code/review", params={
+    return _fmt_review(_api("POST", "/v1/code/review", body={
         "project_path": project_path, "focus": focus, "glob_pattern": glob_pattern,
     }))
 
@@ -349,7 +372,7 @@ def ai_team_debug(prompt: str, error_message: str = "", stacktrace: str = "", co
     return _fmt_collaborate(_api("POST", "/v1/collaborate", {
         "prompt": f"Debug this issue: {prompt}",
         "context": context,
-        "mode": "parallel",
+        "mode": "peer_review",  # one agent diagnoses, others verify
     }))
 
 
@@ -370,7 +393,7 @@ def ai_team_architect(prompt: str, context: str = "", constraints: str = "") -> 
     return _fmt_collaborate(_api("POST", "/v1/collaborate", {
         "prompt": f"Architecture review: {prompt}",
         "context": full_context,
-        "mode": "parallel",
+        "mode": "expert_panel",  # each agent plays a domain expert role
     }))
 
 
@@ -388,7 +411,7 @@ def ai_team_brainstorm(topic: str, context: str = "", num_ideas: int = 5) -> str
     return _fmt_collaborate(_api("POST", "/v1/collaborate", {
         "prompt": f"Brainstorm {num_ideas} ideas for: {topic}",
         "context": context,
-        "mode": "parallel",
+        "mode": "brainstorming",  # dedicated creative ideation mode
     }))
 
 
@@ -402,8 +425,82 @@ def ai_team_security_audit(project_path: str, glob_pattern: str = "**/*.py") -> 
         project_path: Absolute path to the project on the server
         glob_pattern: File pattern to audit
     """
-    return _fmt_review(_api("POST", "/v1/code/review", params={
+    return _fmt_review(_api("POST", "/v1/code/review", body={
         "project_path": project_path, "focus": "security", "glob_pattern": glob_pattern,
+    }))
+
+
+@mcp.tool()
+def elgringo_stream(prompt: str, agent: str = "") -> str:
+    """
+    Stream a response token-by-token from a single agent. Fastest option (~2s)
+    for quick questions. Returns the full assembled response.
+
+    Args:
+        prompt: The question or task
+        agent: Specific agent name (empty = auto-route). Options:
+               chatgpt-coder, gemini-creative, grok-reasoner, grok-coder,
+               llama-llama-3-3-70b-groq,
+               claude-analyst (available if ANTHROPIC_API_KEY set on server)
+    """
+    url = f"{BASE_URL}/v1/stream"
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    }
+    body: dict = {"prompt": prompt}
+    if agent:
+        body["agent"] = agent
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    logger.info(f"POST /v1/stream (agent={agent or 'auto'})")
+    try:
+        tokens = []
+        used_agent = ""
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            for raw_line in resp:
+                line = raw_line.decode().strip()
+                if not line.startswith("data:"):
+                    continue
+                try:
+                    event = json.loads(line[5:].strip())
+                except json.JSONDecodeError:
+                    continue
+                if event.get("type") == "token":
+                    tokens.append(event.get("content", ""))
+                elif event.get("type") == "start":
+                    used_agent = event.get("agent", "")
+                elif event.get("type") == "done":
+                    break
+        answer = "".join(tokens)
+        prefix = f"[Agent: {used_agent}]\n\n" if used_agent else ""
+        return f"{prefix}{answer}"
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode() if e.fp else str(e)
+        return f"Error: HTTP {e.code}: {error_body}"
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def elgringo_debate(prompt: str, context: str = "", mode: str = "debate") -> str:
+    """
+    Put a topic, decision, or design to adversarial scrutiny. Agents argue
+    opposing positions to surface weaknesses and trade-offs.
+
+    ⚠️  These modes are slow (30–90s) — use for important decisions only.
+
+    Args:
+        prompt: The proposition, decision, or design to challenge
+        context: Background info, constraints, or existing solution
+        mode: Adversarial mode:
+            - debate          (~60s) Agents argue positions; strongest argument wins.
+            - devils_advocate (~30s) One agent steelmans the opposite position.
+            - peer_review     (~20s) One agent proposes, others critique and refine.
+    """
+    return _fmt_collaborate(_api("POST", "/v1/collaborate", {
+        "prompt": prompt, "context": context, "mode": mode,
     }))
 
 

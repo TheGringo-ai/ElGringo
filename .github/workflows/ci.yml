@@ -25,9 +25,13 @@ jobs:
         run: |
           pip install -e ".[dev,pr-bot]"
 
-      - name: Run tests
+      - name: Lint
         run: |
-          python -m pytest tests/ -x -q
+          ruff check . --statistics
+
+      - name: Run tests with coverage
+        run: |
+          python -m pytest tests/ -x -q --cov=ai_dev_team --cov-report=term-missing --cov-fail-under=20
 
   deploy:
     name: Deploy to VM

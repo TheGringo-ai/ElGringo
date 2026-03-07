@@ -499,7 +499,19 @@ def _register_builtin_tools(registry: ToolRegistry):
 
         try:
             with redirect_stdout(stdout), redirect_stderr(stderr):
-                exec(code, {"__builtins__": __builtins__})
+                _safe_builtins = {
+                    k: __builtins__[k] if isinstance(__builtins__, dict) else getattr(__builtins__, k)
+                    for k in (
+                        "print", "len", "range", "enumerate", "zip", "map", "filter",
+                        "sorted", "reversed", "list", "dict", "set", "tuple", "str",
+                        "int", "float", "bool", "type", "isinstance", "hasattr",
+                        "getattr", "setattr", "repr", "abs", "round", "min", "max",
+                        "sum", "any", "all", "Exception", "ValueError", "TypeError",
+                    )
+                    if (isinstance(__builtins__, dict) and k in __builtins__)
+                    or (not isinstance(__builtins__, dict) and hasattr(__builtins__, k))
+                }
+                exec(code, {"__builtins__": _safe_builtins})
             return stdout.getvalue() or "Code executed successfully"
         except Exception as e:
             return f"Error: {e}\n{stderr.getvalue()}"
@@ -511,11 +523,13 @@ def _register_builtin_tools(registry: ToolRegistry):
         requires_confirmation=True,
     )
     def run_shell(command: str, timeout: int = 30) -> str:
+        import shlex
         import subprocess
         try:
+            cmd_args = shlex.split(command)
             result = subprocess.run(
-                command,
-                shell=True,
+                cmd_args,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=timeout,

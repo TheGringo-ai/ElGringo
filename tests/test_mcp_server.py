@@ -295,6 +295,92 @@ class TestFredFix:
         assert "java" in LANGUAGE_CONFIG
 
 
+@pytest.mark.skipif(not MCP_AVAILABLE, reason="MCP server module not available")
+class TestFmtCollaborateEdgeCases:
+    """Edge cases for _fmt_collaborate"""
+
+    def test_empty_agents_list(self):
+        result = _fmt_collaborate({"agents_used": [], "confidence": 0.5, "answer": "ok"})
+        assert "ok" in result
+
+    def test_zero_confidence(self):
+        result = _fmt_collaborate({"agents_used": ["a"], "confidence": 0.0, "answer": "x"})
+        assert "0%" in result
+
+    def test_full_confidence(self):
+        result = _fmt_collaborate({"agents_used": ["a"], "confidence": 1.0, "answer": "x"})
+        assert "100%" in result
+
+    def test_missing_agents_key(self):
+        result = _fmt_collaborate({"confidence": 0.5, "answer": "x"})
+        assert isinstance(result, str)
+
+    def test_missing_confidence_key(self):
+        result = _fmt_collaborate({"agents_used": ["a"], "answer": "x"})
+        assert isinstance(result, str)
+
+    def test_missing_answer_key(self):
+        result = _fmt_collaborate({"agents_used": ["a"], "confidence": 0.5})
+        assert isinstance(result, str)
+
+    def test_empty_dict(self):
+        result = _fmt_collaborate({})
+        assert isinstance(result, str)
+
+    def test_single_agent(self):
+        result = _fmt_collaborate({"agents_used": ["chatgpt"], "confidence": 0.9, "answer": "hi"})
+        assert "chatgpt" in result
+
+
+@pytest.mark.skipif(not MCP_AVAILABLE, reason="MCP server module not available")
+class TestFmtCodeTaskEdgeCases:
+    """Edge cases for _fmt_code_task"""
+
+    def test_error_response(self):
+        result = _fmt_code_task({"error": "something broke"})
+        assert "Error" in result or "error" in result.lower()
+
+    def test_empty_files_changed(self):
+        result = _fmt_code_task({"status": "done", "summary": "s", "agents_used": [], "iterations": 1, "files_changed": []})
+        assert isinstance(result, str)
+
+    def test_multiple_files(self):
+        result = _fmt_code_task({
+            "status": "done", "summary": "s", "agents_used": ["a"],
+            "iterations": 1, "files_changed": [
+                {"path": "a.py", "action": "edit"},
+                {"path": "b.py", "action": "create"},
+            ]
+        })
+        assert "a.py" in result
+        assert "b.py" in result
+
+    def test_missing_optional_keys(self):
+        result = _fmt_code_task({"status": "done"})
+        assert isinstance(result, str)
+
+
+@pytest.mark.skipif(not MCP_AVAILABLE, reason="MCP server module not available")
+class TestFmtReviewEdgeCases:
+    """Edge cases for _fmt_review"""
+
+    def test_error_response(self):
+        result = _fmt_review({"error": "fail"})
+        assert "Error" in result or "error" in result.lower()
+
+    def test_zero_files(self):
+        result = _fmt_review({"agents_used": ["a"], "files_reviewed": 0, "findings": "none"})
+        assert "0" in result
+
+    def test_missing_all_keys(self):
+        result = _fmt_review({})
+        assert isinstance(result, str)
+
+    def test_empty_agents(self):
+        result = _fmt_review({"agents_used": [], "files_reviewed": 3, "findings": "ok"})
+        assert isinstance(result, str)
+
+
 class TestCollaborationEngine:
     """Test collaboration engine"""
 

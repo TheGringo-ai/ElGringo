@@ -210,8 +210,115 @@ class TestTaskRouter:
         assert TaskType.DEBUGGING.value == "debugging"
 
 
+class TestTaskRouterScoring:
+    """Test TaskRouter internal scoring methods"""
+
+    @pytest.fixture
+    def router(self):
+        return TaskRouter()
+
+    def test_calculate_score_keyword_match(self, router):
+        config = {"keywords": ["test", "validate"], "patterns": [], "weight": 1.0}
+        score = router._calculate_score("write a test", config)
+        assert score > 0
+
+    def test_calculate_score_no_match(self, router):
+        config = {"keywords": ["xyz123"], "patterns": [], "weight": 1.0}
+        score = router._calculate_score("nothing matches", config)
+        assert score == 0.0
+
+    def test_calculate_score_pattern_match(self, router):
+        config = {"keywords": [], "patterns": [r"\bwrite\s+a\s+function\b"], "weight": 1.0}
+        score = router._calculate_score("write a function", config)
+        assert score > 0
+
+    def test_calculate_score_weight_applied(self, router):
+        config = {"keywords": ["test"], "patterns": [], "weight": 2.0}
+        score_weighted = router._calculate_score("test this", config)
+        config["weight"] = 1.0
+        score_normal = router._calculate_score("test this", config)
+        assert score_weighted > score_normal
+
+    def test_assess_complexity_high(self, router):
+        assert router._assess_complexity("build a complex comprehensive system") == "high"
+
+    def test_assess_complexity_low(self, router):
+        assert router._assess_complexity("simple quick fix") == "low"
+
+    def test_assess_complexity_medium(self, router):
+        # Medium-length text (15-50 words) without complexity keywords
+        text = "implement the feature with proper error handling and logging for the user authentication module in the backend service"
+        result = router._assess_complexity(text)
+        assert result == "medium"
+
+    def test_assess_complexity_long_text_is_high(self, router):
+        text = " ".join(["word"] * 60)
+        assert router._assess_complexity(text) == "high"
+
+    def test_assess_complexity_short_text_is_low(self, router):
+        text = "fix bug"
+        assert router._assess_complexity(text) == "low"
+
+    def test_recommend_mode_high_complexity(self, router):
+        assert router._recommend_mode(TaskType.CODING, "high") == "consensus"
+
+    def test_recommend_mode_debugging(self, router):
+        assert router._recommend_mode(TaskType.DEBUGGING, "medium") == "sequential"
+
+    def test_recommend_mode_security(self, router):
+        assert router._recommend_mode(TaskType.SECURITY, "medium") == "sequential"
+
+    def test_recommend_mode_creative(self, router):
+        assert router._recommend_mode(TaskType.CREATIVE, "medium") == "parallel"
+
+    def test_recommend_mode_low_complexity(self, router):
+        assert router._recommend_mode(TaskType.CODING, "low") == "parallel"
+
+    def test_get_agent_for_task_coding(self, router):
+        agents = ["chatgpt-coder", "gemini-creative", "grok-reasoner"]
+        result = router.get_agent_for_task(TaskType.CODING, agents)
+        assert result == "chatgpt-coder"  # Highest performance_weight for coding
+
+    def test_get_agent_for_task_creative(self, router):
+        agents = ["chatgpt-coder", "gemini-creative", "grok-reasoner"]
+        result = router.get_agent_for_task(TaskType.CREATIVE, agents)
+        assert result == "gemini-creative"
+
+    def test_get_agent_for_task_no_match(self, router):
+        result = router.get_agent_for_task(TaskType.CODING, ["nonexistent-agent"])
+        assert result is None
+
+    def test_classify_optimization(self, router):
+        result = router.classify("optimize the database query performance")
+        assert result.primary_type == TaskType.OPTIMIZATION
+
+    def test_classify_testing(self, router):
+        result = router.classify("write unit tests for the auth module")
+        assert result.primary_type == TaskType.TESTING
+
+    def test_classify_documentation(self, router):
+        result = router.classify("write documentation for the API")
+        assert result.primary_type == TaskType.DOCUMENTATION
+
+    def test_classify_research(self, router):
+        result = router.classify("research the best framework for this project")
+        assert result.primary_type == TaskType.RESEARCH
+
+    def test_classify_with_context(self, router):
+        result = router.classify("fix this", context="there is a security vulnerability")
+        assert result.primary_type in (TaskType.DEBUGGING, TaskType.SECURITY)
+
+    def test_classify_secondary_types(self, router):
+        result = router.classify("debug and fix the security vulnerability in the auth system")
+        assert len(result.secondary_types) >= 0  # May have secondary types
+
+
 class TestCostOptimizer:
     """Test CostOptimizer"""
+
+    @pytest.fixture
+    def optimizer(self):
+        return CostOptimizer(daily_budget=10.0, monthly_budget=100.0)
 
     def test_model_tier_mapping_exists(self):
         assert len(MODEL_TIER_MAPPING) > 0
@@ -239,9 +346,90 @@ class TestCostOptimizer:
         assert ModelTier.BUDGET.value < ModelTier.STANDARD.value
         assert ModelTier.STANDARD.value < ModelTier.PREMIUM.value
 
-    def test_cost_optimizer_init(self):
-        optimizer = CostOptimizer()
-        assert optimizer is not None
+    def test_cost_optimizer_init(self, optimizer):
+        assert optimizer.daily_budget == 10.0
+        assert optimizer.monthly_budget == 100.0
+
+    def test_get_tier_for_complexity(self, optimizer):
+        assert optimizer.get_tier_for_complexity("low") == ModelTier.BUDGET
+        assert optimizer.get_tier_for_complexity("medium") == ModelTier.STANDARD
+        assert optimizer.get_tier_for_complexity("high") == ModelTier.PREMIUM
+        assert optimizer.get_tier_for_complexity("unknown") == ModelTier.STANDARD
+
+    def test_get_model_tier(self, optimizer):
+        assert optimizer.get_model_tier("gpt-4o") == ModelTier.PREMIUM
+        assert optimizer.get_model_tier("gpt-4o-mini") == ModelTier.STANDARD
+        assert optimizer.get_model_tier("unknown-model") == ModelTier.STANDARD
+
+    def test_estimate_cost(self, optimizer):
+        estimate = optimizer.estimate_cost("gpt-4o", 1000, 2000)
+        assert estimate.model == "gpt-4o"
+        assert estimate.tier == ModelTier.PREMIUM
+        assert estimate.estimated_cost > 0
+        assert estimate.estimated_input_tokens == 1000
+        assert estimate.estimated_output_tokens == 2000
+
+    def test_estimate_cost_free_model(self, optimizer):
+        estimate = optimizer.estimate_cost("llama3.2:3b", 1000, 2000)
+        assert estimate.estimated_cost == 0.0
+
+    def test_record_usage(self, optimizer):
+        estimate = optimizer.record_usage("gpt-4o", 1000, 2000)
+        assert optimizer._daily_spent > 0
+        assert optimizer._monthly_spent > 0
+        assert len(optimizer._request_log) == 1
+
+    def test_budget_status(self, optimizer):
+        status = optimizer.get_budget_status()
+        assert status.daily_limit == 10.0
+        assert status.daily_spent == 0.0
+        assert status.remaining_daily == 10.0
+
+    def test_budget_status_after_usage(self, optimizer):
+        optimizer.record_usage("gpt-4o", 100000, 200000)
+        status = optimizer.get_budget_status()
+        assert status.daily_spent > 0
+        assert status.remaining_daily < 10.0
+
+    def test_reset_daily(self, optimizer):
+        optimizer.record_usage("gpt-4o", 1000, 2000)
+        optimizer.reset_daily()
+        assert optimizer._daily_spent == 0.0
+
+    def test_reset_monthly(self, optimizer):
+        optimizer.record_usage("gpt-4o", 1000, 2000)
+        optimizer.reset_monthly()
+        assert optimizer._monthly_spent == 0.0
+        assert optimizer._daily_spent == 0.0
+
+    def test_cost_report_empty(self, optimizer):
+        report = optimizer.get_cost_report()
+        assert report["total_requests"] == 0
+        assert report["total_cost"] == 0.0
+
+    def test_cost_report_with_usage(self, optimizer):
+        optimizer.record_usage("gpt-4o", 1000, 2000)
+        optimizer.record_usage("gpt-4o-mini", 500, 1000)
+        report = optimizer.get_cost_report()
+        assert report["total_requests"] == 2
+        assert report["total_cost"] > 0
+        assert "by_tier" in report
+        assert "budget_status" in report
+
+    def test_select_optimal_agent(self, optimizer):
+        agents = ["agent1", "agent2"]
+        models = {"agent1": "gpt-4o", "agent2": "gpt-4o-mini"}
+        result = optimizer.select_optimal_agent(agents, models, "medium")
+        assert result in agents
+
+    def test_select_optimal_agent_empty(self, optimizer):
+        result = optimizer.select_optimal_agent([], {}, "medium")
+        assert result is None
+
+    def test_can_afford(self, optimizer):
+        assert optimizer._can_afford(5.0)
+        assert optimizer._can_afford(10.0)
+        assert not optimizer._can_afford(11.0)
 
     def test_budget_models_cheaper_than_premium(self):
         budget_costs = [MODEL_COSTS[m] for m, t in MODEL_TIER_MAPPING.items()

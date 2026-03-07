@@ -315,6 +315,12 @@ async def stream(req: StreamRequest):
     )
 
 
+# ── Coding Agent Endpoints ───────────────────────────────────────────
+
+from products.fred_api.coding_endpoints import router as coding_router
+app.include_router(coding_router, dependencies=[Depends(verify_api_key), Depends(rate_limit)])
+
+
 # ── Entry point ──────────────────────────────────────────────────────
 
 def main():

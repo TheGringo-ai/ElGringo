@@ -1,5 +1,5 @@
 """
-FredAI Command Center
+El Gringo Command Center
 =====================
 
 Unified dashboard API for daily founder operations:

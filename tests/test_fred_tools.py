@@ -51,8 +51,8 @@ class TestParseParams:
         assert result == {"items": ["a", "b", "c"]}
 
     def test_multiple_params(self):
-        result = parse_params('title="Review PR", board="fredai", priority=1')
-        assert result == {"title": "Review PR", "board": "fredai", "priority": 1}
+        result = parse_params('title="Review PR", board="elgringo", priority=1')
+        assert result == {"title": "Review PR", "board": "elgringo", "priority": 1}
 
     def test_empty_string(self):
         result = parse_params("")
@@ -65,12 +65,12 @@ class TestParseParams:
 
 class TestParseActions:
     def test_single_action(self):
-        text = 'I will create that task for you.\nACTION: create_task(title="Review deployment", board="fredai")'
+        text = 'I will create that task for you.\nACTION: create_task(title="Review deployment", board="elgringo")'
         actions = parse_actions(text)
         assert len(actions) == 1
         assert actions[0]["name"] == "create_task"
         assert actions[0]["params"]["title"] == "Review deployment"
-        assert actions[0]["params"]["board"] == "fredai"
+        assert actions[0]["params"]["board"] == "elgringo"
 
     def test_multiple_actions(self):
         text = (
@@ -97,7 +97,7 @@ class TestParseActions:
         assert actions[0]["params"] == {}
 
     def test_action_with_numeric_param(self):
-        text = 'ACTION: git_log(project="FredAI", count=5)'
+        text = 'ACTION: git_log(project="ElGringo", count=5)'
         actions = parse_actions(text)
         assert len(actions) == 1
         assert actions[0]["params"]["count"] == 5
@@ -105,7 +105,7 @@ class TestParseActions:
     def test_action_in_middle_of_text(self):
         text = (
             "Sure, let me check that for you.\n"
-            'ACTION: git_status(project="FredAI")\n'
+            'ACTION: git_status(project="ElGringo")\n'
             "I'll let you know what I find."
         )
         actions = parse_actions(text)
@@ -358,7 +358,7 @@ class TestTaskExecutors:
     def test_list_tasks(self, mock_ts):
         mock_ts.list_tasks.return_value = [
             {"id": "1", "title": "Task A", "priority": 1, "status": "todo", "due_date": None, "board_id": "work"},
-            {"id": "2", "title": "Task B", "priority": 2, "status": "in_progress", "due_date": "2026-02-22", "board_id": "fredai"},
+            {"id": "2", "title": "Task B", "priority": 2, "status": "in_progress", "due_date": "2026-02-22", "board_id": "elgringo"},
         ]
         from products.fred_assistant.services.fred_tools import _exec_list_tasks
         result = _exec_list_tasks({"board": "work"})
@@ -621,7 +621,7 @@ class TestProjectExecutors:
     @patch("products.fred_assistant.services.fred_tools.projects_service")
     def test_list_projects(self, mock_ps):
         mock_ps.list_projects.return_value = [
-            {"name": "FredAI", "tech_stack": ["Python", "React"], "git_status": "dirty"},
+            {"name": "ElGringo", "tech_stack": ["Python", "React"], "git_status": "dirty"},
             {"name": "Other", "tech_stack": ["Go"], "git_status": "clean"},
         ]
         from products.fred_assistant.services.fred_tools import _exec_list_projects

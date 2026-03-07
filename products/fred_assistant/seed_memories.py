@@ -11,7 +11,7 @@ SEEDS = [
     # ── Projects: Identity & Purpose ─────────────────────────────
     ("projects", "chatterfix", "AI-powered CMMS for field technicians. Hands-free operation via voice, OCR, and NLP. Flagship product.", "https://chatterfix.com — Cloud Run", 9),
     ("projects", "managers_dashboard", "Multi-tenant CMMS analytics dashboard for maintenance managers. KPI tracking, equipment health scoring, AI audit reports.", "https://dashboard.chatterfix.com — VM 136.113.48.166", 9),
-    ("projects", "fredai_platform", "Multi-agent AI orchestration platform. Coordinates GPT-4, Gemini, Grok, Claude. 12 services on dedicated VM.", "https://ai.chatterfix.com — VM 34.61.174.254", 9),
+    ("projects", "elgringo_platform", "Multi-agent AI orchestration platform. Coordinates GPT-4, Gemini, Grok, Claude. 12 services on dedicated VM.", "https://ai.chatterfix.com — VM 34.61.174.254", 9),
     ("projects", "fix_it_fred", "AI-powered DIY troubleshooting and home repair assistant for homeowners. Step-by-step diagnosis, parts price comparison.", "https://fixitfred.app — Cloud Run", 8),
     ("projects", "linesmart", "AI-powered training platform for manufacturing. Adaptive learning, skill gap analysis, competency tracking.", "Cloud Run deployment", 7),
     ("projects", "safetyfix", "AI-powered workplace safety management. Incident reporting, OSHA compliance, predictive hazard detection.", "In development — targets OSHA, ISO 45001", 7),
@@ -21,18 +21,18 @@ SEEDS = [
 
     # ── Projects: Key Distinctions ───────────────────────────────
     ("projects", "dashboard_vs_chatterfix", "Managers Dashboard is NOT ChatterFix. Separate product, separate codebase, separate deployment.", "Dashboard = analytics for managers. ChatterFix = CMMS for technicians.", 10),
-    ("projects", "fredai_is_the_brain", "FredAI Platform is the central brain. Fred Assistant is the hub connecting all 12 services via localhost HTTP.", "Services: API, PR Bot, Chat, Studio, Fred API, Code Audit, Test Gen, Doc Gen, Command Center, Assistant", 9),
+    ("projects", "elgringo_is_the_brain", "El Gringo Platform is the central brain. Fred Assistant is the hub connecting all 12 services via localhost HTTP.", "Services: API, PR Bot, Chat, Studio, Fred API, Code Audit, Test Gen, Doc Gen, Command Center, Assistant", 9),
 
     # ── Architecture: Infrastructure ─────────────────────────────
     ("infrastructure", "dashboard_vm", "Managers Dashboard runs on VM 136.113.48.166 (e2-medium). CI/CD: GitHub Actions → SCP → systemd.", "Domain: dashboard.chatterfix.com", 8),
-    ("infrastructure", "fredai_vm", "FredAI runs on VM 34.61.174.254 (e2-medium, Debian 12, 4GB RAM). 12 systemd services + nginx.", "Domain: ai.chatterfix.com", 8),
+    ("infrastructure", "elgringo_vm", "El Gringo runs on VM 34.61.174.254 (e2-medium, Debian 12, 4GB RAM). 12 systemd services + nginx.", "Domain: ai.chatterfix.com", 8),
     ("infrastructure", "chatterfix_deploy", "ChatterFix deploys to Google Cloud Run. CI/CD via GitHub Actions on push to main.", "Domain: chatterfix.com", 8),
-    ("infrastructure", "vm_cost", "FredAI VM: ~$27-30/mo (e2-medium + disk + egress). Dashboard VM: similar. Total infra: ~$55-60/mo.", "No cost increase from RAG — runs in-process, zero API calls.", 7),
+    ("infrastructure", "vm_cost", "El Gringo VM: ~$27-30/mo (e2-medium + disk + egress). Dashboard VM: similar. Total infra: ~$55-60/mo.", "No cost increase from RAG — runs in-process, zero API calls.", 7),
 
     # ── Architecture: Tech Stack ─────────────────────────────────
-    ("tech_stack", "ai_providers", "6 AI providers: OpenAI GPT-4, Google Gemini 2.5 Flash, X.AI Grok 3, Anthropic Claude, Ollama (local), LlamaCloud.", "FredAI orchestrates all of them with intelligent routing.", 8),
-    ("tech_stack", "databases", "Firestore (multi-tenant, 42+ collections), SQLite (Fred Assistant local), Redis (FredAI caching), MongoDB (ArtProof).", "PostgreSQL planned for SafetyFix.", 7),
-    ("tech_stack", "python_backend", "All backends use Python + FastAPI except ArtProof (Node.js/Express). Testing: pytest across all projects.", "661 tests passing in FredAI alone.", 7),
+    ("tech_stack", "ai_providers", "6 AI providers: OpenAI GPT-4, Google Gemini 2.5 Flash, X.AI Grok 3, Anthropic Claude, Ollama (local), LlamaCloud.", "El Gringo orchestrates all of them with intelligent routing.", 8),
+    ("tech_stack", "databases", "Firestore (multi-tenant, 42+ collections), SQLite (Fred Assistant local), Redis (El Gringo caching), MongoDB (ArtProof).", "PostgreSQL planned for SafetyFix.", 7),
+    ("tech_stack", "python_backend", "All backends use Python + FastAPI except ArtProof (Node.js/Express). Testing: pytest across all projects.", "661 tests passing in El Gringo alone.", 7),
     ("tech_stack", "frontend", "React 18 + Vite + Tailwind (Dashboard, Fix It Fred). React Native (ChatterFix mobile). Styled Components (ArtProof, IDE).", "", 7),
     ("tech_stack", "auth_patterns", "Firebase Auth (all projects). PIN login (Dashboard clients). Bearer tokens (APIs). bcrypt hashing.", "DASHBOARD_PIN_HASH env var required on VM.", 8),
 
@@ -52,8 +52,8 @@ SEEDS = [
     # ── Deployment: Known Issues ─────────────────────────────────
     ("deployment", "dashboard_clientapi_pattern", "clientApi paths NEVER include /api/ prefix. Interceptors in App.jsx add it. Using /api/ causes double /api/api/.", "Global axios interceptors handle auth tokens + client_id.", 9),
     ("deployment", "dashboard_dark_mode", "Always test dark mode before deploying Dashboard. Known past mistake: deploying without dark mode testing.", "form-light, modal-light classes for accessibility.", 8),
-    ("deployment", "fredai_deploy_command", "Deploy FredAI: ./deploy-vm.sh from local Mac. Packages tar, SCPs to VM, runs ci-deploy-fredai.sh.", "Deploy Dashboard: push to master triggers GitHub Actions CI/CD.", 8),
-    ("deployment", "nginx_config", "FredAI nginx: sites-available/ai.chatterfix.com is a COPY not symlink. Deploy script copies from sites-available.", "Routes: /v1/ → Fred API, /audit/ → Code Audit, /api/ → Main API, /webhook → PR Bot", 7),
+    ("deployment", "elgringo_deploy_command", "Deploy El Gringo: ./deploy-vm.sh from local Mac. Packages tar, SCPs to VM, runs ci-deploy-elgringo.sh.", "Deploy Dashboard: push to master triggers GitHub Actions CI/CD.", 8),
+    ("deployment", "nginx_config", "El Gringo nginx: sites-available/ai.chatterfix.com is a COPY not symlink. Deploy script copies from sites-available.", "Routes: /v1/ → Fred API, /audit/ → Code Audit, /api/ → Main API, /webhook → PR Bot", 7),
 ]
 
 

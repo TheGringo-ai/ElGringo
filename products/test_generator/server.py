@@ -3,7 +3,7 @@ Test Generator Service
 ======================
 
 AI-powered unit test generation, coverage analysis, and test quality improvement
-using FredAI's multi-agent collaboration.
+using El Gringo's multi-agent collaboration.
 
 Endpoints:
     GET  /tests/health   - Health check
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Test Generator Service",
-    description="AI-powered unit test generation and improvement powered by FredAI",
+    description="AI-powered unit test generation and improvement powered by El Gringo",
     version="0.1.0",
     docs_url="/tests/docs",
 )

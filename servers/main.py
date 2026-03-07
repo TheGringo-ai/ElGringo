@@ -38,7 +38,7 @@ app = FastAPI(
 )
 
 # CORS middleware
-_cors_origins = os.getenv("FREDAI_CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:8000").split(",")
+_cors_origins = os.getenv("ELGRINGO_CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:8000").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in _cors_origins],

@@ -64,7 +64,7 @@ export default function App() {
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-3 border-b border-white/10">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold tracking-tight">FredAI Command Center</h1>
+          <h1 className="text-lg font-semibold tracking-tight">El Gringo Command Center</h1>
           <span className="text-xs text-gray-500 bg-white/5 px-2 py-0.5 rounded-full">
             Founder OS
           </span>

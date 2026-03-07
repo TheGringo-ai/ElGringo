@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Stop all local FredAI services
+# Stop all local El Gringo services
 DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_DIR="$DIR/logs"
 
-echo "Stopping local FredAI services..."
+echo "Stopping local El Gringo services..."
 for pidfile in "$LOG_DIR"/*.pid; do
     if [ -f "$pidfile" ]; then
         name=$(basename "$pidfile" .pid)

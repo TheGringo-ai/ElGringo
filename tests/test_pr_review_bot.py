@@ -1,5 +1,5 @@
 """
-Tests for the FredAI PR Review Bot product.
+Tests for the El Gringo PR Review Bot product.
 """
 
 import hashlib

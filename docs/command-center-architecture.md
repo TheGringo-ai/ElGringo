@@ -1,7 +1,7 @@
-# FredAI Command Center -- Architecture Decision
+# El Gringo Command Center -- Architecture Decision
 
 **Date:** 2026-02-22
-**Author:** Claude (Lead Architect, FredAI Team)
+**Author:** Claude (Lead Architect, El Gringo Team)
 **Status:** Approved
 
 ---
@@ -20,7 +20,7 @@ Option A. Keep the Streamlit frontend and add a thin FastAPI backend behind it.
    rebuilding every widget, every state interaction, and every async bridge from scratch.
    Weeks of work for zero new functionality.
 
-2. **Every other FredAI UI is already Streamlit/Gradio.** Chat UI and Studio are Gradio.
+2. **Every other El Gringo UI is already Streamlit/Gradio.** Chat UI and Studio are Gradio.
    The command center is Streamlit. There is no React anywhere in this repo. Adding React
    means adding node, npm, Vite, a build pipeline, a node_modules directory, CORS debugging,
    and a second language to maintain. For a solo founder, that is not "modern" -- it is
@@ -38,8 +38,8 @@ Option A. Keep the Streamlit frontend and add a thin FastAPI backend behind it.
    For an internal command center (not a customer-facing SaaS UI), Streamlit is the right
    tool.
 
-5. **The existing deploy pipeline already handles it.** ci-deploy-fredai.sh already has a
-   `fredai-command-center` systemd service. deploy-vm.sh already packages everything as a
+5. **The existing deploy pipeline already handles it.** ci-deploy-elgringo.sh already has a
+   `elgringo-command-center` systemd service. deploy-vm.sh already packages everything as a
    tar. Adding React would mean adding a build step, a static file serve config, and
    probably a separate Docker stage.
 
@@ -68,13 +68,13 @@ is for SEO-driven marketing sites and large team apps. This is neither.
 
 ## 2. Repo Structure
 
-The command center lives inside `products/` alongside fred_api, code_audit, etc. The existing
+The command center lives inside `products/` alongside el_gringo_api, code_audit, etc. The existing
 `ai_dev_team/command_center.py` prototype stays as-is during migration (delete it after the
 new one is verified). The backend is a FastAPI app. The frontend is the Streamlit app that
 calls the backend over HTTP.
 
 ```
-FredAI/
+El Gringo/
   products/
     command_center/
       __init__.py              # Product registration
@@ -153,11 +153,11 @@ For iterating on just the command center:
 
 ```bash
 # Terminal 1: Backend with auto-reload
-cd /Users/fredtaylor/Development/Projects/FredAI
+cd /Users/fredtaylor/Development/Projects/El Gringo
 PYTHONPATH=. uvicorn products.command_center.server:app --host 127.0.0.1 --port 7862 --reload
 
 # Terminal 2: Frontend with auto-reload (Streamlit does this by default)
-cd /Users/fredtaylor/Development/Projects/FredAI
+cd /Users/fredtaylor/Development/Projects/El Gringo
 PYTHONPATH=. COMMAND_CENTER_API=http://127.0.0.1:7862 streamlit run products/command_center/ui.py --server.port 7863
 ```
 
@@ -170,34 +170,34 @@ No build step. No npm. No node_modules.
 
 ### Systemd (not Docker)
 
-Docker adds nothing here. Every other FredAI service runs as a systemd unit on the VM.
+Docker adds nothing here. Every other El Gringo service runs as a systemd unit on the VM.
 The command center does the same. Consistency over novelty.
 
 ### Two New Systemd Units
 
-The existing `fredai-command-center` unit gets replaced with two units:
+The existing `elgringo-command-center` unit gets replaced with two units:
 
-**fredai-command-api.service** (the backend):
+**elgringo-command-api.service** (the backend):
 ```ini
 [Unit]
-Description=FredAI Command Center API (FastAPI)
+Description=El Gringo Command Center API (FastAPI)
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=fredai
-Group=fredai
-WorkingDirectory=/opt/fredai
-Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/opt/fredai
+User=elgringo
+Group=elgringo
+WorkingDirectory=/opt/elgringo
+Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=7862
-EnvironmentFile=/opt/fredai/.env
-ExecStart=/opt/fredai/venv/bin/uvicorn products.command_center.server:app --host 127.0.0.1 --port 7862 --log-level info
+EnvironmentFile=/opt/elgringo/.env
+ExecStart=/opt/elgringo/venv/bin/uvicorn products.command_center.server:app --host 127.0.0.1 --port 7862 --log-level info
 Restart=always
 RestartSec=5
-StandardOutput=append:/opt/fredai/logs/command-api.log
-StandardError=append:/opt/fredai/logs/command-api-error.log
+StandardOutput=append:/opt/elgringo/logs/command-api.log
+StandardError=append:/opt/elgringo/logs/command-api-error.log
 NoNewPrivileges=true
 PrivateTmp=true
 
@@ -205,28 +205,28 @@ PrivateTmp=true
 WantedBy=multi-user.target
 ```
 
-**fredai-command-center.service** (the frontend -- update existing):
+**elgringo-command-center.service** (the frontend -- update existing):
 ```ini
 [Unit]
-Description=FredAI Command Center UI (Streamlit)
-After=network.target fredai-command-api.service
-Wants=network-online.target fredai-command-api.service
+Description=El Gringo Command Center UI (Streamlit)
+After=network.target elgringo-command-api.service
+Wants=network-online.target elgringo-command-api.service
 
 [Service]
 Type=simple
-User=fredai
-Group=fredai
-WorkingDirectory=/opt/fredai
-Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/opt/fredai
+User=elgringo
+Group=elgringo
+WorkingDirectory=/opt/elgringo
+Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=7863
 Environment=COMMAND_CENTER_API=http://127.0.0.1:7862
-EnvironmentFile=/opt/fredai/.env
-ExecStart=/opt/fredai/venv/bin/python -m streamlit run products/command_center/ui.py --server.port 7863 --server.headless true --server.baseUrlPath /command
+EnvironmentFile=/opt/elgringo/.env
+ExecStart=/opt/elgringo/venv/bin/python -m streamlit run products/command_center/ui.py --server.port 7863 --server.headless true --server.baseUrlPath /command
 Restart=always
 RestartSec=5
-StandardOutput=append:/opt/fredai/logs/command-center.log
-StandardError=append:/opt/fredai/logs/command-center-error.log
+StandardOutput=append:/opt/elgringo/logs/command-center.log
+StandardError=append:/opt/elgringo/logs/command-center-error.log
 NoNewPrivileges=true
 PrivateTmp=true
 
@@ -234,22 +234,22 @@ PrivateTmp=true
 WantedBy=multi-user.target
 ```
 
-### ci-deploy-fredai.sh Changes
+### ci-deploy-elgringo.sh Changes
 
-Add the `fredai-command-api` service definition and update the existing command center
+Add the `elgringo-command-api` service definition and update the existing command center
 definition. Add it to the `systemctl enable` and `systemctl restart` lines. Add a health
 check line at the end. Specific diff:
 
 ```diff
-  # In the systemctl enable line, add fredai-command-api:
-- systemctl enable fredai-api fredai-pr-bot ... fredai-command-center
-+ systemctl enable fredai-api fredai-pr-bot ... fredai-command-api fredai-command-center
+  # In the systemctl enable line, add elgringo-command-api:
+- systemctl enable elgringo-api elgringo-pr-bot ... elgringo-command-center
++ systemctl enable elgringo-api elgringo-pr-bot ... elgringo-command-api elgringo-command-center
 
   # In the restart block, add:
-+ systemctl restart fredai-command-api
++ systemctl restart elgringo-command-api
 
   # In the verify block, add:
-+ systemctl is-active fredai-command-api && echo "  fredai-cmd-api:   RUNNING (port 7862)" || echo "  fredai-cmd-api:   FAILED"
++ systemctl is-active elgringo-command-api && echo "  elgringo-cmd-api:   RUNNING (port 7862)" || echo "  elgringo-cmd-api:   FAILED"
 ```
 
 ### Nginx Config for /command/ Route
@@ -315,12 +315,12 @@ if os.getenv("COMMAND_CENTER_PASSWORD"):
             st.stop()
 ```
 
-For the FastAPI backend, reuse the same Bearer token pattern from fred_api:
+For the FastAPI backend, reuse the same Bearer token pattern from el_gringo_api:
 
 ```python
 # In server.py:
 COMMAND_API_KEYS = set()
-_raw = os.getenv("COMMAND_CENTER_API_KEYS", os.getenv("FREDAI_API_TOKEN", ""))
+_raw = os.getenv("COMMAND_CENTER_API_KEYS", os.getenv("ELGRINGO_API_TOKEN", ""))
 if _raw:
     COMMAND_API_KEYS = {k.strip() for k in _raw.split(",") if k.strip()}
 ```
@@ -351,12 +351,12 @@ Do not build this until there is a second user.
 
 ---
 
-## 6. How It Connects to Existing FredAI Modules
+## 6. How It Connects to Existing El Gringo Modules
 
 ### Direct Python Imports (Backend Only)
 
-The FastAPI backend imports FredAI modules directly. It runs in the same Python process
-with the same `PYTHONPATH=/opt/fredai`. This is exactly how fred_api/server.py and
+The FastAPI backend imports El Gringo modules directly. It runs in the same Python process
+with the same `PYTHONPATH=/opt/elgringo`. This is exactly how el_gringo_api/server.py and
 code_audit/server.py work today.
 
 ```python
@@ -369,7 +369,7 @@ from ai_dev_team.workflow.scheduler import TaskScheduler
 from ai_dev_team.workflow.standup import StandupGenerator
 from ai_dev_team.workflow.personas import PersonaLibrary
 
-# Singletons (same pattern as fred_api/server.py lines 111-120)
+# Singletons (same pattern as el_gringo_api/server.py lines 111-120)
 _sprint_manager = None
 _content_generator = None
 _content_queue = None
@@ -492,7 +492,7 @@ Copy `ai_dev_team/command_center.py` to `products/command_center/ui.py`. Replace
 all `@st.cache_resource` singletons and the `run_async()` bridge. The UI becomes a pure
 HTTP client.
 
-### Step 3: Update local-start.sh and ci-deploy-fredai.sh (Day 2)
+### Step 3: Update local-start.sh and ci-deploy-elgringo.sh (Day 2)
 
 Add the `command-api` service. Update the `command` service path from
 `ai_dev_team/command_center.py` to `products/command_center/ui.py`.

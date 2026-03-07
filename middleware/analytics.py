@@ -2,7 +2,7 @@
 Usage Analytics Middleware
 ==========================
 
-Lightweight, in-memory request analytics for all FredAI services.
+Lightweight, in-memory request analytics for all El Gringo services.
 
 For FastAPI (ASGI):
     from middleware.analytics import UsageAnalyticsMiddleware, get_analytics_store

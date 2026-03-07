@@ -14,7 +14,7 @@ Usage:
 """
 
 __version__ = "1.0.0"
-__author__ = "Fred AI Team"
+__author__ = "El Gringo Team"
 
 from .orchestrator import AIDevTeam, CollaborationResult
 from .agents import (

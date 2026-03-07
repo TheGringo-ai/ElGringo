@@ -123,7 +123,7 @@ def print_model_status():
     installed = get_installed_models()
     missing = get_missing_models()
 
-    print("\n=== FredAI Local Model Status ===\n")
+    print("\n=== El Gringo Local Model Status ===\n")
 
     for name, info in sorted(RECOMMENDED_MODELS.items(), key=lambda x: x[1]["priority"]):
         base = name.split(":")[0]

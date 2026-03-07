@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 
-const STORAGE_KEY = 'fredai-command-chat';
+const STORAGE_KEY = 'elgringo-command-chat';
 const MAX_MESSAGES = 100;
 
 function loadMessages() {

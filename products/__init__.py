@@ -1,5 +1,5 @@
 """
-FredAI Products Registry
+El Gringo Products Registry
 =========================
 
 Auto-discovers products by scanning products/*/config.py for PRODUCT_CONFIG instances.

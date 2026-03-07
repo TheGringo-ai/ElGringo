@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 PROJECTS_DIR = os.getenv("PROJECTS_DIR", os.path.expanduser("~/Development/Projects"))
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_ORG = os.getenv("GITHUB_ORG", "")
-CLONE_DIR = os.getenv("CLONE_DIR", "/opt/fredai/projects")
+CLONE_DIR = os.getenv("CLONE_DIR", "/opt/elgringo/projects")
 
 # Cache GitHub results for 5 minutes
 _gh_cache: list[dict] = []
@@ -72,7 +72,7 @@ GH_LANGUAGE_MAP = {
 DEPLOY_URLS = {
     "managers-dashboard": "https://dashboard.chatterfix.com",
     "ManagersDashboard": "https://dashboard.chatterfix.com",
-    "FredAI": "https://ai.chatterfix.com",
+    "ElGringo": "https://ai.chatterfix.com",
 }
 
 # Text-like extensions for file browser

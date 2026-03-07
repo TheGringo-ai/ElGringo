@@ -48,7 +48,7 @@ jobs:
 
       - name: Package code
         run: |
-          tar -czf /tmp/fredai.tar.gz \
+          tar -czf /tmp/elgringo.tar.gz \
             --exclude='__pycache__' \
             --exclude='*.pyc' \
             --exclude='.env' \
@@ -67,11 +67,11 @@ jobs:
             --exclude='htmlcov' \
             --exclude='.coverage' \
             .
-          echo "Package size: $(du -h /tmp/fredai.tar.gz | cut -f1)"
+          echo "Package size: $(du -h /tmp/elgringo.tar.gz | cut -f1)"
 
       - name: Upload to VM
         run: |
-          gcloud compute scp /tmp/fredai.tar.gz ci-deploy-fredai.sh \
+          gcloud compute scp /tmp/elgringo.tar.gz ci-deploy-elgringo.sh \
             "${{ secrets.VM_NAME }}:~/" \
             --zone="${{ secrets.VM_ZONE }}" --quiet
 
@@ -79,7 +79,7 @@ jobs:
         run: |
           gcloud compute ssh "${{ secrets.VM_NAME }}" \
             --zone="${{ secrets.VM_ZONE }}" --quiet \
-            --command="sudo mv ~/fredai.tar.gz ~/ci-deploy-fredai.sh /tmp/ && sudo bash /tmp/ci-deploy-fredai.sh"
+            --command="sudo mv ~/elgringo.tar.gz ~/ci-deploy-elgringo.sh /tmp/ && sudo bash /tmp/ci-deploy-elgringo.sh"
 
       - name: Health check
         run: |

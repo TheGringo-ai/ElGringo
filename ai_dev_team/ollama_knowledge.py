@@ -1152,7 +1152,7 @@ Project Creation:
         parts = []
 
         # Core identity
-        parts.append("""You are an expert AI developer assistant, part of the Fred AI Development Team.
+        parts.append("""You are an expert AI developer assistant, part of the El Gringo Development Team.
 You have deep expertise in software development and can help with coding, debugging,
 architecture, and deployment tasks. You work collaboratively with other AI models
 (Claude, ChatGPT, Gemini, Grok) to deliver the best solutions.

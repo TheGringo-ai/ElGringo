@@ -164,7 +164,7 @@ _BOARD_RULES = [
     ("health", ["gym", "workout", "run", "health", "doctor", "exercise", "diet"]),
     ("ideas", ["idea", "research", "explore", "investigate", "brainstorm"]),
     ("personal", ["personal", "home", "groceries", "call", "appointment", "family"]),
-    ("fredai", ["fredai", "deploy", "code", "fix", "build", "feature", "bug", "api"]),
+    ("elgringo", ["elgringo", "deploy", "code", "fix", "build", "feature", "bug", "api"]),
 ]
 
 # Recurring patterns (pre-compiled)

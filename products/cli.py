@@ -1,5 +1,5 @@
 """
-FredAI Products CLI handler.
+El Gringo Products CLI handler.
 
 Supports: fred products list|run|info <name>
 """
@@ -32,7 +32,7 @@ def _list_products():
         print("No products found.")
         return
 
-    print(f"\nFredAI Products ({len(products)} found)\n")
+    print(f"\nEl Gringo Products ({len(products)} found)\n")
     print(f"{'Name':<25} {'Version':<10} {'Status':<12} {'Description'}")
     print("-" * 80)
     for p in products:

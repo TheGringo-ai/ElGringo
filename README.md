@@ -1,25 +1,25 @@
 <p align="center">
-  <img src="assets/fredai-logo.png" alt="Fred AI" width="200">
+  <img src="assets/elgringo-logo.png" alt="El Gringo" width="200">
 </p>
 
-<h1 align="center">FredAI</h1>
+<h1 align="center">El Gringo</h1>
 
 <p align="center">
-  <a href="https://github.com/TheGringo-ai/FredAI/actions/workflows/ci.yml"><img src="https://github.com/TheGringo-ai/FredAI/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/TheGringo-ai/ElGringo/actions/workflows/ci.yml"><img src="https://github.com/TheGringo-ai/ElGringo/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="Python 3.9+"></a>
 </p>
 
 <p align="center"><strong>Multi-agent AI orchestration platform that makes your AI models work as a team.</strong></p>
 
-FredAI connects ChatGPT, Gemini, Grok, Claude, Ollama, and LlamaCloud into a single intelligent workforce. Instead of chatting with one model at a time, FredAI routes tasks to the right model, runs them in parallel, synthesizes their responses, learns from every interaction, and never repeats mistakes.
+El Gringo connects ChatGPT, Gemini, Grok, Claude, Ollama, and LlamaCloud into a single intelligent workforce. Instead of chatting with one model at a time, El Gringo routes tasks to the right model, runs them in parallel, synthesizes their responses, learns from every interaction, and never repeats mistakes.
 
 Think of it as the operating system layer between AI models and real-world work.
 
 ### Try it in 30 seconds (just Ollama, no API keys)
 
 ```bash
-git clone https://github.com/TheGringo-ai/FredAI.git && cd FredAI
+git clone https://github.com/TheGringo-ai/ElGringo.git && cd El Gringo
 pip install -e .
 ollama pull llama3.2:3b
 python demo.py
@@ -32,7 +32,7 @@ python demo.py
 ```
 You: "Review this auth system for security issues"
 
-FredAI:
+El Gringo:
   -> Routes to SecurityAuditor + Grok Reasoner + ChatGPT (parallel)
   -> Each agent analyzes independently
   -> Weighted consensus synthesizes findings
@@ -44,7 +44,7 @@ FredAI:
 
 ```
                         +------------------+
-                        |    FredAI CLI    |
+                        |    El Gringo CLI    |
                         |   MCP Server     |
                         |   REST API       |
                         |   Gradio UI      |
@@ -175,8 +175,8 @@ Works directly with Claude Code, Cursor, or any MCP-compatible client:
 ### Install
 
 ```bash
-git clone https://github.com/TheGringo-ai/FredAI.git
-cd FredAI
+git clone https://github.com/TheGringo-ai/ElGringo.git
+cd El Gringo
 pip install -e .
 ```
 
@@ -221,11 +221,11 @@ Add to your `.mcp.json`:
 ```json
 {
   "mcpServers": {
-    "fred-ai": {
+    "el-gringo": {
       "command": "python3",
-      "args": ["path/to/FredAI/servers/mcp_server.py"],
+      "args": ["path/to/El Gringo/servers/mcp_server.py"],
       "env": {
-        "PYTHONPATH": "path/to/FredAI",
+        "PYTHONPATH": "path/to/El Gringo",
         "OPENAI_API_KEY": "sk-...",
         "XAI_API_KEY": "xai-..."
       }
@@ -237,7 +237,7 @@ Add to your `.mcp.json`:
 ## Project Structure
 
 ```
-FredAI/
+El Gringo/
   ai_dev_team/
     agents/          # ChatGPT, Gemini, Grok, Claude, Ollama, LlamaCloud, Specialists
     collaboration/   # Multi-agent engine, weighted consensus, streaming
@@ -272,7 +272,7 @@ FredAI/
 
 ## How It Compares
 
-FredAI is in the same category as [OpenClaw](https://github.com/openclaw/openclaw) - the AI agent orchestration layer. The thesis is the same: **a well-orchestrated team of models with real-world tool access outperforms any single model in a chat box.**
+El Gringo is in the same category as [OpenClaw](https://github.com/openclaw/openclaw) - the AI agent orchestration layer. The thesis is the same: **a well-orchestrated team of models with real-world tool access outperforms any single model in a chat box.**
 
 Key differences:
 - Multi-agent consensus and debate (not just single-model routing)
@@ -283,11 +283,11 @@ Key differences:
 
 ## What This Is NOT
 
-- **Not a wrapper around one model** — FredAI orchestrates multiple models, it doesn't just proxy requests to ChatGPT
+- **Not a wrapper around one model** — El Gringo orchestrates multiple models, it doesn't just proxy requests to ChatGPT
 - **Not a chatbot** — it's a tool execution platform. Agents take actions, not just generate text
 - **Not autonomous by default** — tool calls require approval through the MCP client. Nothing runs without your consent
 - **Not a hosted service** — everything runs on your machine. Your code and API keys never leave your environment
-- **Not a LangChain competitor** — LangChain is a composable framework for building chains. FredAI is a ready-to-run platform with opinionated defaults. You configure it, not compose it
+- **Not a LangChain competitor** — LangChain is a composable framework for building chains. El Gringo is a ready-to-run platform with opinionated defaults. You configure it, not compose it
 
 ## Security
 

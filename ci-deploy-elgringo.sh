@@ -1,22 +1,22 @@
 #!/bin/bash
 # ============================================================
-# FredAI VM Deploy Script (runs ON the VM via gcloud ssh)
+# ElGringo VM Deploy Script (runs ON the VM via gcloud ssh)
 # Sets up venv, systemd services, kills old AITeamPlatform
 # ============================================================
 set -e
 
-DIR=/opt/fredai
+DIR=/opt/elgringo
 OLD_DIR=/opt/AITeamPlatform
 
 echo "============================================================"
-echo "  FredAI VM Deploy"
+echo "  ElGringo VM Deploy"
 echo "============================================================"
 
 # ----------------------------------------------------------
 # 1. Create service user
 # ----------------------------------------------------------
 echo "=== Creating service user if needed ==="
-id fredai &>/dev/null || useradd --system --shell /usr/sbin/nologin --home-dir $DIR fredai
+id elgringo &>/dev/null || useradd --system --shell /usr/sbin/nologin --home-dir $DIR elgringo
 
 # ----------------------------------------------------------
 # 2. Kill old AITeamPlatform processes
@@ -31,10 +31,10 @@ pkill -9 -f "/opt/AITeamPlatform" 2>/dev/null || true
 # ----------------------------------------------------------
 # 3. Extract new code
 # ----------------------------------------------------------
-echo "=== Extracting FredAI ==="
+echo "=== Extracting ElGringo ==="
 mkdir -p $DIR/logs
-tar -xzf /tmp/fredai.tar.gz -C $DIR
-rm -f /tmp/fredai.tar.gz
+tar -xzf /tmp/elgringo.tar.gz -C $DIR
+rm -f /tmp/elgringo.tar.gz
 
 # ----------------------------------------------------------
 # 3b. Set up password protection (nginx basic auth)
@@ -56,7 +56,7 @@ fi
 
 # Ensure PROJECTS_DIR is set in .env
 if [ -f "$DIR/.env" ] && ! grep -q "^PROJECTS_DIR=" "$DIR/.env"; then
-    echo "PROJECTS_DIR=/opt/fredai/projects" >> "$DIR/.env"
+    echo "PROJECTS_DIR=/opt/elgringo/projects" >> "$DIR/.env"
 fi
 
 # ----------------------------------------------------------
@@ -93,7 +93,7 @@ if [ -f "$FRONTEND_DIR/package.json" ]; then
     fi
     rm -rf "$FRONTEND_DIR/node_modules"
     cd "$FRONTEND_DIR" && npm ci && npx vite build --base=/command/
-    chown -R fredai:fredai "$FRONTEND_DIR/dist"
+    chown -R elgringo:elgringo "$FRONTEND_DIR/dist"
     echo "  Frontend built to $FRONTEND_DIR/dist/"
 fi
 
@@ -110,7 +110,7 @@ if [ -f "$ASSISTANT_DIR/package.json" ]; then
     fi
     rm -rf "$ASSISTANT_DIR/node_modules"
     cd "$ASSISTANT_DIR" && npm ci && VITE_API_URL=/assistant/api npx vite build --base=/assistant/
-    chown -R fredai:fredai "$ASSISTANT_DIR/dist"
+    chown -R elgringo:elgringo "$ASSISTANT_DIR/dist"
     echo "  Fred Assistant frontend built to $ASSISTANT_DIR/dist/"
 fi
 
@@ -118,35 +118,35 @@ fi
 # 6. Set ownership + project clone directory
 # ----------------------------------------------------------
 echo "=== Setting ownership ==="
-chown -R fredai:fredai $DIR
-mkdir -p /opt/fredai/projects
-chown fredai:fredai /opt/fredai/projects
+chown -R elgringo:elgringo $DIR
+mkdir -p /opt/elgringo/projects
+chown elgringo:elgringo /opt/elgringo/projects
 
 # ----------------------------------------------------------
 # 7. Create systemd services
 # ----------------------------------------------------------
 echo "=== Creating systemd services ==="
 
-# --- fredai-api: Flask API server (port 5050) ---
-cat > /etc/systemd/system/fredai-api.service << 'EOF'
+# --- elgringo-api: Flask API server (port 5050) ---
+cat > /etc/systemd/system/elgringo-api.service << 'EOF'
 [Unit]
-Description=FredAI API Server (Flask)
+Description=ElGringo API Server (Flask)
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=fredai
-Group=fredai
-WorkingDirectory=/opt/fredai
-Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/opt/fredai
-EnvironmentFile=/opt/fredai/.env
-ExecStart=/opt/fredai/venv/bin/python servers/api_server.py
+User=elgringo
+Group=elgringo
+WorkingDirectory=/opt/elgringo
+Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/elgringo
+EnvironmentFile=/opt/elgringo/.env
+ExecStart=/opt/elgringo/venv/bin/python servers/api_server.py
 Restart=always
 RestartSec=5
-StandardOutput=append:/opt/fredai/logs/api.log
-StandardError=append:/opt/fredai/logs/api-error.log
+StandardOutput=append:/opt/elgringo/logs/api.log
+StandardError=append:/opt/elgringo/logs/api-error.log
 NoNewPrivileges=true
 PrivateTmp=true
 
@@ -154,27 +154,27 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-# --- fredai-pr-bot: PR Review Bot (port 8001) ---
-cat > /etc/systemd/system/fredai-pr-bot.service << 'EOF'
+# --- elgringo-pr-bot: PR Review Bot (port 8001) ---
+cat > /etc/systemd/system/elgringo-pr-bot.service << 'EOF'
 [Unit]
-Description=FredAI PR Review Bot (FastAPI)
+Description=ElGringo PR Review Bot (FastAPI)
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=fredai
-Group=fredai
-WorkingDirectory=/opt/fredai
-Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/opt/fredai
+User=elgringo
+Group=elgringo
+WorkingDirectory=/opt/elgringo
+Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=8001
-EnvironmentFile=/opt/fredai/.env
-ExecStart=/opt/fredai/venv/bin/uvicorn products.pr_review_bot.server:app --host 0.0.0.0 --port 8001 --log-level info
+EnvironmentFile=/opt/elgringo/.env
+ExecStart=/opt/elgringo/venv/bin/uvicorn products.pr_review_bot.server:app --host 0.0.0.0 --port 8001 --log-level info
 Restart=always
 RestartSec=5
-StandardOutput=append:/opt/fredai/logs/pr-bot.log
-StandardError=append:/opt/fredai/logs/pr-bot-error.log
+StandardOutput=append:/opt/elgringo/logs/pr-bot.log
+StandardError=append:/opt/elgringo/logs/pr-bot-error.log
 NoNewPrivileges=true
 PrivateTmp=true
 
@@ -182,27 +182,27 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-# --- fredai-chat: Chat UI (port 7860) ---
-cat > /etc/systemd/system/fredai-chat.service << 'EOF'
+# --- elgringo-chat: Chat UI (port 7860) ---
+cat > /etc/systemd/system/elgringo-chat.service << 'EOF'
 [Unit]
-Description=FredAI Chat UI (Gradio)
+Description=ElGringo Chat UI (Gradio)
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=fredai
-Group=fredai
-WorkingDirectory=/opt/fredai
-Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/opt/fredai
+User=elgringo
+Group=elgringo
+WorkingDirectory=/opt/elgringo
+Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=7860
-EnvironmentFile=/opt/fredai/.env
-ExecStart=/opt/fredai/venv/bin/python -m ai_dev_team.chat_ui
+EnvironmentFile=/opt/elgringo/.env
+ExecStart=/opt/elgringo/venv/bin/python -m ai_dev_team.chat_ui
 Restart=always
 RestartSec=5
-StandardOutput=append:/opt/fredai/logs/chat.log
-StandardError=append:/opt/fredai/logs/chat-error.log
+StandardOutput=append:/opt/elgringo/logs/chat.log
+StandardError=append:/opt/elgringo/logs/chat-error.log
 NoNewPrivileges=true
 PrivateTmp=true
 
@@ -210,27 +210,27 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-# --- fredai-studio: Studio IDE (port 7861) ---
-cat > /etc/systemd/system/fredai-studio.service << 'EOF'
+# --- elgringo-studio: Studio IDE (port 7861) ---
+cat > /etc/systemd/system/elgringo-studio.service << 'EOF'
 [Unit]
-Description=FredAI Studio IDE (Gradio)
+Description=ElGringo Studio IDE (Gradio)
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=fredai
-Group=fredai
-WorkingDirectory=/opt/fredai
-Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/opt/fredai
+User=elgringo
+Group=elgringo
+WorkingDirectory=/opt/elgringo
+Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=7861
-EnvironmentFile=/opt/fredai/.env
-ExecStart=/opt/fredai/venv/bin/python -m ai_dev_team.studio_ui
+EnvironmentFile=/opt/elgringo/.env
+ExecStart=/opt/elgringo/venv/bin/python -m ai_dev_team.studio_ui
 Restart=always
 RestartSec=5
-StandardOutput=append:/opt/fredai/logs/studio.log
-StandardError=append:/opt/fredai/logs/studio-error.log
+StandardOutput=append:/opt/elgringo/logs/studio.log
+StandardError=append:/opt/elgringo/logs/studio-error.log
 NoNewPrivileges=true
 PrivateTmp=true
 
@@ -238,27 +238,27 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-# --- fredai-fred-api: Fred API (port 8080) ---
-cat > /etc/systemd/system/fredai-fred-api.service << 'EOF'
+# --- elgringo-fred-api: Fred API (port 8080) ---
+cat > /etc/systemd/system/elgringo-fred-api.service << 'EOF'
 [Unit]
-Description=FredAI Fred API (FastAPI)
+Description=ElGringo Fred API (FastAPI)
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=fredai
-Group=fredai
-WorkingDirectory=/opt/fredai
-Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/opt/fredai
+User=elgringo
+Group=elgringo
+WorkingDirectory=/opt/elgringo
+Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=8080
-EnvironmentFile=/opt/fredai/.env
-ExecStart=/opt/fredai/venv/bin/uvicorn products.fred_api.server:app --host 0.0.0.0 --port 8080 --log-level info
+EnvironmentFile=/opt/elgringo/.env
+ExecStart=/opt/elgringo/venv/bin/uvicorn products.fred_api.server:app --host 0.0.0.0 --port 8080 --log-level info
 Restart=always
 RestartSec=5
-StandardOutput=append:/opt/fredai/logs/fred-api.log
-StandardError=append:/opt/fredai/logs/fred-api-error.log
+StandardOutput=append:/opt/elgringo/logs/fred-api.log
+StandardError=append:/opt/elgringo/logs/fred-api-error.log
 NoNewPrivileges=true
 PrivateTmp=true
 
@@ -266,27 +266,27 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-# --- fredai-code-audit: Code Audit (port 8081) ---
-cat > /etc/systemd/system/fredai-code-audit.service << 'EOF'
+# --- elgringo-code-audit: Code Audit (port 8081) ---
+cat > /etc/systemd/system/elgringo-code-audit.service << 'EOF'
 [Unit]
-Description=FredAI Code Audit Service (FastAPI)
+Description=ElGringo Code Audit Service (FastAPI)
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=fredai
-Group=fredai
-WorkingDirectory=/opt/fredai
-Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/opt/fredai
+User=elgringo
+Group=elgringo
+WorkingDirectory=/opt/elgringo
+Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=8081
-EnvironmentFile=/opt/fredai/.env
-ExecStart=/opt/fredai/venv/bin/uvicorn products.code_audit.server:app --host 0.0.0.0 --port 8081 --log-level info
+EnvironmentFile=/opt/elgringo/.env
+ExecStart=/opt/elgringo/venv/bin/uvicorn products.code_audit.server:app --host 0.0.0.0 --port 8081 --log-level info
 Restart=always
 RestartSec=5
-StandardOutput=append:/opt/fredai/logs/code-audit.log
-StandardError=append:/opt/fredai/logs/code-audit-error.log
+StandardOutput=append:/opt/elgringo/logs/code-audit.log
+StandardError=append:/opt/elgringo/logs/code-audit-error.log
 NoNewPrivileges=true
 PrivateTmp=true
 
@@ -294,27 +294,27 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-# --- fredai-test-gen: Test Generator (port 8082) ---
-cat > /etc/systemd/system/fredai-test-gen.service << 'EOF'
+# --- elgringo-test-gen: Test Generator (port 8082) ---
+cat > /etc/systemd/system/elgringo-test-gen.service << 'EOF'
 [Unit]
-Description=FredAI Test Generator (FastAPI)
+Description=ElGringo Test Generator (FastAPI)
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=fredai
-Group=fredai
-WorkingDirectory=/opt/fredai
-Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/opt/fredai
+User=elgringo
+Group=elgringo
+WorkingDirectory=/opt/elgringo
+Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=8082
-EnvironmentFile=/opt/fredai/.env
-ExecStart=/opt/fredai/venv/bin/uvicorn products.test_generator.server:app --host 0.0.0.0 --port 8082 --log-level info
+EnvironmentFile=/opt/elgringo/.env
+ExecStart=/opt/elgringo/venv/bin/uvicorn products.test_generator.server:app --host 0.0.0.0 --port 8082 --log-level info
 Restart=always
 RestartSec=5
-StandardOutput=append:/opt/fredai/logs/test-gen.log
-StandardError=append:/opt/fredai/logs/test-gen-error.log
+StandardOutput=append:/opt/elgringo/logs/test-gen.log
+StandardError=append:/opt/elgringo/logs/test-gen-error.log
 NoNewPrivileges=true
 PrivateTmp=true
 
@@ -322,27 +322,27 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-# --- fredai-doc-gen: Doc Generator (port 8083) ---
-cat > /etc/systemd/system/fredai-doc-gen.service << 'EOF'
+# --- elgringo-doc-gen: Doc Generator (port 8083) ---
+cat > /etc/systemd/system/elgringo-doc-gen.service << 'EOF'
 [Unit]
-Description=FredAI Doc Generator (FastAPI)
+Description=ElGringo Doc Generator (FastAPI)
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=fredai
-Group=fredai
-WorkingDirectory=/opt/fredai
-Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/opt/fredai
+User=elgringo
+Group=elgringo
+WorkingDirectory=/opt/elgringo
+Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=8083
-EnvironmentFile=/opt/fredai/.env
-ExecStart=/opt/fredai/venv/bin/uvicorn products.doc_generator.server:app --host 0.0.0.0 --port 8083 --log-level info
+EnvironmentFile=/opt/elgringo/.env
+ExecStart=/opt/elgringo/venv/bin/uvicorn products.doc_generator.server:app --host 0.0.0.0 --port 8083 --log-level info
 Restart=always
 RestartSec=5
-StandardOutput=append:/opt/fredai/logs/doc-gen.log
-StandardError=append:/opt/fredai/logs/doc-gen-error.log
+StandardOutput=append:/opt/elgringo/logs/doc-gen.log
+StandardError=append:/opt/elgringo/logs/doc-gen-error.log
 NoNewPrivileges=true
 PrivateTmp=true
 
@@ -350,10 +350,10 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-# --- fredai-assistant: Fred Assistant (port 7870) ---
-cat > /etc/systemd/system/fredai-assistant.service << 'EOF'
+# --- elgringo-assistant: Fred Assistant (port 7870) ---
+cat > /etc/systemd/system/elgringo-assistant.service << 'EOF'
 [Unit]
-Description=FredAI Fred Assistant (FastAPI)
+Description=ElGringo Fred Assistant (FastAPI)
 After=network.target
 Wants=network-online.target
 StartLimitBurst=5
@@ -361,19 +361,19 @@ StartLimitIntervalSec=60
 
 [Service]
 Type=simple
-User=fredai
-Group=fredai
-WorkingDirectory=/opt/fredai
-Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/opt/fredai
+User=elgringo
+Group=elgringo
+WorkingDirectory=/opt/elgringo
+Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=7870
-EnvironmentFile=/opt/fredai/.env
-ExecStart=/opt/fredai/venv/bin/uvicorn products.fred_assistant.server:app --host 0.0.0.0 --port 7870 --log-level info
+EnvironmentFile=/opt/elgringo/.env
+ExecStart=/opt/elgringo/venv/bin/uvicorn products.fred_assistant.server:app --host 0.0.0.0 --port 7870 --log-level info
 Restart=on-failure
 RestartSec=5
 MemoryMax=800M
-StandardOutput=append:/opt/fredai/logs/assistant.log
-StandardError=append:/opt/fredai/logs/assistant-error.log
+StandardOutput=append:/opt/elgringo/logs/assistant.log
+StandardError=append:/opt/elgringo/logs/assistant-error.log
 NoNewPrivileges=true
 PrivateTmp=true
 
@@ -381,27 +381,27 @@ PrivateTmp=true
 WantedBy=multi-user.target
 EOF
 
-# --- fredai-command-api: Command Center API (port 7862) ---
-cat > /etc/systemd/system/fredai-command-api.service << 'EOF'
+# --- elgringo-command-api: Command Center API (port 7862) ---
+cat > /etc/systemd/system/elgringo-command-api.service << 'EOF'
 [Unit]
-Description=FredAI Command Center API (FastAPI)
+Description=ElGringo Command Center API (FastAPI)
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=fredai
-Group=fredai
-WorkingDirectory=/opt/fredai
-Environment=PATH=/opt/fredai/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/opt/fredai
+User=elgringo
+Group=elgringo
+WorkingDirectory=/opt/elgringo
+Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=7862
-EnvironmentFile=/opt/fredai/.env
-ExecStart=/opt/fredai/venv/bin/uvicorn products.command_center.server:app --host 127.0.0.1 --port 7862 --log-level info
+EnvironmentFile=/opt/elgringo/.env
+ExecStart=/opt/elgringo/venv/bin/uvicorn products.command_center.server:app --host 127.0.0.1 --port 7862 --log-level info
 Restart=always
 RestartSec=5
-StandardOutput=append:/opt/fredai/logs/command-api.log
-StandardError=append:/opt/fredai/logs/command-api-error.log
+StandardOutput=append:/opt/elgringo/logs/command-api.log
+StandardError=append:/opt/elgringo/logs/command-api-error.log
 NoNewPrivileges=true
 PrivateTmp=true
 
@@ -412,24 +412,24 @@ EOF
 # --- Command Center UI: Static React app served by nginx ---
 # No systemd service needed — nginx serves dist/ directly.
 # Stop old Streamlit service if it exists.
-systemctl stop fredai-command-center 2>/dev/null || true
-systemctl disable fredai-command-center 2>/dev/null || true
-rm -f /etc/systemd/system/fredai-command-center.service
+systemctl stop elgringo-command-center 2>/dev/null || true
+systemctl disable elgringo-command-center 2>/dev/null || true
+rm -f /etc/systemd/system/elgringo-command-center.service
 
 # Update nginx for Command Center (static files + API proxy with SSE)
-NGINX_CMD_CONF=/etc/nginx/sites-available/fredai-command-center
+NGINX_CMD_CONF=/etc/nginx/sites-available/elgringo-command-center
 cat > "$NGINX_CMD_CONF" << 'NGINX_EOF'
 # Command Center React app (static files)
 location /command/ {
-    alias /opt/fredai/products/command_center/frontend/dist/;
+    alias /opt/elgringo/products/command_center/frontend/dist/;
     try_files $uri $uri/ /command/index.html;
 
     location = /command/index.html {
-        alias /opt/fredai/products/command_center/frontend/dist/index.html;
+        alias /opt/elgringo/products/command_center/frontend/dist/index.html;
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
     location /command/assets/ {
-        alias /opt/fredai/products/command_center/frontend/dist/assets/;
+        alias /opt/elgringo/products/command_center/frontend/dist/assets/;
         add_header Cache-Control "public, max-age=31536000, immutable";
     }
 }
@@ -450,21 +450,21 @@ echo "  Nginx config written to $NGINX_CMD_CONF"
 echo "  NOTE: Include this file in your main nginx server block if not already included."
 
 # Update nginx for Fred Assistant (static files + API proxy)
-NGINX_ASST_CONF=/etc/nginx/sites-available/fredai-assistant
+NGINX_ASST_CONF=/etc/nginx/sites-available/elgringo-assistant
 cat > "$NGINX_ASST_CONF" << 'NGINX_EOF'
 # Fred Assistant React app (static files)
 location /assistant/ {
-    alias /opt/fredai/products/fred_assistant/frontend/dist/;
+    alias /opt/elgringo/products/fred_assistant/frontend/dist/;
     try_files $uri $uri/ /assistant/index.html;
 
     # Cache-bust index.html so new deploys are picked up immediately
     location = /assistant/index.html {
-        alias /opt/fredai/products/fred_assistant/frontend/dist/index.html;
+        alias /opt/elgringo/products/fred_assistant/frontend/dist/index.html;
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
     # Hashed assets can be cached forever
     location /assistant/assets/ {
-        alias /opt/fredai/products/fred_assistant/frontend/dist/assets/;
+        alias /opt/elgringo/products/fred_assistant/frontend/dist/assets/;
         add_header Cache-Control "public, max-age=31536000, immutable";
     }
 }
@@ -484,19 +484,19 @@ NGINX_EOF
 echo "  Nginx Fred Assistant config written to $NGINX_ASST_CONF"
 
 # Update nginx for Landing Page + Auth
-NGINX_LANDING_CONF=/etc/nginx/sites-available/fredai-landing
+NGINX_LANDING_CONF=/etc/nginx/sites-available/elgringo-landing
 cat > "$NGINX_LANDING_CONF" << 'NGINX_EOF'
 # --- Password protection (domain-wide) ---
-auth_basic "FredAI Platform";
+auth_basic "ElGringo Platform";
 auth_basic_user_file /etc/nginx/.htpasswd;
 
 # --- Landing page ---
 location = / {
-    root /opt/fredai/products/landing;
+    root /opt/elgringo/products/landing;
     try_files /index.html =404;
 }
 location /landing/ {
-    alias /opt/fredai/products/landing/;
+    alias /opt/elgringo/products/landing/;
 }
 
 # --- Exempt health checks from auth ---
@@ -567,17 +567,17 @@ fi
 # ----------------------------------------------------------
 echo "=== Starting services ==="
 systemctl daemon-reload
-systemctl enable fredai-api fredai-pr-bot fredai-chat fredai-studio fredai-fred-api fredai-code-audit fredai-test-gen fredai-doc-gen fredai-command-api fredai-assistant
-systemctl restart fredai-api
-systemctl restart fredai-pr-bot
-systemctl restart fredai-chat
-systemctl restart fredai-studio
-systemctl restart fredai-fred-api
-systemctl restart fredai-code-audit
-systemctl restart fredai-test-gen
-systemctl restart fredai-doc-gen
-systemctl restart fredai-command-api
-systemctl restart fredai-assistant
+systemctl enable elgringo-api elgringo-pr-bot elgringo-chat elgringo-studio elgringo-fred-api elgringo-code-audit elgringo-test-gen elgringo-doc-gen elgringo-command-api elgringo-assistant
+systemctl restart elgringo-api
+systemctl restart elgringo-pr-bot
+systemctl restart elgringo-chat
+systemctl restart elgringo-studio
+systemctl restart elgringo-fred-api
+systemctl restart elgringo-code-audit
+systemctl restart elgringo-test-gen
+systemctl restart elgringo-doc-gen
+systemctl restart elgringo-command-api
+systemctl restart elgringo-assistant
 # Reload nginx for Command Center static files
 nginx -t && systemctl reload nginx
 
@@ -586,19 +586,19 @@ nginx -t && systemctl reload nginx
 # ----------------------------------------------------------
 echo ""
 echo "=== Service Status ==="
-systemctl is-active fredai-api && echo "  fredai-api:        RUNNING (port 5050)" || echo "  fredai-api:        FAILED"
-systemctl is-active fredai-pr-bot && echo "  fredai-pr-bot:     RUNNING (port 8001)" || echo "  fredai-pr-bot:     FAILED"
-systemctl is-active fredai-chat && echo "  fredai-chat:       RUNNING (port 7860)" || echo "  fredai-chat:       FAILED"
-systemctl is-active fredai-studio && echo "  fredai-studio:     RUNNING (port 7861)" || echo "  fredai-studio:     FAILED"
-systemctl is-active fredai-fred-api && echo "  fredai-fred-api:   RUNNING (port 8080)" || echo "  fredai-fred-api:   FAILED"
-systemctl is-active fredai-code-audit && echo "  fredai-code-audit: RUNNING (port 8081)" || echo "  fredai-code-audit: FAILED"
-systemctl is-active fredai-test-gen && echo "  fredai-test-gen:   RUNNING (port 8082)" || echo "  fredai-test-gen:   FAILED"
-systemctl is-active fredai-doc-gen && echo "  fredai-doc-gen:    RUNNING (port 8083)" || echo "  fredai-doc-gen:    FAILED"
-systemctl is-active fredai-command-api && echo "  fredai-cmd-api:    RUNNING (port 7862)" || echo "  fredai-cmd-api:    FAILED"
-systemctl is-active fredai-assistant && echo "  fredai-assistant:  RUNNING (port 7870)" || echo "  fredai-assistant:  FAILED"
-[ -f /opt/fredai/products/command_center/frontend/dist/index.html ] && echo "  command-center:    STATIC (nginx at /command/)" || echo "  command-center:    NOT BUILT"
-[ -f /opt/fredai/products/fred_assistant/frontend/dist/index.html ] && echo "  fred-assistant:    STATIC (nginx at /assistant/)" || echo "  fred-assistant:    NOT BUILT"
-[ -f /opt/fredai/products/landing/index.html ] && echo "  landing-page:      STATIC (nginx at /)" || echo "  landing-page:      MISSING"
+systemctl is-active elgringo-api && echo "  elgringo-api:        RUNNING (port 5050)" || echo "  elgringo-api:        FAILED"
+systemctl is-active elgringo-pr-bot && echo "  elgringo-pr-bot:     RUNNING (port 8001)" || echo "  elgringo-pr-bot:     FAILED"
+systemctl is-active elgringo-chat && echo "  elgringo-chat:       RUNNING (port 7860)" || echo "  elgringo-chat:       FAILED"
+systemctl is-active elgringo-studio && echo "  elgringo-studio:     RUNNING (port 7861)" || echo "  elgringo-studio:     FAILED"
+systemctl is-active elgringo-fred-api && echo "  elgringo-fred-api:   RUNNING (port 8080)" || echo "  elgringo-fred-api:   FAILED"
+systemctl is-active elgringo-code-audit && echo "  elgringo-code-audit: RUNNING (port 8081)" || echo "  elgringo-code-audit: FAILED"
+systemctl is-active elgringo-test-gen && echo "  elgringo-test-gen:   RUNNING (port 8082)" || echo "  elgringo-test-gen:   FAILED"
+systemctl is-active elgringo-doc-gen && echo "  elgringo-doc-gen:    RUNNING (port 8083)" || echo "  elgringo-doc-gen:    FAILED"
+systemctl is-active elgringo-command-api && echo "  elgringo-cmd-api:    RUNNING (port 7862)" || echo "  elgringo-cmd-api:    FAILED"
+systemctl is-active elgringo-assistant && echo "  elgringo-assistant:  RUNNING (port 7870)" || echo "  elgringo-assistant:  FAILED"
+[ -f /opt/elgringo/products/command_center/frontend/dist/index.html ] && echo "  command-center:    STATIC (nginx at /command/)" || echo "  command-center:    NOT BUILT"
+[ -f /opt/elgringo/products/fred_assistant/frontend/dist/index.html ] && echo "  fred-assistant:    STATIC (nginx at /assistant/)" || echo "  fred-assistant:    NOT BUILT"
+[ -f /opt/elgringo/products/landing/index.html ] && echo "  landing-page:      STATIC (nginx at /)" || echo "  landing-page:      MISSING"
 [ -f /etc/nginx/.htpasswd ] && echo "  auth:              ENABLED (basic auth)" || echo "  auth:              NOT SET UP"
 
 echo ""

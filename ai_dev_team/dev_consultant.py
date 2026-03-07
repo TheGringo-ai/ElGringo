@@ -1,6 +1,6 @@
 """
-FredAI Integration Module
-Use FredAI agents during development sessions
+El Gringo Integration Module
+Use El Gringo agents during development sessions
 """
 
 import asyncio
@@ -9,7 +9,7 @@ from ai_dev_team.orchestrator import AIDevTeam
 
 
 class DevConsultant:
-    """Wrapper for easy FredAI consultation during development"""
+    """Wrapper for easy El Gringo consultation during development"""
     
     def __init__(self):
         self.team: Optional[AIDevTeam] = None
@@ -18,9 +18,9 @@ class DevConsultant:
     async def _ensure_initialized(self):
         """Lazy initialization of the AI team"""
         if not self._initialized:
-            print("🤖 Initializing FredAI team...")
+            print("🤖 Initializing El Gringo team...")
             self.team = AIDevTeam(
-                project_name="FredAI",
+                project_name="ElGringo",
                 enable_memory=True,
                 enable_learning=True
             )
@@ -145,7 +145,7 @@ async def brainstorm(topic: str) -> str:
 if __name__ == "__main__":
     async def demo():
         print("=" * 80)
-        print("FredAI Development Consultant - Interactive Demo")
+        print("El Gringo Development Consultant - Interactive Demo")
         print("=" * 80 + "\n")
         
         # Example 1: Quick question
@@ -175,7 +175,7 @@ def process_data(data):
         # Example 3: Brainstorm
         print("📋 Example 3: Brainstorm\n")
         ideas = await brainstorm(
-            "Ways to improve FredAI's error handling and recovery"
+            "Ways to improve El Gringo's error handling and recovery"
         )
         print(f"Ideas:\n{ideas}\n")
         print("=" * 80)

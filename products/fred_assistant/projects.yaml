@@ -1,4 +1,4 @@
-# Fred AI Ecosystem — Project Manifest
+# El Gringo Ecosystem — Project Manifest
 # Indexed into RAG on startup so the AI team stays on task.
 # Update this file when projects change scope, features, or status.
 
@@ -14,7 +14,7 @@ projects:
     intention: >
       AI-powered maintenance management system built for field technicians, not office workers.
       Hands-free operation through voice commands, OCR scanning, and natural language AI.
-      The flagship product of the Fred AI ecosystem.
+      The flagship product of the El Gringo ecosystem.
     tech_stack:
       backend: Python 3.11+, FastAPI, Firestore, Cloud Run
       frontend: React Native mobile, Jinja2 web templates
@@ -85,13 +85,13 @@ projects:
       - PIN auth uses bcrypt hashing (DASHBOARD_PIN_HASH env var)
       - Dark mode must always be tested before deploy
 
-  fredai:
-    name: FredAI Platform
+  elgringo:
+    name: El Gringo Platform
     status: production
     domain: https://ai.chatterfix.com
-    repo: https://github.com/TheGringo-ai/FredAI
-    location: /Users/fredtaylor/Development/Projects/FredAI/
-    vm: 34.61.174.254 (fredai-vm, e2-medium, Debian 12)
+    repo: https://github.com/TheGringo-ai/ElGringo
+    location: /Users/fredtaylor/Development/Projects/ElGringo/
+    vm: 34.61.174.254 (elgringo-vm, e2-medium, Debian 12)
     intention: >
       Advanced multi-agent AI orchestration platform. The brain of the entire ecosystem.
       Coordinates ChatGPT, Gemini, Grok, Claude, and local models. Routes tasks to
@@ -272,7 +272,7 @@ projects:
     status: development
     location: /Users/fredtaylor/Development/Projects/freddy-mac-ide/
     intention: >
-      Web-based IDE with multi-AI integration for the Fred AI ecosystem.
+      Web-based IDE with multi-AI integration for the El Gringo ecosystem.
       Code editing, AI team collaboration, semantic search, and project management
       all in one development environment.
     tech_stack:

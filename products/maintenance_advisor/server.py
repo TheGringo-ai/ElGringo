@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Maintenance Advisor",
-    description="AI-powered maintenance optimization powered by FredAI",
+    description="AI-powered maintenance optimization powered by El Gringo",
     version="0.1.0",
     docs_url="/advisor/docs",
 )

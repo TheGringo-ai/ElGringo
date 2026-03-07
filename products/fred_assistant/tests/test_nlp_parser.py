@@ -70,7 +70,7 @@ def test_heuristic_personal_board():
 
 def test_heuristic_code_board():
     r = _heuristic_parse("Fix the deploy script", "work")
-    assert r["board_id"] == "fredai"
+    assert r["board_id"] == "elgringo"
 
 
 def test_heuristic_default_board_preserved():
@@ -264,7 +264,7 @@ async def test_ai_null_fields_filled_by_heuristic():
     mock_agent.generate_response = AsyncMock(return_value=mock_resp)
 
     with patch("products.fred_assistant.services.assistant._get_gemini", return_value=mock_agent):
-        result = await parse_capture_text("Fix the login bug urgent #backend", "fredai")
+        result = await parse_capture_text("Fix the login bug urgent #backend", "elgringo")
 
     assert result["_parsed_by"] == "ai"
     # Heuristic should fill in priority and board

@@ -60,6 +60,6 @@ products/command_center/frontend/dist/
 # Symlinks to other repos
 projects/
 
-# Separate products (not part of FredAI framework)
+# Separate products (not part of El Gringo framework)
 ChatterFixApp/
 dashboard/

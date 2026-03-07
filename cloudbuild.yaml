@@ -1,5 +1,5 @@
 # ============================================================
-# FredAI Cloud Build CI/CD Pipeline
+# ElGringo Cloud Build CI/CD Pipeline
 # Triggered on push to master → build image → deploy 4 services
 # ============================================================
 
@@ -11,9 +11,9 @@ steps:
       - '-f'
       - 'Dockerfile.cloud'
       - '-t'
-      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:${SHORT_SHA}'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/elgringo:${SHORT_SHA}'
       - '-t'
-      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:latest'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/elgringo:latest'
       - '.'
 
   # Step 2: Push image
@@ -21,15 +21,15 @@ steps:
     args:
       - 'push'
       - '--all-tags'
-      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/elgringo'
 
-  # Step 3: Deploy fredai-pr-bot
+  # Step 3: Deploy elgringo-pr-bot
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
       - 'deploy'
-      - 'fredai-pr-bot'
-      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:${SHORT_SHA}'
+      - 'elgringo-pr-bot'
+      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/elgringo:${SHORT_SHA}'
       - '--region=${_REGION}'
       - '--command=/bin/sh'
       - '--args=-c,uvicorn products.pr_review_bot.server:app --host 0.0.0.0 --port $$PORT'
@@ -43,13 +43,13 @@ steps:
       - '--allow-unauthenticated'
       - '--quiet'
 
-  # Step 4: Deploy fredai-api
+  # Step 4: Deploy elgringo-api
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
       - 'deploy'
-      - 'fredai-api'
-      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:${SHORT_SHA}'
+      - 'elgringo-api'
+      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/elgringo:${SHORT_SHA}'
       - '--region=${_REGION}'
       - '--command=/bin/sh'
       - '--args=-c,gunicorn servers.api_server:app --bind 0.0.0.0:$$PORT --workers 2 --timeout 600'
@@ -63,13 +63,13 @@ steps:
       - '--allow-unauthenticated'
       - '--quiet'
 
-  # Step 5: Deploy fredai-chat
+  # Step 5: Deploy elgringo-chat
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
       - 'deploy'
-      - 'fredai-chat'
-      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:${SHORT_SHA}'
+      - 'elgringo-chat'
+      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/elgringo:${SHORT_SHA}'
       - '--region=${_REGION}'
       - '--command=/bin/sh'
       - '--args=-c,python -m ai_dev_team.chat_ui'
@@ -83,13 +83,13 @@ steps:
       - '--allow-unauthenticated'
       - '--quiet'
 
-  # Step 6: Deploy fredai-studio
+  # Step 6: Deploy elgringo-studio
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
       - 'deploy'
-      - 'fredai-studio'
-      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:${SHORT_SHA}'
+      - 'elgringo-studio'
+      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/elgringo:${SHORT_SHA}'
       - '--region=${_REGION}'
       - '--command=/bin/sh'
       - '--args=-c,python -m ai_dev_team.studio_ui'
@@ -105,7 +105,7 @@ steps:
 
 substitutions:
   _REGION: us-central1
-  _REPO: fredai
+  _REPO: elgringo
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -113,5 +113,5 @@ options:
 timeout: '1800s'
 
 images:
-  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:${SHORT_SHA}'
-  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/fredai:latest'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/elgringo:${SHORT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/elgringo:latest'

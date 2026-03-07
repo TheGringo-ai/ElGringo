@@ -617,7 +617,7 @@ def generate_tasks_from_analysis(analysis_id: str, create_tasks: bool = False) -
                 "title": step,
                 "description": f"Part of: Set up test infrastructure for {project}",
                 "priority": 1,
-                "board": "fredai",
+                "board": "elgringo",
                 "category": "testing",
                 "revenue_impact": "blocks launch",
             })
@@ -642,7 +642,7 @@ def generate_tasks_from_analysis(analysis_id: str, create_tasks: bool = False) -
                 "title": step,
                 "description": f"Part of: Set up CI/CD pipeline for {project}",
                 "priority": 2,
-                "board": "fredai",
+                "board": "elgringo",
                 "category": "devops",
                 "revenue_impact": "blocks launch",
             })
@@ -660,7 +660,7 @@ def generate_tasks_from_analysis(analysis_id: str, create_tasks: bool = False) -
                 "title": step,
                 "description": f"Part of: Add documentation for {project}",
                 "priority": 3,
-                "board": "fredai",
+                "board": "elgringo",
                 "category": "documentation",
                 "revenue_impact": "blocks sales",
             })
@@ -672,7 +672,7 @@ def generate_tasks_from_analysis(analysis_id: str, create_tasks: bool = False) -
             "title": f"[{project}] Move hardcoded secrets to .env file",
             "description": "Create .env (if missing) and move all secrets there. Add .env to .gitignore.",
             "priority": 1,
-            "board": "fredai",
+            "board": "elgringo",
             "category": "security",
             "revenue_impact": "blocks launch",
         })
@@ -683,7 +683,7 @@ def generate_tasks_from_analysis(analysis_id: str, create_tasks: bool = False) -
                 "title": f"[{project}] Fix secret in {file_ref[:60]}",
                 "description": f"Replace hardcoded value with env var.\nFound: {item[:200]}",
                 "priority": 1,
-                "board": "fredai",
+                "board": "elgringo",
                 "category": "security",
                 "revenue_impact": "blocks launch",
             })
@@ -708,7 +708,7 @@ def generate_tasks_from_analysis(analysis_id: str, create_tasks: bool = False) -
                 "title": f"[{project}] {marker}: {text}",
                 "description": f"{file_ref}:{line_ref}" if file_ref else text,
                 "priority": 2 if marker == "FIXME" else 3,
-                "board": "fredai",
+                "board": "elgringo",
                 "category": "tech_debt",
                 "revenue_impact": None,
             })
@@ -721,7 +721,7 @@ def generate_tasks_from_analysis(analysis_id: str, create_tasks: bool = False) -
                 "title": f"[{project}] {item[:80]}",
                 "description": item,
                 "priority": 2,
-                "board": "fredai",
+                "board": "elgringo",
                 "category": "dependencies",
                 "revenue_impact": None,
             })
@@ -734,7 +734,7 @@ def generate_tasks_from_analysis(analysis_id: str, create_tasks: bool = False) -
                 "title": f"[{project}] Refactor: {item[:70]}",
                 "description": f"File exceeds 500 lines — split into smaller modules.\n{item}",
                 "priority": 3,
-                "board": "fredai",
+                "board": "elgringo",
                 "category": "refactoring",
                 "revenue_impact": None,
             })
@@ -747,7 +747,7 @@ def generate_tasks_from_analysis(analysis_id: str, create_tasks: bool = False) -
                 "title": f"[{project}] Reduce {item['file']} ({item['size_mb']}MB)",
                 "description": f"File is over 1MB. Consider git LFS, compression, or removal.",
                 "priority": 3,
-                "board": "fredai",
+                "board": "elgringo",
                 "category": "optimization",
                 "revenue_impact": None,
             })
@@ -760,7 +760,7 @@ def generate_tasks_from_analysis(analysis_id: str, create_tasks: bool = False) -
                 "title": f"[{project}] Improve test coverage",
                 "description": item,
                 "priority": 2,
-                "board": "fredai",
+                "board": "elgringo",
                 "category": "testing",
                 "revenue_impact": None,
             })
@@ -768,7 +768,7 @@ def generate_tasks_from_analysis(analysis_id: str, create_tasks: bool = False) -
     # ── Create real tasks on the board (deduplicated) ───────────
     if create_tasks and tasks:
         from products.fred_assistant.services import task_service
-        existing = task_service.list_tasks(board_id="fredai")
+        existing = task_service.list_tasks(board_id="elgringo")
         existing_titles = {t["title"] for t in existing}
         created_count = 0
         for t in tasks:

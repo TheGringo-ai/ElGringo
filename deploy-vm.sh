@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # ============================================================
-# FredAI → VM Deploy (run from your Mac)
-# Packages code, SCPs to VM, runs ci-deploy-fredai.sh
+# ElGringo → VM Deploy (run from your Mac)
+# Packages code, SCPs to VM, runs ci-deploy-elgringo.sh
 # ============================================================
 set -euo pipefail
 
-VM_NAME="${VM_NAME:-fredai-vm}"
+VM_NAME="${VM_NAME:-elgringo-vm}"
 VM_ZONE="${VM_ZONE:-us-central1-a}"
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "============================================================"
-echo "  FredAI → VM Deploy"
+echo "  ElGringo → VM Deploy"
 echo "  VM: ${VM_NAME} (${VM_ZONE})"
 echo "============================================================"
 
@@ -18,8 +18,8 @@ echo "============================================================"
 # 1. Package code (exclude dev/test/infra files)
 # ----------------------------------------------------------
 echo ""
-echo "[1/3] Packaging FredAI..."
-tar -czf /tmp/fredai.tar.gz \
+echo "[1/3] Packaging ElGringo..."
+tar -czf /tmp/elgringo.tar.gz \
     --exclude='__pycache__' \
     --exclude='*.pyc' \
     --exclude='.env' \
@@ -40,7 +40,7 @@ tar -czf /tmp/fredai.tar.gz \
     --exclude='.coverage' \
     -C "$PROJECT_DIR" .
 
-SIZE=$(du -h /tmp/fredai.tar.gz | cut -f1)
+SIZE=$(du -h /tmp/elgringo.tar.gz | cut -f1)
 echo "  Package size: ${SIZE}"
 
 # ----------------------------------------------------------
@@ -48,11 +48,11 @@ echo "  Package size: ${SIZE}"
 # ----------------------------------------------------------
 echo ""
 echo "[2/3] Uploading to VM..."
-gcloud compute scp /tmp/fredai.tar.gz ci-deploy-fredai.sh \
+gcloud compute scp /tmp/elgringo.tar.gz ci-deploy-elgringo.sh \
     "${VM_NAME}:~/" \
     --zone="${VM_ZONE}" --quiet
 
-rm -f /tmp/fredai.tar.gz
+rm -f /tmp/elgringo.tar.gz
 
 # ----------------------------------------------------------
 # 3. Run deploy script on VM
@@ -61,7 +61,7 @@ echo ""
 echo "[3/3] Deploying on VM..."
 gcloud compute ssh "${VM_NAME}" \
     --zone="${VM_ZONE}" --quiet \
-    --command="sudo mv ~/fredai.tar.gz ~/ci-deploy-fredai.sh /tmp/ && sudo bash /tmp/ci-deploy-fredai.sh"
+    --command="sudo mv ~/elgringo.tar.gz ~/ci-deploy-elgringo.sh /tmp/ && sudo bash /tmp/ci-deploy-elgringo.sh"
 
 # ----------------------------------------------------------
 # 4. Health check

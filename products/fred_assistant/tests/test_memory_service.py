@@ -58,7 +58,7 @@ def test_list_memories_returns_all():
 
 
 def test_list_memories_filter_by_category():
-    memory_service.remember("work", "project", "FredAI")
+    memory_service.remember("work", "project", "ElGringo")
     memory_service.remember("personal", "pet", "dog")
     work = memory_service.list_memories(category="work")
     assert len(work) == 1
@@ -118,7 +118,7 @@ def test_get_categories_empty():
 
 
 def test_get_categories():
-    memory_service.remember("work", "project", "FredAI")
+    memory_service.remember("work", "project", "ElGringo")
     memory_service.remember("personal", "pet", "dog")
     cats = memory_service.get_categories()
     assert "work" in cats

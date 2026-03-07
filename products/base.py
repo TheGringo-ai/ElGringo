@@ -1,5 +1,5 @@
 """
-Product configuration base classes for FredAI Products.
+Product configuration base classes for El Gringo Products.
 """
 
 from dataclasses import dataclass, field
@@ -8,7 +8,7 @@ from typing import List, Optional
 
 @dataclass
 class ProductConfig:
-    """Configuration for a FredAI product."""
+    """Configuration for an El Gringo product."""
 
     name: str
     display_name: str

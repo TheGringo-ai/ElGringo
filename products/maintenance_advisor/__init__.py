@@ -1,5 +1,5 @@
 """
-FredAI Maintenance Advisor
+El Gringo Maintenance Advisor
 ============================
 
 AI-powered maintenance optimization and predictive analytics.

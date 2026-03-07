@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FredAI Coding Agent - Autonomous Code Generation & Editing
+El Gringo Coding Agent - Autonomous Code Generation & Editing
 ===========================================================
 
 This agent can:
@@ -27,7 +27,7 @@ from ai_dev_team.tools.base import PermissionManager
 
 
 class CodingAgent:
-    """Autonomous coding agent powered by FredAI team"""
+    """Autonomous coding agent powered by El Gringo team"""
     
     def __init__(self, project_path: str = "."):
         self.project_path = Path(project_path).resolve()
@@ -44,7 +44,7 @@ class CodingAgent:
         # Tools will check permissions, but we'll work within safe paths
         self.fs_tools = FileSystemTools(self.permission_manager)
         
-        print(f"🤖 FredAI Coding Agent initialized")
+        print(f"🤖 El Gringo Coding Agent initialized")
         print(f"📁 Project: {self.project_path}")
         print(f"👥 AI Team: {', '.join(self.team.agents.keys())}")
         print()

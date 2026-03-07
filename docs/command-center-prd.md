@@ -1,6 +1,6 @@
-# FredAI Command Center v2 -- Product Requirements Document
+# El Gringo Command Center v2 -- Product Requirements Document
 
-**Author:** FredAI Team
+**Author:** El Gringo Team
 **Date:** 2026-02-22
 **Status:** Ready for implementation
 
@@ -166,7 +166,7 @@ As a founder, I want to see a chart of sprint velocity over the last 4 sprints s
 - Persona selector dropdown above input: dev_lead, content_creator, scheduler, standup_reporter, safety_reviewer
 - Text input at bottom with send button
 - Loading state: animated dots while waiting for response
-- Empty state: "Ask FredAI anything about your projects, tasks, or content."
+- Empty state: "Ask El Gringo anything about your projects, tasks, or content."
 
 ### Screen 2: Content (`/content`)
 
@@ -251,7 +251,7 @@ Empty state: "No standups yet. Click 'Generate Now' to create today's standup."
 
 ### Sidebar (always visible, 250px width)
 
-**Top:** FredAI logo/text + current date
+**Top:** El Gringo logo/text + current date
 
 **Navigation:**
 - Dashboard (icon + label)
@@ -897,7 +897,7 @@ Returns today's standup (generates if not yet saved today).
     "date": "2026-02-22",
     "generated_at": "2026-02-22T09:00:00",
     "repos": {
-      "FredAI": ["abc1234 Fix scheduler deadlock (Fred Taylor)"],
+      "El Gringo": ["abc1234 Fix scheduler deadlock (Fred Taylor)"],
       "managers-dashboard": []
     },
     "tasks": {
@@ -1156,7 +1156,7 @@ Returns available personas from `PersonaLibrary`.
 ### File Structure (final)
 
 ```
-FredAI/
+El Gringo/
   ai_dev_team/
     workflow/
       sprint_manager.py      # existing, no changes

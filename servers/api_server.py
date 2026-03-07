@@ -63,7 +63,7 @@ CORS(app, origins=[
 ])
 
 # API Authentication
-FREDAI_API_TOKEN = os.getenv("FREDAI_API_TOKEN")
+ELGRINGO_API_TOKEN = os.getenv("ELGRINGO_API_TOKEN")
 
 # Paths that don't require authentication
 PUBLIC_PATHS = {"/", "/health", "/api/health"}
@@ -88,7 +88,7 @@ def require_auth(f):
             return f(*args, **kwargs)
 
         # Check Bearer token
-        if not FREDAI_API_TOKEN:
+        if not ELGRINGO_API_TOKEN:
             # No token configured = auth disabled (dev mode)
             return f(*args, **kwargs)
 
@@ -97,7 +97,7 @@ def require_auth(f):
             return jsonify({"error": "Missing Authorization header"}), 401
 
         token = auth_header[7:]
-        if token != FREDAI_API_TOKEN:
+        if token != ELGRINGO_API_TOKEN:
             logger.warning(f"Invalid API token from {request.remote_addr}")
             return jsonify({"error": "Invalid API token"}), 401
 
@@ -114,7 +114,7 @@ def check_auth():
         return None
     if _is_localhost(request.remote_addr):
         return None
-    if not FREDAI_API_TOKEN:
+    if not ELGRINGO_API_TOKEN:
         return None
 
     auth_header = request.headers.get("Authorization", "")
@@ -122,7 +122,7 @@ def check_auth():
         return jsonify({"error": "Missing Authorization header"}), 401
 
     token = auth_header[7:]
-    if token != FREDAI_API_TOKEN:
+    if token != ELGRINGO_API_TOKEN:
         logger.warning(f"Invalid API token from {request.remote_addr}")
         return jsonify({"error": "Invalid API token"}), 401
 

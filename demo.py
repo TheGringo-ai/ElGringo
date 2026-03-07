@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FredAI Quick Demo — works with just Ollama (no API keys needed)
+El Gringo Quick Demo — works with just Ollama (no API keys needed)
 
 Usage:
     ollama pull llama3.2:3b
@@ -25,7 +25,7 @@ def print_header(text):
 async def main():
     from ai_dev_team.orchestrator import AIDevTeam
 
-    print_header("FredAI Demo")
+    print_header("El Gringo Demo")
     print("Initializing AI team...\n")
 
     team = AIDevTeam(project_name="demo")
@@ -74,7 +74,7 @@ async def main():
     print(f"Overall success:     {stats['success_rate']:.0%}")
 
     print_header("Done")
-    print("Star us: https://github.com/TheGringo-ai/FredAI")
+    print("Star us: https://github.com/TheGringo-ai/ElGringo")
 
 
 if __name__ == "__main__":

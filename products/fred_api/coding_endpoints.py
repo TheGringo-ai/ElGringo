@@ -10,7 +10,7 @@ Flow:
   2. Agents read the codebase, plan changes, execute edits, run tests
   3. Returns structured result with files changed, test output, and diff
 
-This turns FredAI from an advisory chatbot into a real coding agent.
+This turns El Gringo from an advisory chatbot into a real coding agent.
 """
 
 import asyncio
@@ -363,7 +363,7 @@ class CodingAgentEngine:
         # Auto-commit if requested and tests passed
         if request.auto_commit and files_changed:
             if test_result is None or test_result.passed:
-                commit_msg = f"FredAI: {request.task[:80]}"
+                commit_msg = f"El Gringo: {request.task[:80]}"
                 git_output = self.tools.git_commit(commit_msg)
                 git_commit_msg = commit_msg
 
@@ -584,7 +584,7 @@ async def execute_coding_task(request: CodingTaskRequest):
     """
     Execute a coding task: read code, make changes, run tests, self-correct.
 
-    This is the main endpoint that turns FredAI into a coding agent.
+    This is the main endpoint that turns El Gringo into a coding agent.
     """
     try:
         engine = _get_engine(request.project_path)

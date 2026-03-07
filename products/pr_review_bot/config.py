@@ -24,7 +24,7 @@ class PRReviewBotSettings(BaseSettings):
     max_diff_lines: int = 5000
     review_timeout: int = 300
 
-    # AI API keys (inherited from FredAI env)
+    # AI API keys (inherited from El Gringo env)
     anthropic_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
     gemini_api_key: Optional[str] = None

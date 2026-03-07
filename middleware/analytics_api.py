@@ -23,20 +23,20 @@ from .analytics import AnalyticsStore, get_analytics_store
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Auth helper (reuses the same Bearer token pattern as other FredAI services)
+# Auth helper (reuses the same Bearer token pattern as other El Gringo services)
 # ---------------------------------------------------------------------------
 
-FREDAI_API_TOKEN = os.getenv("FREDAI_API_TOKEN", "")
+ELGRINGO_API_TOKEN = os.getenv("ELGRINGO_API_TOKEN", "")
 
 
 async def _verify_analytics_auth(request: Request):
     """Verify Bearer token for analytics endpoints.
 
     Skips auth when:
-    - No FREDAI_API_TOKEN is configured (dev mode)
+    - No ELGRINGO_API_TOKEN is configured (dev mode)
     - Request comes from localhost
     """
-    if not FREDAI_API_TOKEN:
+    if not ELGRINGO_API_TOKEN:
         return
 
     client_host = request.client.host if request.client else ""
@@ -46,7 +46,7 @@ async def _verify_analytics_auth(request: Request):
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Authorization header")
-    if auth[7:] != FREDAI_API_TOKEN:
+    if auth[7:] != ELGRINGO_API_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid API token")
 
 
@@ -105,7 +105,7 @@ def register_flask_analytics_routes(flask_app, store: AnalyticsStore = None):
 
     def _check_auth():
         """Inline auth check matching the Flask global auth pattern."""
-        token = os.getenv("FREDAI_API_TOKEN", "")
+        token = os.getenv("ELGRINGO_API_TOKEN", "")
         if not token:
             return None
         remote = flask_request.remote_addr or ""

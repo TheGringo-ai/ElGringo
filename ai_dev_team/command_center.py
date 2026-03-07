@@ -1,5 +1,5 @@
 """
-FredAI Command Center
+El Gringo Command Center
 =====================
 Unified Streamlit dashboard for daily operations:
 sprint board, content queue, AI chat, and automation status.
@@ -143,13 +143,13 @@ def update_content_file_status(filepath: str, new_status: str):
 # ---------------------------------------------------------------------------
 
 st.set_page_config(
-    page_title="FredAI Command Center",
+    page_title="El Gringo Command Center",
     page_icon="@",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-st.title("FredAI Command Center")
+st.title("El Gringo Command Center")
 st.caption(datetime.now().strftime("%B %d, %Y"))
 
 # ---------------------------------------------------------------------------
@@ -345,7 +345,7 @@ for msg in st.session_state.chat_history:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-user_input = st.chat_input("Ask FredAI anything...")
+user_input = st.chat_input("Ask El Gringo anything...")
 if user_input:
     st.session_state.chat_history.append({"role": "user", "content": user_input})
     with st.chat_message("user"):

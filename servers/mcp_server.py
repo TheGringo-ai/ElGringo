@@ -478,7 +478,7 @@ TOOLS = [
     },
     {
         "name": "load_project_context",
-        "description": "Load a project's key files and conventions into FredAI's memory. Auto-detects tech stack, reads important files (requirements.txt, main entry, first router, config). The team will use this context in future collaborate calls.",
+        "description": "Load a project's key files and conventions into El Gringo's memory. Auto-detects tech stack, reads important files (requirements.txt, main entry, first router, config). The team will use this context in future collaborate calls.",
         "inputSchema": {
             "type": "object",
             "properties": {

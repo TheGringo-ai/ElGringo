@@ -1,5 +1,5 @@
 """
-Platform Services — HTTP client for FredAI specialist services.
+Platform Services — HTTP client for El Gringo specialist services.
 Connects Fred Assistant (the hub) to Code Audit, Test Gen, Doc Gen, PR Bot, and Fred API.
 """
 

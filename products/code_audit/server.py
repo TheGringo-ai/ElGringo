@@ -2,7 +2,7 @@
 Code Audit Service
 ==================
 
-Automated security and quality audits using FredAI's specialist agents.
+Automated security and quality audits using El Gringo's specialist agents.
 
 Endpoints:
     POST /audit/security  - Security vulnerability scan
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Code Audit Service",
-    description="Automated security and quality audits powered by FredAI",
+    description="Automated security and quality audits powered by El Gringo",
     version="0.1.0",
     docs_url="/audit/docs",
 )

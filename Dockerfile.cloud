@@ -1,5 +1,5 @@
 # ============================================================
-# FredAI Cloud Run Production Image
+# ElGringo Cloud Run Production Image
 # Single image → 4 services (different entry points)
 # ============================================================
 
@@ -37,7 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 # Non-root user
-RUN groupadd -r fredai && useradd -r -g fredai -d /app -s /sbin/nologin fredai
+RUN groupadd -r elgringo && useradd -r -g elgringo -d /app -s /sbin/nologin elgringo
 
 WORKDIR /app
 
@@ -57,10 +57,10 @@ COPY config/ ./config/
 COPY templates/ ./templates/
 COPY pyproject.toml ./
 
-# Own everything by fredai
-RUN chown -R fredai:fredai /app
+# Own everything by elgringo
+RUN chown -R elgringo:elgringo /app
 
-USER fredai
+USER elgringo
 
 EXPOSE 8080
 

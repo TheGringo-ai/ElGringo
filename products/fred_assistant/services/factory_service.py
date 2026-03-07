@@ -1,5 +1,5 @@
 """
-App Factory Service — Build, Launch & Monetize Apps from FredAI.
+App Factory Service — Build, Launch & Monetize Apps from El Gringo.
 
 Orchestrates: code generation (AppBuilder), quality gates (test_gen, code_audit),
 Docker builds, and VM deploys into a single pipeline.
@@ -387,7 +387,7 @@ async def build_app(app_id: str) -> dict:
     try:
         from ai_dev_team.tools.docker import DockerTools
         docker = DockerTools(default_cwd=app["project_dir"])
-        tag = f"fredai-factory/{app['name']}:v{version}"
+        tag = f"elgringo-factory/{app['name']}:v{version}"
         build_result = docker._build(tag=tag, context=".", cwd=app["project_dir"])
         if build_result.success:
             _finish_build_step(docker_build_id, "passed", build_result.output[:5000])
@@ -429,12 +429,12 @@ async def deploy_app(app_id: str) -> dict:
 
         # Generate systemd unit file
         service_content = f"""[Unit]
-Description=FredAI Factory App: {name}
+Description=El Gringo Factory App: {name}
 After=network.target
 
 [Service]
 Type=simple
-User=fredai
+User=elgringo
 WorkingDirectory={project_dir}/backend
 ExecStart=/usr/bin/python3 -m uvicorn main:app --host 127.0.0.1 --port {port}
 Restart=always
@@ -444,7 +444,7 @@ Environment=PORT={port}
 [Install]
 WantedBy=multi-user.target
 """
-        service_path = os.path.join(project_dir, f"fredai-app-{name}.service")
+        service_path = os.path.join(project_dir, f"elgringo-app-{name}.service")
         with open(service_path, "w") as f:
             f.write(service_content)
 

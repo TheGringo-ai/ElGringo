@@ -1,5 +1,5 @@
 """
-FredAI Command Center API
+El Gringo Command Center API
 ==========================
 
 FastAPI backend for the Command Center dashboard.
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # ── App ──────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="FredAI Command Center",
+    title="El Gringo Command Center",
     description="Unified dashboard API for daily founder operations",
     version="0.1.0",
     docs_url="/docs",
@@ -44,7 +44,7 @@ app.add_middleware(
 # Skips auth for localhost requests (Streamlit UI calls from same machine).
 
 COMMAND_API_KEYS: set = set()
-_raw = os.getenv("COMMAND_CENTER_API_KEYS", os.getenv("FREDAI_API_TOKEN", ""))
+_raw = os.getenv("COMMAND_CENTER_API_KEYS", os.getenv("ELGRINGO_API_TOKEN", ""))
 if _raw:
     COMMAND_API_KEYS = {k.strip() for k in _raw.split(",") if k.strip()}
 

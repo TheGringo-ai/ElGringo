@@ -97,7 +97,7 @@ def test_index_task(rag):
         "title": "Deploy RAG service",
         "description": "Add semantic search to Fred",
         "status": "in_progress",
-        "board_id": "fredai",
+        "board_id": "elgringo",
         "priority": 1,
         "tags": ["backend", "ai"],
     })
@@ -144,7 +144,7 @@ def test_index_service_result(rag):
         "id": "sr1",
         "service": "code_audit",
         "action": "full_audit",
-        "project_name": "FredAI",
+        "project_name": "ElGringo",
         "input_summary": "Full security audit",
         "result": "No critical issues found",
     })
@@ -214,7 +214,7 @@ def test_query_for_context_returns_categorized(rag):
     rag.index_task({"id": "ctx2", "title": "Write tests", "status": "todo"})
     rag.index_service_result({
         "id": "ctx3", "service": "test_gen", "action": "generate",
-        "project_name": "FredAI", "result": "10 tests generated",
+        "project_name": "ElGringo", "result": "10 tests generated",
     })
 
     result = rag.query_for_context("What tests have been generated?")
@@ -296,8 +296,8 @@ def test_sync_projects_manifest(rag):
 
 
 def test_query_for_context_includes_projects(rag):
-    rag.index_project("fredai", {
-        "name": "FredAI Platform",
+    rag.index_project("elgringo", {
+        "name": "El Gringo Platform",
         "intention": "Multi-agent AI orchestration platform.",
         "features": ["Model routing", "PR review", "Code audit"],
     })

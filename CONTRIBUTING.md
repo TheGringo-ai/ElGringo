@@ -1,6 +1,6 @@
-# Contributing to FredAI
+# Contributing to El Gringo
 
-Thank you for your interest in contributing to FredAI. This guide covers everything
+Thank you for your interest in contributing to El Gringo. This guide covers everything
 you need to get started.
 
 ## Getting Started
@@ -14,8 +14,8 @@ you need to get started.
 ### Setup
 
 ```bash
-git clone https://github.com/TheGringo-ai/FredAI.git
-cd FredAI
+git clone https://github.com/TheGringo-ai/ElGringo.git
+cd El Gringo
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"

@@ -1,5 +1,5 @@
 """
-FredAI Test Generator Service
+El Gringo Test Generator Service
 ===============================
 
 Automated unit test generation, coverage analysis, and test improvement

@@ -192,7 +192,7 @@ def init_db():
         VALUES
             ('work', 'Work', '💻', 'blue', 0, '["backlog","in_progress","review","done"]'),
             ('personal', 'Personal', '🏠', 'emerald', 1, '["todo","in_progress","done"]'),
-            ('fredai', 'FredAI Dev', '🤖', 'purple', 2, '["backlog","in_progress","review","done"]'),
+            ('elgringo', 'El Gringo Dev', '🤖', 'purple', 2, '["backlog","in_progress","review","done"]'),
             ('health', 'Health & Fitness', '💪', 'red', 3, '["todo","in_progress","done"]'),
             ('ideas', 'Ideas & Research', '💡', 'amber', 4, '["capture","exploring","validated","parked"]');
 

@@ -54,7 +54,7 @@ For minor suggestions only, use "COMMENT".
 
 
 class PRReviewer:
-    """Bridge between GitHub PR data and the FredAI orchestrator."""
+    """Bridge between GitHub PR data and the El Gringo orchestrator."""
 
     def __init__(self, max_diff_lines: int = 5000):
         self._max_diff_lines = max_diff_lines

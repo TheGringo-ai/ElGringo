@@ -2,7 +2,7 @@
 Documentation Generator Service
 ================================
 
-AI-powered documentation generation using FredAI's specialist agents.
+AI-powered documentation generation using El Gringo's specialist agents.
 
 Endpoints:
     POST /docs/readme        - Generate comprehensive README.md from code/structure
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Documentation Generator Service",
-    description="AI-powered documentation generation powered by FredAI",
+    description="AI-powered documentation generation powered by El Gringo",
     version="0.1.0",
     docs_url="/docs/openapi",
 )

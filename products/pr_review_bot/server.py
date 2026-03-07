@@ -2,7 +2,7 @@
 PR Review Bot webhook server.
 
 Receives GitHub webhook events, verifies signatures, and launches
-background review tasks using the FredAI orchestrator.
+background review tasks using the El Gringo orchestrator.
 """
 
 import asyncio
@@ -19,7 +19,7 @@ from .reviewer import PRReviewer
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="FredAI PR Review Bot", version="1.0.0")
+app = FastAPI(title="El Gringo PR Review Bot", version="1.0.0")
 
 # Initialized on startup
 _settings: PRReviewBotSettings | None = None
@@ -161,7 +161,7 @@ def main():
     import uvicorn
 
     settings = PRReviewBotSettings()
-    print(f"Starting FredAI PR Review Bot on {settings.host}:{settings.port}")
+    print(f"Starting El Gringo PR Review Bot on {settings.host}:{settings.port}")
     uvicorn.run(
         "products.pr_review_bot.server:app",
         host=settings.host,

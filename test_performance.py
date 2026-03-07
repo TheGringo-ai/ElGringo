@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FredAI Comprehensive Performance & Capability Test Suite
+El Gringo Comprehensive Performance & Capability Test Suite
 Test all features and compare against alternatives
 """
 
@@ -11,8 +11,8 @@ from typing import List, Dict, Any
 from datetime import datetime
 
 
-class FredAITester:
-    """Comprehensive testing of FredAI capabilities"""
+class ElGringoTester:
+    """Comprehensive testing of El Gringo capabilities"""
     
     def __init__(self):
         self.results: List[Dict[str, Any]] = []
@@ -23,7 +23,7 @@ class FredAITester:
         from ai_dev_team.orchestrator import AIDevTeam
         
         print("=" * 80)
-        print("FredAI Comprehensive Test Suite")
+        print("El Gringo Comprehensive Test Suite")
         print("=" * 80 + "\n")
         
         print("🔧 Initializing AI Team...")
@@ -372,7 +372,7 @@ def authenticate(password):
         print("\n" + "=" * 80 + "\n")
         
         # Save results
-        with open("fredai_test_results.json", "w") as f:
+        with open("elgringo_test_results.json", "w") as f:
             json.dump({
                 "timestamp": datetime.now().isoformat(),
                 "summary": {
@@ -385,7 +385,7 @@ def authenticate(password):
                 "results": self.results
             }, f, indent=2)
         
-        print("💾 Results saved to: fredai_test_results.json")
+        print("💾 Results saved to: elgringo_test_results.json")
     
     async def run_all_tests(self):
         """Run all tests"""
@@ -417,7 +417,7 @@ def authenticate(password):
 
 
 async def main():
-    tester = FredAITester()
+    tester = ElGringoTester()
     await tester.run_all_tests()
 
 

@@ -1,14 +1,14 @@
-# FredAI MCP Server - VS Code Setup Complete! 🎉
+# El Gringo MCP Server - VS Code Setup Complete! 🎉
 
 ## ✅ What Was Set Up
 
-FredAI is now available as an MCP server in VS Code through the Claude Code extension!
+El Gringo is now available as an MCP server in VS Code through the Claude Code extension!
 
 **Configuration File:** 
 `~/Library/Application Support/Code/User/settings.json`
 
 **MCP Server:**
-`/Users/fredtaylor/Development/Projects/FredAI/servers/mcp_server.py`
+`/Users/fredtaylor/Development/Projects/El Gringo/servers/mcp_server.py`
 
 **Extension:** Claude Code (anthropic.claude-code)
 
@@ -24,11 +24,11 @@ Close and reopen VS Code for the MCP configuration to take effect.
 - Type: "Claude Code: Open"
 - Or click the Claude icon in the Activity Bar (left sidebar)
 
-### **Step 3: Verify FredAI is Connected**
-In the Claude Code panel, you should see "fred-ai" listed as an available MCP server with 9 tools.
+### **Step 3: Verify El Gringo is Connected**
+In the Claude Code panel, you should see "el-gringo" listed as an available MCP server with 9 tools.
 
-### **Step 4: Use FredAI Tools**
-In the Claude Code chat, you can now use FredAI tools like:
+### **Step 4: Use El Gringo Tools**
+In the Claude Code chat, you can now use El Gringo tools like:
 
 **Example 1: Multi-Agent Code Review**
 ```
@@ -56,7 +56,7 @@ Use ai_team_debug to help me fix this error:
 
 ---
 
-## 🤖 Available FredAI Tools
+## 🤖 Available El Gringo Tools
 
 ### **Collaboration Tools:**
 1. **ai_team_collaborate** - Multi-agent collaboration (parallel/sequential/consensus)
@@ -158,13 +158,13 @@ Check that:
 Make sure the PYTHONPATH is correct in settings:
 ```json
 "env": {
-  "PYTHONPATH": "/Users/fredtaylor/Development/Projects/FredAI"
+  "PYTHONPATH": "/Users/fredtaylor/Development/Projects/El Gringo"
 }
 ```
 
 ---
 
-## 📊 What Makes FredAI Unique in VS Code
+## 📊 What Makes El Gringo Unique in VS Code
 
 1. **Multi-Agent Consensus** - Get perspectives from ChatGPT, Gemini, Grok, and Claude
 2. **Context-Aware** - Works with your current VS Code workspace
@@ -198,13 +198,13 @@ Your VS Code `settings.json` now includes:
 ```json
 {
   "claudeCode.mcpServers": {
-    "fred-ai": {
+    "el-gringo": {
       "command": "python3",
       "args": [
-        "/Users/fredtaylor/Development/Projects/FredAI/servers/mcp_server.py"
+        "/Users/fredtaylor/Development/Projects/El Gringo/servers/mcp_server.py"
       ],
       "env": {
-        "PYTHONPATH": "/Users/fredtaylor/Development/Projects/FredAI"
+        "PYTHONPATH": "/Users/fredtaylor/Development/Projects/El Gringo"
       }
     }
   }
@@ -213,18 +213,18 @@ Your VS Code `settings.json` now includes:
 
 ---
 
-## 🚀 Advanced: Using FredAI with GitHub Copilot
+## 🚀 Advanced: Using El Gringo with GitHub Copilot
 
-You can use both FredAI and GitHub Copilot together:
+You can use both El Gringo and GitHub Copilot together:
 
 1. **Copilot** for inline code suggestions (fast)
-2. **FredAI** for complex decisions and multi-perspective analysis (thorough)
+2. **El Gringo** for complex decisions and multi-perspective analysis (thorough)
 
 **Example workflow:**
 1. Write code with Copilot assistance
-2. When stuck on architecture: Use FredAI's ai_team_architect
-3. Before committing: Use FredAI's ai_team_review
-4. When debugging: Use FredAI's ai_team_debug
+2. When stuck on architecture: Use El Gringo's ai_team_architect
+3. Before committing: Use El Gringo's ai_team_review
+4. When debugging: Use El Gringo's ai_team_debug
 
 ---
 
@@ -232,7 +232,7 @@ You can use both FredAI and GitHub Copilot together:
 
 - **Claude Code Extension:** [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Anthropic.claude-code)
 - **MCP Protocol:** https://modelcontextprotocol.io
-- **FredAI Logs:** `/tmp/ai_team_mcp.log`
+- **El Gringo Logs:** `/tmp/ai_team_mcp.log`
 - **VS Code Settings:** `~/Library/Application Support/Code/User/settings.json`
 
 ---
@@ -241,7 +241,7 @@ You can use both FredAI and GitHub Copilot together:
 
 1. **Restart VS Code** (close and reopen)
 2. **Open Claude Code panel** (Cmd+Shift+P → "Claude Code: Open")
-3. **Verify fred-ai appears** in the MCP servers list
+3. **Verify el-gringo appears** in the MCP servers list
 4. **Try your first command:**
    ```
    Use ai_team_ask to answer: What's the best Python 

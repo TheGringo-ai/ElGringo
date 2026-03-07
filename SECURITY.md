@@ -1,11 +1,11 @@
 # Security
 
-## What FredAI Can Access
+## What El Gringo Can Access
 
-FredAI agents can execute tools that interact with your system. Understanding the permission surface is important.
+El Gringo agents can execute tools that interact with your system. Understanding the permission surface is important.
 
 ### MCP Server Tools
-When running as an MCP server, tools are invoked by the connected client (e.g., Claude Code, Cursor). The client controls which tool calls to approve. FredAI does not execute tools autonomously unless explicitly triggered.
+When running as an MCP server, tools are invoked by the connected client (e.g., Claude Code, Cursor). The client controls which tool calls to approve. El Gringo does not execute tools autonomously unless explicitly triggered.
 
 ### Tool Execution Scope
 - **File tools**: Read/write within the working directory
@@ -14,7 +14,7 @@ When running as an MCP server, tools are invoked by the connected client (e.g., 
 - **Docker tools**: Container management (requires Docker installed)
 - **Deploy tools**: Deployment scripts (requires explicit configuration)
 
-### What FredAI Does NOT Do
+### What El Gringo Does NOT Do
 - Does not send your code to any service unless you configure an API key for that provider
 - Does not persist data outside `~/.ai-dev-team/` (local) or your Firestore project (if enabled)
 - Does not auto-execute agent suggestions — tool calls require client approval via MCP protocol

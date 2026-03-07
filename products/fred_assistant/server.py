@@ -2,7 +2,7 @@
 Fred Assistant — Local AI Personal Assistant
 =============================================
 Runs on your Mac. Manages tasks, boards, memory, chat, daily briefings.
-Backed by SQLite (fast, private, zero config) and the FredAI orchestrator.
+Backed by SQLite (fast, private, zero config) and the El Gringo orchestrator.
 
 Run: uvicorn products.fred_assistant.server:app --port 7870 --reload
 """

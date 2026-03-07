@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FredAI Dashboard - Costs, Patterns, Agent Performance
+El Gringo Dashboard - Costs, Patterns, Agent Performance
 ======================================================
 
 Visualizes:
@@ -195,11 +195,11 @@ def create_dashboard():
     import gradio as gr
 
     with gr.Blocks(
-        title="FredAI Dashboard",
+        title="El Gringo Dashboard",
         theme=gr.themes.Soft(primary_hue="blue"),
     ) as app:
 
-        gr.Markdown("# FredAI Dashboard\nReal-time costs, memory quality, and agent performance")
+        gr.Markdown("# El Gringo Dashboard\nReal-time costs, memory quality, and agent performance")
 
         with gr.Tabs():
             # ---- Costs Tab ----

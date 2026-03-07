@@ -2,7 +2,7 @@
 Fred API - Orchestration as a Service
 ======================================
 
-Public REST API exposing FredAI's multi-agent orchestration capabilities.
+Public REST API exposing El Gringo's multi-agent orchestration capabilities.
 
 Endpoints:
     POST /v1/collaborate  - Multi-agent collaboration

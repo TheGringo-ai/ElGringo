@@ -1,8 +1,8 @@
 """
-FredAI Middleware
+El Gringo Middleware
 =================
 
-Shared middleware components for all FredAI services.
+Shared middleware components for all El Gringo services.
 """
 
 from .analytics import AnalyticsStore, UsageAnalyticsMiddleware, flask_analytics_hooks

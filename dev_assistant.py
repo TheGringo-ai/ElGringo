@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FredAI Development Assistant
+El Gringo Development Assistant
 Quick helper to consult the AI team during development
 """
 
@@ -16,7 +16,7 @@ async def consult_team(task: str, mode: str = "parallel"):
     print(f"🎯 Mode: {mode}\n")
     
     team = AIDevTeam(
-        project_name="FredAI",
+        project_name="ElGringo",
         enable_memory=True,
         enable_learning=True
     )
@@ -115,7 +115,7 @@ Provide:
 
 async def quick_ask(question: str):
     """Quick question to the team"""
-    team = AIDevTeam(project_name="FredAI")
+    team = AIDevTeam(project_name="ElGringo")
     
     print(f"\n💬 Quick Ask: {question}\n")
     print("─" * 80)
@@ -132,7 +132,7 @@ async def quick_ask(question: str):
 async def main():
     if len(sys.argv) < 2:
         print("""
-FredAI Development Assistant
+El Gringo Development Assistant
 =============================
 
 Usage:

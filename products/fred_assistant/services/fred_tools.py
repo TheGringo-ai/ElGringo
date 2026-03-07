@@ -50,7 +50,7 @@ ALLOWED_ROOTS = [
     os.path.expanduser("~/Documents"),
     "/tmp",
     "/private/tmp",  # macOS resolves /tmp -> /private/tmp
-    "/opt/fredai/projects",  # VM clone directory
+    "/opt/elgringo/projects",  # VM clone directory
 ]
 
 BLOCKED_PATHS = [

@@ -1,20 +1,20 @@
-# FredAI MCP Server - Setup Complete! 🎉
+# El Gringo MCP Server - Setup Complete! 🎉
 
 ## ✅ What Was Set Up
 
-FredAI is now available as an MCP (Model Context Protocol) server in Claude Desktop!
+El Gringo is now available as an MCP (Model Context Protocol) server in Claude Desktop!
 
 **Configuration File:** 
 `~/Library/Application Support/Claude/claude_desktop_config.json`
 
 **MCP Server:**
-`/Users/fredtaylor/Development/Projects/FredAI/servers/mcp_server.py`
+`/Users/fredtaylor/Development/Projects/El Gringo/servers/mcp_server.py`
 
 ---
 
 ## 🤖 Available Tools in Claude Desktop
 
-Once you restart Claude Desktop, you'll have access to these FredAI tools:
+Once you restart Claude Desktop, you'll have access to these El Gringo tools:
 
 ### **Collaboration Tools:**
 1. **ai_team_collaborate** - Have multiple AI agents (ChatGPT, Gemini, Grok) work together
@@ -45,9 +45,9 @@ killall Claude 2>/dev/null; open -a Claude
 ```
 
 ### **Step 2: Verify Connection**
-In Claude Desktop, look for the **MCP icon** (🔌) in the toolbar. You should see "fred-ai" listed.
+In Claude Desktop, look for the **MCP icon** (🔌) in the toolbar. You should see "el-gringo" listed.
 
-### **Step 3: Use FredAI Tools**
+### **Step 3: Use El Gringo Tools**
 In Claude Desktop, you can now say things like:
 
 **Example 1: Code Review**
@@ -102,7 +102,7 @@ export ANTHROPIC_API_KEY="..."
 
 ---
 
-## 📊 What Makes FredAI Unique
+## 📊 What Makes El Gringo Unique
 
 1. **Multi-Agent Consensus** - Gets perspectives from multiple AIs, not just one
 2. **Weighted Voting** - Different agents have different expertise (e.g., Grok is better at code, Gemini at docs)
@@ -121,14 +121,14 @@ export ANTHROPIC_API_KEY="..."
 
 ## 🎯 Best Use Cases
 
-**Use FredAI when:**
+**Use El Gringo when:**
 - ✅ You need multiple perspectives on a complex problem
 - ✅ You want security auditing with multiple scanners
 - ✅ You're making architectural decisions (expert panel mode)
 - ✅ You need to debug something tricky (multiple approaches)
 - ✅ You want code review from different viewpoints
 
-**Don't use FredAI when:**
+**Don't use El Gringo when:**
 - ❌ Simple questions (use regular Claude, it's faster)
 - ❌ You need very fast responses (multi-agent takes 20-60s)
 - ❌ The task doesn't benefit from multiple perspectives
@@ -137,7 +137,7 @@ export ANTHROPIC_API_KEY="..."
 
 ## 📝 Next Steps
 
-1. **Restart Claude Desktop** to activate FredAI
+1. **Restart Claude Desktop** to activate El Gringo
 2. **Try a simple task** first (ai_team_ask with a question)
 3. **Test on a real project** (ai_team_review on managers-dashboard)
 4. **Explore collaboration modes** to see which fits your workflow
@@ -146,7 +146,7 @@ export ANTHROPIC_API_KEY="..."
 
 ## 🔗 Resources
 
-- **FredAI GitHub:** (add your repo URL)
+- **El Gringo GitHub:** (add your repo URL)
 - **MCP Protocol:** https://modelcontextprotocol.io
 - **Logs:** `/tmp/ai_team_mcp.log`
 - **Config:** `~/Library/Application Support/Claude/claude_desktop_config.json`

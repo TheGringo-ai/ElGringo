@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# FredAI Local Services (runs on your Mac)
+# El Gringo Local Services (runs on your Mac)
 # Chat UI, Studio, Code Audit, Test Gen, Doc Gen
 # VM handles: API Server, PR Bot, Fred API
 # ============================================================
@@ -27,7 +27,7 @@ export GRADIO_PASSWORD="${GRADIO_PASSWORD:-@Gringo420}"
 unset GRADIO_ROOT_PATH
 
 echo "============================================================"
-echo "  FredAI Local Services"
+echo "  El Gringo Local Services"
 echo "============================================================"
 echo ""
 

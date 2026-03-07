@@ -1,4 +1,4 @@
-# FredAI: Honest Technical Assessment
+# El Gringo: Honest Technical Assessment
 
 **Date**: 2026-02-19  
 **Purpose**: Replace marketing claims with verifiable facts for technical audiences
@@ -106,7 +106,7 @@
 ## ❌ **What's Missing**
 
 ### 1. **Web Search / Real-Time Data**
-- FredAI has **no built-in web browsing or search**
+- El Gringo has **no built-in web browsing or search**
 - Models work with training data only
 - **Gap**: For current events, requires manual tool integration
 
@@ -132,7 +132,7 @@
 
 ## 📊 **Test Performance (Actual Results)**
 
-From `fredai_test_results.json`:
+From `elgringo_test_results.json`:
 
 ```json
 {
@@ -155,7 +155,7 @@ From `fredai_test_results.json`:
 
 ### For Technical Audiences:
 
-> "FredAI is a **multi-agent orchestration framework** with:
+> "El Gringo is a **multi-agent orchestration framework** with:
 > - Weighted voting by agent expertise (verified)
 > - Mistake prevention learning (verified)  
 > - 8 collaboration modes (verified)
@@ -169,8 +169,8 @@ From `fredai_test_results.json`:
 
 ### For Non-Technical Audiences:
 
-> "FredAI coordinates multiple AI models to give you better answers.
-> Different models have different strengths—FredAI combines them intelligently.
+> "El Gringo coordinates multiple AI models to give you better answers.
+> Different models have different strengths—El Gringo combines them intelligently.
 > It learns from mistakes and prevents them from happening again."
 
 ---
@@ -189,7 +189,7 @@ From `fredai_test_results.json`:
    ```
 
 ### Add Evidence (2 days):
-3. Commit `coverage.json` and `fredai_test_results.json` to repo
+3. Commit `coverage.json` and `elgringo_test_results.json` to repo
 4. Add simple table in README:
    ```
    | Mode       | Avg Time | Success Rate |
@@ -208,13 +208,13 @@ From `fredai_test_results.json`:
 6. Replace "excellent coverage" with "23% coverage, expanding"
 7. Replace "6 providers integrated" with "3 verified, 3 available"
 8. Replace "86% confidence" with "86% consensus strength (model agreement)"
-9. Add "What FredAI Can't Do" section to README
+9. Add "What El Gringo Can't Do" section to README
 
 ---
 
 ## 💬 **Honest Comparison Table**
 
-| Feature                | FredAI   | ChatGPT | CrewAI | LangChain |
+| Feature                | El Gringo   | ChatGPT | CrewAI | LangChain |
 |------------------------|----------|---------|--------|-----------|
 | **Speed**              | ~50s     | ~5s ✅  | ~45s   | Custom    |
 | **Consensus Quality**  | 86% ✅   | N/A     | ~80%   | N/A       |
@@ -224,7 +224,7 @@ From `fredai_test_results.json`:
 | **Docs**               | Basic    | Full ✅ | Good   | Full ✅   |
 | **Provider Count**     | 3-6      | 1       | Many ✅| Many ✅   |
 
-**Reality**: FredAI trades speed for quality and has unique learning, but needs better docs and coverage.
+**Reality**: El Gringo trades speed for quality and has unique learning, but needs better docs and coverage.
 
 ---
 
@@ -237,7 +237,7 @@ From `fredai_test_results.json`:
 > "Multi-agent orchestration with weighted consensus and mistake learning. 219 tests (23% coverage), 3 providers verified, 86% model agreement in collaboration modes. Trade-off: 10x slower than direct API calls for higher decision quality."
 
 ### Interview-Safe Claim:
-> "FredAI uses a weighted voting algorithm where different AI models contribute based on their strengths—like asking a specialist team instead of one generalist. It also learns from past failures to prevent repetition. We've verified this works across 219 tests with 90% success rate, though we need better documentation and coverage."
+> "El Gringo uses a weighted voting algorithm where different AI models contribute based on their strengths—like asking a specialist team instead of one generalist. It also learns from past failures to prevent repetition. We've verified this works across 219 tests with 90% success rate, though we need better documentation and coverage."
 
 ---
 
@@ -255,7 +255,7 @@ From `fredai_test_results.json`:
 - ⚠️ "86% confidence" (model agreement, not accuracy)
 - ⚠️ "Production-ready" (needs hardening)
 
-**Use FredAI for:**
+**Use El Gringo for:**
 - ✅ Code reviews needing multiple perspectives
 - ✅ Architecture decisions requiring consensus
 - ✅ Learning from repeated mistakes

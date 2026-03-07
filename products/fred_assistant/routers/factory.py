@@ -1,4 +1,4 @@
-"""Factory router — Build, launch & monetize apps from FredAI."""
+"""Factory router — Build, launch & monetize apps from El Gringo."""
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse

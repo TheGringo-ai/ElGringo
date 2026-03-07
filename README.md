@@ -206,7 +206,7 @@ fred
 python demo.py
 
 # MCP Server (for Claude Code / Cursor)
-python servers/mcp_server.py
+python mcp_server.py
 
 # REST API
 python servers/api_server.py
@@ -223,7 +223,7 @@ Add to your `.mcp.json`:
   "mcpServers": {
     "el-gringo": {
       "command": "python3",
-      "args": ["path/to/El Gringo/servers/mcp_server.py"],
+      "args": ["path/to/ElGringo/mcp_server.py"],
       "env": {
         "PYTHONPATH": "path/to/El Gringo",
         "OPENAI_API_KEY": "sk-...",

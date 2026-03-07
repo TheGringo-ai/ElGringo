@@ -2,82 +2,104 @@
 Tests for MCP Server
 ====================
 
-Unit tests for the AI Team Platform MCP server.
+Unit tests for the El Gringo MCP server (root mcp_server.py).
 """
 
 import pytest
 import sys
 import os
 
-# Add both project root and servers directory to path
+# Add project root to path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
-sys.path.insert(0, os.path.join(PROJECT_ROOT, "servers"))
 
-# Import TOOLS from servers/mcp_server.py
+# Import tool functions from the consolidated MCP server
 try:
-    from servers.mcp_server import TOOLS
+    from mcp_server import (
+        _fmt_collaborate, _fmt_code_task, _fmt_review,
+        ai_team_health, ai_team_build, ai_team_execute,
+        ai_team_generate, ai_team_review, ai_team_debug,
+        ai_team_architect, ai_team_brainstorm, ai_team_security_audit,
+        elgringo_collaborate, elgringo_code_task, elgringo_review,
+        elgringo_plan, elgringo_project_info, elgringo_ask,
+    )
     MCP_AVAILABLE = True
 except ImportError:
-    try:
-        from mcp_server import TOOLS
-        MCP_AVAILABLE = True
-    except ImportError:
-        TOOLS = []
-        MCP_AVAILABLE = False
+    MCP_AVAILABLE = False
 
 
 @pytest.mark.skipif(not MCP_AVAILABLE, reason="MCP server module not available")
 class TestToolDefinitions:
-    """Test that tool definitions are correct"""
+    """Test that all expected tools exist as callable functions"""
 
-    def test_all_tools_have_required_fields(self):
-        """All tools must have name, description, and inputSchema"""
-        for tool in TOOLS:
-            assert "name" in tool, "Tool missing name"
-            assert "description" in tool, f"Tool {tool.get('name')} missing description"
-            assert "inputSchema" in tool, f"Tool {tool.get('name')} missing inputSchema"
+    def test_core_ai_team_tools_exist(self):
+        """Core ai_team_* tools must exist"""
+        assert callable(ai_team_health)
+        assert callable(ai_team_build)
+        assert callable(ai_team_execute)
+        assert callable(ai_team_generate)
+        assert callable(ai_team_review)
 
-    def test_tool_schemas_are_valid(self):
-        """Tool schemas must be valid JSON Schema"""
-        for tool in TOOLS:
-            schema = tool["inputSchema"]
-            assert "type" in schema, f"Tool {tool['name']} schema missing type"
-            assert schema["type"] == "object", f"Tool {tool['name']} schema type must be object"
-            assert "properties" in schema, f"Tool {tool['name']} schema missing properties"
+    def test_specialized_tools_exist(self):
+        """Specialized tools must exist"""
+        assert callable(ai_team_debug)
+        assert callable(ai_team_architect)
+        assert callable(ai_team_brainstorm)
+        assert callable(ai_team_security_audit)
 
-    def test_required_tools_exist(self):
-        """Core tools must be present"""
-        tool_names = [t["name"] for t in TOOLS]
+    def test_public_elgringo_tools_exist(self):
+        """Public elgringo_* tools must exist"""
+        assert callable(elgringo_collaborate)
+        assert callable(elgringo_code_task)
+        assert callable(elgringo_review)
+        assert callable(elgringo_plan)
+        assert callable(elgringo_project_info)
+        assert callable(elgringo_ask)
 
-        required_tools = [
-            "ai_team_collaborate",
-            "ai_team_review",
-            "ai_team_ask",
-            "ai_team_debug",
-            "ai_team_status",
-            "fredfix_scan",
-            "memory_search",
-        ]
+    def test_response_formatters_exist(self):
+        """Response formatters must exist"""
+        assert callable(_fmt_collaborate)
+        assert callable(_fmt_code_task)
+        assert callable(_fmt_review)
 
-        for required in required_tools:
-            assert required in tool_names, f"Required tool {required} not found"
 
-    def test_new_tools_exist(self):
-        """New tools added in v2 must be present"""
-        tool_names = [t["name"] for t in TOOLS]
+@pytest.mark.skipif(not MCP_AVAILABLE, reason="MCP server module not available")
+class TestResponseFormatters:
+    """Test response formatting functions"""
 
-        new_tools = [
-            "ai_team_teach",
-            "ai_team_insights",
-            "ai_team_prompts",
-            "memory_store_mistake",
-            "memory_store_solution",
-            "ai_team_brainstorm",
-        ]
+    def test_fmt_collaborate_success(self):
+        result = _fmt_collaborate({
+            "agents_used": ["chatgpt", "grok"],
+            "confidence": 0.85,
+            "answer": "Test answer",
+        })
+        assert "chatgpt, grok" in result
+        assert "85%" in result
+        assert "Test answer" in result
 
-        for new_tool in new_tools:
-            assert new_tool in tool_names, f"New tool {new_tool} not found"
+    def test_fmt_collaborate_error(self):
+        result = _fmt_collaborate({"error": "connection failed"})
+        assert "Error: connection failed" in result
+
+    def test_fmt_code_task_success(self):
+        result = _fmt_code_task({
+            "status": "completed",
+            "summary": "Added feature",
+            "agents_used": ["chatgpt"],
+            "iterations": 2,
+            "files_changed": [{"path": "main.py", "action": "edit"}],
+        })
+        assert "completed" in result
+        assert "main.py" in result
+
+    def test_fmt_review_success(self):
+        result = _fmt_review({
+            "agents_used": ["chatgpt", "grok"],
+            "files_reviewed": 5,
+            "findings": "No critical issues found",
+        })
+        assert "5 files reviewed" in result
+        assert "No critical issues" in result
 
 
 class TestMemorySystem:

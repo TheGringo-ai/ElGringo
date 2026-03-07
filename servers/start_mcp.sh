@@ -11,7 +11,7 @@ set -euo pipefail
 
 VENV_PYTHON="/Users/fredtaylor/.venvs/ai-platform/bin/python3"
 PROJECT_DIR="/Users/fredtaylor/Development/Projects/ElGringo"
-MCP_SERVER="$PROJECT_DIR/servers/mcp_server.py"
+MCP_SERVER="$PROJECT_DIR/mcp_server.py"
 LOG_FILE="/tmp/ai_team_mcp.log"
 
 # Verify venv exists
@@ -28,9 +28,9 @@ if [ ! -f "$MCP_SERVER" ]; then
 fi
 
 # Verify critical dependencies
-"$VENV_PYTHON" -c "import mcp; import openai; import anthropic" 2>/dev/null || {
-    echo "ERROR: Missing dependencies. Run:" >&2
-    echo "  $VENV_PYTHON -m pip install mcp openai anthropic google-genai" >&2
+"$VENV_PYTHON" -c "import mcp" 2>/dev/null || {
+    echo "ERROR: Missing mcp dependency. Run:" >&2
+    echo "  $VENV_PYTHON -m pip install 'mcp>=1.0.0'" >&2
     exit 1
 }
 

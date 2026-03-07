@@ -34,6 +34,11 @@ fi
     exit 1
 }
 
+# Load API keys if available
+if [ -f "$HOME/.ai_secrets" ]; then
+    source "$HOME/.ai_secrets"
+fi
+
 # Set PYTHONPATH so imports resolve
 export PYTHONPATH="$PROJECT_DIR:${PYTHONPATH:-}"
 

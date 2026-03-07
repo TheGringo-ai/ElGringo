@@ -314,6 +314,152 @@ async def stream(req: StreamRequest):
     )
 
 
+# ── Memory Endpoints ─────────────────────────────────────────────────
+
+class MemorySearchRequest(BaseModel):
+    query: str = Field(..., description="Search query")
+    search_type: str = Field("all", description="solutions, mistakes, or all")
+    limit: int = Field(5, description="Max results")
+
+class MemoryStoreRequest(BaseModel):
+    type: str = Field(..., description="solution or mistake")
+    # Solution fields
+    problem: str = Field("", description="Problem pattern (for solutions)")
+    solution_steps: List[str] = Field(default_factory=list, description="Solution steps")
+    tags: List[str] = Field(default_factory=list, description="Tags")
+    # Mistake fields
+    description: str = Field("", description="Mistake description")
+    mistake_type: str = Field("code_error", description="Mistake type")
+    severity: str = Field("medium", description="Severity level")
+    prevention: str = Field("", description="Prevention strategy")
+
+class TeachRequest(BaseModel):
+    topic: str = Field(..., description="Topic to teach")
+    content: str = Field(..., description="Knowledge content")
+    domain: str = Field("general", description="Domain area")
+
+
+@app.post("/v1/memory/search", dependencies=[Depends(verify_api_key)])
+async def memory_search(req: MemorySearchRequest):
+    """Search memory for past solutions and mistakes."""
+    team = get_team()
+    memory = team._memory if hasattr(team, '_memory') and team._memory else None
+    if not memory:
+        from ai_dev_team.memory import MemorySystem
+        memory = MemorySystem()
+
+    results = {"solutions": [], "mistakes": []}
+
+    if req.search_type in ("solutions", "all"):
+        solutions = await memory.find_solution_patterns(req.query, limit=req.limit)
+        results["solutions"] = [
+            {"problem": s.problem_pattern, "steps": s.solution_steps,
+             "success_rate": s.success_rate, "tags": s.tags}
+            for s in solutions
+        ]
+
+    if req.search_type in ("mistakes", "all"):
+        mistakes = await memory.find_similar_mistakes({"query": req.query}, limit=req.limit)
+        results["mistakes"] = [
+            {"description": m.description, "type": m.mistake_type,
+             "severity": m.severity, "prevention": m.prevention_strategy}
+            for m in mistakes
+        ]
+
+    return results
+
+
+@app.post("/v1/memory/store", dependencies=[Depends(verify_api_key)])
+async def memory_store(req: MemoryStoreRequest):
+    """Store a solution or mistake in memory."""
+    team = get_team()
+    memory = team._memory if hasattr(team, '_memory') and team._memory else None
+    if not memory:
+        from ai_dev_team.memory import MemorySystem
+        memory = MemorySystem()
+
+    if req.type == "solution":
+        solution_id = await memory.capture_solution(
+            problem_pattern=req.problem,
+            solution_steps=req.solution_steps,
+            success_rate=1.0,
+            tags=req.tags,
+        )
+        return {"stored": "solution", "id": solution_id, "problem": req.problem}
+    elif req.type == "mistake":
+        from ai_dev_team.memory.system import MistakeType
+        type_map = {t.value: t for t in MistakeType}
+        mt = type_map.get(req.mistake_type, MistakeType.CODE_ERROR)
+        mistake_id = await memory.capture_mistake(
+            mistake_type=mt,
+            description=req.description,
+            context={"source": "api"},
+            severity=req.severity,
+            prevention_strategy=req.prevention,
+        )
+        return {"stored": "mistake", "id": mistake_id, "description": req.description}
+    else:
+        raise HTTPException(status_code=400, detail="type must be 'solution' or 'mistake'")
+
+
+@app.get("/v1/memory/stats", dependencies=[Depends(verify_api_key)])
+async def memory_stats():
+    """Get memory system statistics."""
+    team = get_team()
+    memory = team._memory if hasattr(team, '_memory') and team._memory else None
+    if not memory:
+        from ai_dev_team.memory import MemorySystem
+        memory = MemorySystem()
+    return memory.get_statistics()
+
+
+# ── Cost Endpoints ──────────────────────────────────────────────────
+
+@app.get("/v1/costs", dependencies=[Depends(verify_api_key)])
+async def costs():
+    """Get cost tracking report."""
+    from ai_dev_team.routing.cost_tracker import get_cost_tracker
+    ct = get_cost_tracker()
+    return {
+        "statistics": ct.get_statistics(),
+        "daily": ct.get_daily_report(),
+        "budget": ct.get_budget_status(),
+        "per_model": ct.get_model_costs(),
+    }
+
+
+# ── Teach Endpoint ──────────────────────────────────────────────────
+
+@app.post("/v1/teach", dependencies=[Depends(verify_api_key)])
+async def teach(req: TeachRequest):
+    """Teach the AI team new knowledge."""
+    from ai_dev_team.knowledge import TeachingSystem
+    teacher = TeachingSystem()
+    result = await teacher.teach(topic=req.topic, content=req.content, domain=req.domain)
+    return {"taught": True, "topic": req.topic, "domain": req.domain, "result": result}
+
+
+# ── Verify Code Endpoint ───────────────────────────────────────────
+
+class VerifyCodeRequest(BaseModel):
+    code: str = Field(..., description="Code to validate")
+    language: str = Field("", description="Language (auto-detect if empty)")
+
+@app.post("/v1/verify", dependencies=[Depends(verify_api_key)])
+async def verify_code(req: VerifyCodeRequest):
+    """Validate code for syntax errors, security issues, and lint warnings."""
+    from ai_dev_team.validation.code_validator import CodeValidator
+    validator = CodeValidator()
+    result = validator.validate(req.code, language=req.language or None)
+    return {
+        "valid": result.valid,
+        "language": result.language,
+        "errors": [str(e) for e in result.errors],
+        "warnings": [str(w) for w in result.warnings],
+        "suggestions": result.suggestions,
+    }
+
+
 # ── Coding Agent Endpoints ───────────────────────────────────────────
 
 from products.fred_api.coding_endpoints import router as coding_router

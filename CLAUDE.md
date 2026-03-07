@@ -12,15 +12,24 @@ Renamed from FredAI on 2026-03-06. Repo: `TheGringo-ai/ElGringo`.
 - **Coding Agent**: `products/fred_api/coding_endpoints.py` — `/v1/code/*` endpoints
 - **MCP Server**: `mcp_server.py` — Claude Code integration (24 tools, FastMCP + HTTP/local hybrid)
 
-## Key Endpoints
+## Key Endpoints (18 total)
 | Endpoint | What |
 |----------|------|
 | `POST /v1/collaborate` | Multi-agent collaboration |
 | `POST /v1/ask` | Single-agent Q&A |
+| `POST /v1/stream` | SSE streaming from single agent |
 | `POST /v1/code/task` | Autonomous coding (read → edit → test → commit) |
 | `POST /v1/code/review` | Multi-agent code review |
 | `POST /v1/code/plan` | Dry-run planning |
 | `GET /v1/code/project-info` | Project structure |
+| `POST /v1/memory/search` | Search past solutions/mistakes |
+| `POST /v1/memory/store` | Store solution or mistake |
+| `GET /v1/memory/stats` | Memory system statistics |
+| `GET /v1/costs` | Cost tracking report |
+| `POST /v1/verify` | Code validation (syntax + security) |
+| `POST /v1/teach` | Teach AI team new knowledge |
+| `GET /v1/agents` | List available agents |
+| `GET /v1/health` | Health check |
 
 ## Deploy
 ```bash

@@ -3,7 +3,7 @@ Tests for Fred API endpoints
 """
 
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch
 
 # Import the app for testing
 try:

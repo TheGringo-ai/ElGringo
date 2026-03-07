@@ -506,7 +506,7 @@ def elgringo_debate(prompt: str, context: str = "", mode: str = "debate") -> str
 
 # ── Local Dev Tools (no API needed) ────────────────────────────────
 
-def _get_memory() -> "MemorySystem":
+def _get_memory():
     """Lazy-load memory system."""
     from ai_dev_team.memory import MemorySystem
     if not hasattr(_get_memory, "_instance"):
@@ -642,7 +642,7 @@ def ai_team_costs() -> str:
 
     ct = get_cost_tracker()
     stats = ct.get_statistics()
-    daily = ct.get_daily_report()
+    ct.get_daily_report()
     budget = ct.get_budget_status()
 
     parts = [
@@ -692,7 +692,7 @@ def verify_code(code: str, language: str = "") -> str:
             parts.append(f"- {warn}")
 
     if result.suggestions:
-        parts.append(f"\n### Suggestions")
+        parts.append("\n### Suggestions")
         for sug in result.suggestions[:5]:
             parts.append(f"- {sug}")
 

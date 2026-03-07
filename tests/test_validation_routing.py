@@ -12,7 +12,6 @@ from ai_dev_team.validation.code_validator import (
 from ai_dev_team.routing import (
     TaskRouter,
     TaskType,
-    TaskClassification,
     CostOptimizer,
     ModelTier,
 )
@@ -374,7 +373,7 @@ class TestCostOptimizer:
         assert estimate.estimated_cost == 0.0
 
     def test_record_usage(self, optimizer):
-        estimate = optimizer.record_usage("gpt-4o", 1000, 2000)
+        optimizer.record_usage("gpt-4o", 1000, 2000)
         assert optimizer._daily_spent > 0
         assert optimizer._monthly_spent > 0
         assert len(optimizer._request_log) == 1

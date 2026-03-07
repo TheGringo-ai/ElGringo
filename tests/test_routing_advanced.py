@@ -5,7 +5,6 @@ Tests for advanced routing: PerformanceTracker, DecisionLogger, CostTracker
 import pytest
 from ai_dev_team.routing.performance_tracker import (
     PerformanceTracker,
-    TaskOutcome,
     ModelPerformance,
     get_performance_tracker,
 )

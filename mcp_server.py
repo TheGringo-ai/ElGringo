@@ -20,32 +20,53 @@ Setup in ~/.claude/mcp.json or project .mcp.json:
 """
 
 import json
+import logging
 import os
+import sys
+import urllib.parse
 import urllib.request
 import urllib.error
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stderr)],
+)
+logger = logging.getLogger("el-gringo-mcp")
+
 mcp = FastMCP("el-gringo")
 
 BASE_URL = os.environ.get("ELGRINGO_API_URL", "https://ai.chatterfix.com")
 API_KEY = os.environ.get("ELGRINGO_API_KEY", "")
 
+if not API_KEY:
+    logger.warning("ELGRINGO_API_KEY not set — API calls will fail. Set it in your MCP config.")
 
-def _api(method: str, path: str, body: Optional[dict] = None) -> dict:
+
+def _api(method: str, path: str, body: Optional[dict] = None, params: Optional[dict] = None) -> dict:
     """Make an API call to El Gringo. Uses urllib so we have zero extra deps."""
     url = f"{BASE_URL}{path}"
+    if params:
+        url = f"{url}?{urllib.parse.urlencode(params)}"
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     data = json.dumps(body).encode() if body else None
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    logger.info(f"{method} {path}")
     try:
         with urllib.request.urlopen(req, timeout=300) as resp:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         error_body = e.read().decode() if e.fp else str(e)
+        logger.error(f"HTTP {e.code} from {path}: {error_body[:200]}")
         return {"error": f"HTTP {e.code}: {error_body}"}
+    except urllib.error.URLError as e:
+        logger.error(f"Connection failed for {path}: {e.reason}")
+        return {"error": f"Connection failed: {e.reason}"}
     except Exception as e:
+        logger.error(f"Unexpected error for {path}: {e}")
         return {"error": str(e)}
 
 
@@ -146,7 +167,9 @@ def elgringo_review(
         focus: Review focus — bugs, security, performance, quality
         glob_pattern: File pattern to review (e.g. **/*.py, routers/*.py)
     """
-    result = _api("POST", f"/v1/code/review?project_path={project_path}&focus={focus}&glob_pattern={glob_pattern}", None)
+    result = _api("POST", "/v1/code/review", params={
+        "project_path": project_path, "focus": focus, "glob_pattern": glob_pattern,
+    })
     if "error" in result:
         return f"Error: {result['error']}"
     agents = ", ".join(result.get("agents_used", []))
@@ -196,7 +219,7 @@ def elgringo_project_info(project_path: str) -> str:
     Args:
         project_path: Absolute path to the project on the server
     """
-    result = _api("GET", f"/v1/code/project-info?project_path={project_path}")
+    result = _api("GET", "/v1/code/project-info", params={"project_path": project_path})
     if "error" in result:
         return f"Error: {result['error']}"
     langs = result.get("languages", {})

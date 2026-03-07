@@ -538,7 +538,11 @@ class AIDevTeam:
         # Auto-benchmark check (once per session, non-blocking)
         if not self._benchmark_checked:
             self._benchmark_checked = True
-            asyncio.ensure_future(self._auto_benchmark_if_stale())
+            task = asyncio.ensure_future(self._auto_benchmark_if_stale())
+            task.add_done_callback(
+                lambda t: logger.error(f"Auto-benchmark failed: {t.exception()}")
+                if t.exception() else None
+            )
 
         # Use task router for intelligent agent selection and mode
         classification = self._task_router.classify(prompt, context)
@@ -1342,7 +1346,11 @@ class AIDevTeam:
             await asyncio.gather(*tasks)
             await queue.put(None)  # Sentinel
 
-        asyncio.ensure_future(run_all())
+        streaming_task = asyncio.ensure_future(run_all())
+        streaming_task.add_done_callback(
+            lambda t: logger.error(f"Streaming collaboration failed: {t.exception()}")
+            if t.exception() else None
+        )
 
         while True:
             event = await queue.get()

@@ -504,5 +504,269 @@ def elgringo_debate(prompt: str, context: str = "", mode: str = "debate") -> str
     }))
 
 
+# ── Local Dev Tools (no API needed) ────────────────────────────────
+
+def _get_memory() -> "MemorySystem":
+    """Lazy-load memory system."""
+    from ai_dev_team.memory import MemorySystem
+    if not hasattr(_get_memory, "_instance"):
+        _get_memory._instance = MemorySystem()
+    return _get_memory._instance
+
+
+@mcp.tool()
+def memory_search(query: str, search_type: str = "all") -> str:
+    """
+    Search the AI team's memory for past solutions and mistakes.
+    Helps avoid repeating errors and find proven patterns.
+
+    Args:
+        query: Search query (e.g. "database connection pooling", "auth bug")
+        search_type: What to search — "solutions", "mistakes", or "all"
+    """
+    import asyncio
+    memory = _get_memory()
+    parts = []
+
+    if search_type in ("solutions", "all"):
+        solutions = asyncio.get_event_loop().run_until_complete(
+            memory.find_solution_patterns(query, limit=5)
+        ) if asyncio.get_event_loop().is_running() else []
+        # Fallback for non-async context
+        if not solutions:
+            try:
+                loop = asyncio.new_event_loop()
+                solutions = loop.run_until_complete(memory.find_solution_patterns(query, limit=5))
+                loop.close()
+            except Exception:
+                solutions = []
+        if solutions:
+            parts.append(f"## Solutions ({len(solutions)} found)")
+            for s in solutions:
+                steps = "; ".join(s.solution_steps[:3])
+                parts.append(f"- **{s.problem_pattern}** (success: {s.success_rate:.0%})\n  Steps: {steps}")
+        else:
+            parts.append("No matching solutions found.")
+
+    if search_type in ("mistakes", "all"):
+        mistakes = []
+        try:
+            loop = asyncio.new_event_loop()
+            mistakes = loop.run_until_complete(memory.find_similar_mistakes({"query": query}, limit=5))
+            loop.close()
+        except Exception:
+            pass
+        if mistakes:
+            parts.append(f"\n## Mistakes ({len(mistakes)} found)")
+            for m in mistakes:
+                parts.append(f"- [{m.severity}] **{m.description}**\n  Prevention: {m.prevention_strategy}")
+        elif search_type == "mistakes":
+            parts.append("No matching mistakes found.")
+
+    stats = memory.get_statistics()
+    parts.append(f"\n_Memory: {stats.get('total_solutions', 0)} solutions, {stats.get('total_mistakes', 0)} mistakes_")
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def memory_store_solution(problem: str, solution_steps: str, tags: str = "") -> str:
+    """
+    Store a solution pattern so the AI team remembers it for next time.
+
+    Args:
+        problem: The problem pattern (e.g. "FastAPI CORS not working")
+        solution_steps: Steps that fixed it, separated by newlines or semicolons
+        tags: Comma-separated tags (e.g. "fastapi, cors, python")
+    """
+    import asyncio
+    memory = _get_memory()
+    steps = [s.strip() for s in solution_steps.replace(";", "\n").split("\n") if s.strip()]
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+
+    try:
+        loop = asyncio.new_event_loop()
+        solution_id = loop.run_until_complete(memory.capture_solution(
+            problem_pattern=problem,
+            solution_steps=steps,
+            success_rate=1.0,
+            tags=tag_list,
+        ))
+        loop.close()
+        return f"Stored solution `{solution_id}` for: {problem}\nSteps: {len(steps)} | Tags: {', '.join(tag_list) or 'none'}"
+    except Exception as e:
+        return f"Error storing solution: {e}"
+
+
+@mcp.tool()
+def memory_store_mistake(description: str, mistake_type: str = "code_error",
+                         severity: str = "medium", prevention: str = "") -> str:
+    """
+    Record a mistake so the AI team never repeats it.
+
+    Args:
+        description: What went wrong (e.g. "Used shell=True with user input")
+        mistake_type: Type — code_error, security_vulnerability, performance_issue,
+                      architecture_flaw, deployment_failure, logic_error, integration_issue
+        severity: low, medium, high, critical
+        prevention: How to prevent this in the future
+    """
+    import asyncio
+    from ai_dev_team.memory.system import MistakeType
+
+    memory = _get_memory()
+    type_map = {t.value: t for t in MistakeType}
+    mt = type_map.get(mistake_type, MistakeType.CODE_ERROR)
+
+    try:
+        loop = asyncio.new_event_loop()
+        mistake_id = loop.run_until_complete(memory.capture_mistake(
+            mistake_type=mt,
+            description=description,
+            context={"source": "mcp_tool"},
+            severity=severity,
+            prevention_strategy=prevention,
+        ))
+        loop.close()
+        return f"Recorded mistake `{mistake_id}`: [{severity}] {description}"
+    except Exception as e:
+        return f"Error storing mistake: {e}"
+
+
+@mcp.tool()
+def ai_team_costs() -> str:
+    """
+    Show AI team cost report — daily, weekly, and per-model spending breakdown.
+    Helps track API usage and stay within budget.
+    """
+    from ai_dev_team.routing.cost_tracker import get_cost_tracker
+
+    ct = get_cost_tracker()
+    stats = ct.get_statistics()
+    daily = ct.get_daily_report()
+    budget = ct.get_budget_status()
+
+    parts = [
+        "## AI Team Costs",
+        f"Total requests: {stats.get('total_requests', 0)}",
+        f"Total cost: ${stats.get('total_cost', 0):.4f}",
+        "",
+        "### Budget",
+        f"Daily: ${budget.get('daily_spent', 0):.4f} / ${budget.get('daily_limit', 10):.2f}",
+        f"Monthly: ${budget.get('monthly_spent', 0):.4f} / ${budget.get('monthly_limit', 100):.2f}",
+    ]
+
+    model_costs = ct.get_model_costs()
+    if model_costs:
+        parts.append("\n### Per Model")
+        for model, data in sorted(model_costs.items(), key=lambda x: x[1].get("total_cost", 0), reverse=True):
+            parts.append(f"- {model}: ${data.get('total_cost', 0):.4f} ({data.get('total_requests', 0)} calls)")
+
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def verify_code(code: str, language: str = "") -> str:
+    """
+    Validate a code snippet for syntax errors, security issues, and lint warnings.
+    Returns structured feedback with fix suggestions.
+
+    Args:
+        code: The code to validate
+        language: Programming language (auto-detected if empty). Options: python, javascript, typescript
+    """
+    from ai_dev_team.validation.code_validator import CodeValidator
+
+    validator = CodeValidator()
+    result = validator.validate(code, language=language or None)
+
+    parts = [f"Language: {result.language}", f"Valid: {'yes' if result.valid else 'NO'}"]
+
+    if result.errors:
+        parts.append(f"\n### Errors ({len(result.errors)})")
+        for err in result.errors[:10]:
+            parts.append(f"- {err}")
+
+    if result.warnings:
+        parts.append(f"\n### Warnings ({len(result.warnings)})")
+        for warn in result.warnings[:10]:
+            parts.append(f"- {warn}")
+
+    if result.suggestions:
+        parts.append(f"\n### Suggestions")
+        for sug in result.suggestions[:5]:
+            parts.append(f"- {sug}")
+
+    if not result.errors and not result.warnings:
+        parts.append("\nNo issues found.")
+
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def fredfix_scan(project_path: str, language: str = "", severity: str = "medium") -> str:
+    """
+    Scan a project directory for security vulnerabilities, bugs, and code issues.
+    Uses pattern matching and the AI team's knowledge of common mistakes.
+
+    Args:
+        project_path: Absolute path to the project or file to scan
+        language: Filter by language (empty = auto-detect). Options: python, javascript, typescript, go, rust, java
+        severity: Minimum severity to report — low, medium, high, critical
+    """
+    from ai_dev_team.fredfix import FredFix
+    import asyncio
+
+    fixer = FredFix()
+
+    try:
+        loop = asyncio.new_event_loop()
+        langs = [language] if language else None
+        issues = loop.run_until_complete(fixer.scan_project(project_path, languages=langs))
+        loop.close()
+    except Exception as e:
+        return f"Error scanning: {e}"
+
+    severity_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+    min_sev = severity_order.get(severity, 2)
+    filtered = [i for i in issues if severity_order.get(i.severity, 0) >= min_sev]
+
+    if not filtered:
+        return f"No issues found at severity >= {severity} in {project_path}"
+
+    parts = [f"## FredFix Scan: {len(filtered)} issues found\n"]
+    for issue in filtered[:20]:
+        parts.append(f"- [{issue.severity.upper()}] `{issue.file_path}` — {issue.description}")
+        if issue.suggested_fix:
+            parts.append(f"  Fix: {issue.suggested_fix}")
+
+    if len(filtered) > 20:
+        parts.append(f"\n... and {len(filtered) - 20} more issues")
+
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def memory_stats() -> str:
+    """
+    Get memory system statistics — total interactions, solutions, mistakes,
+    and success rates. Quick health check for the learning system.
+    """
+    memory = _get_memory()
+    stats = memory.get_statistics()
+
+    parts = [
+        "## Memory System Stats",
+        f"Total interactions: {stats.get('total_interactions', 0)}",
+        f"Total solutions: {stats.get('total_solutions', 0)}",
+        f"Total mistakes: {stats.get('total_mistakes', 0)}",
+        f"Success rate: {stats.get('success_rate', 0):.0%}",
+    ]
+
+    if stats.get("top_tags"):
+        parts.append(f"\nTop tags: {', '.join(stats['top_tags'][:10])}")
+
+    return "\n".join(parts)
+
+
 if __name__ == "__main__":
     mcp.run()

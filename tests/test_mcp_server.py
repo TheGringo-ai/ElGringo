@@ -22,6 +22,9 @@ try:
         ai_team_architect, ai_team_brainstorm, ai_team_security_audit,
         elgringo_collaborate, elgringo_code_task, elgringo_review,
         elgringo_plan, elgringo_project_info, elgringo_ask,
+        elgringo_stream, elgringo_debate,
+        memory_search, memory_store_solution, memory_store_mistake,
+        memory_stats, ai_team_costs, verify_code, fredfix_scan,
     )
     MCP_AVAILABLE = True
 except ImportError:
@@ -55,6 +58,18 @@ class TestToolDefinitions:
         assert callable(elgringo_plan)
         assert callable(elgringo_project_info)
         assert callable(elgringo_ask)
+        assert callable(elgringo_stream)
+        assert callable(elgringo_debate)
+
+    def test_dev_tools_exist(self):
+        """Dev-focused local tools must exist"""
+        assert callable(memory_search)
+        assert callable(memory_store_solution)
+        assert callable(memory_store_mistake)
+        assert callable(memory_stats)
+        assert callable(ai_team_costs)
+        assert callable(verify_code)
+        assert callable(fredfix_scan)
 
     def test_response_formatters_exist(self):
         """Response formatters must exist"""
@@ -100,6 +115,48 @@ class TestResponseFormatters:
         })
         assert "5 files reviewed" in result
         assert "No critical issues" in result
+
+
+@pytest.mark.skipif(not MCP_AVAILABLE, reason="MCP server module not available")
+class TestVerifyCode:
+    """Test verify_code tool"""
+
+    def test_valid_python(self):
+        result = verify_code("x = 1\ny = 2\nprint(x + y)\n", language="python")
+        assert "python" in result.lower()
+
+    def test_security_warning_eval(self):
+        result = verify_code("result = eval(user_input)", language="python")
+        assert "eval" in result.lower() or "security" in result.lower()
+
+    def test_auto_detect_language(self):
+        result = verify_code("import os\ndef foo():\n    pass\n")
+        assert "python" in result.lower()
+
+    def test_empty_code(self):
+        result = verify_code("")
+        assert "valid" in result.lower() or "no issues" in result.lower()
+
+
+@pytest.mark.skipif(not MCP_AVAILABLE, reason="MCP server module not available")
+class TestMemoryStats:
+    """Test memory_stats tool"""
+
+    def test_returns_stats(self):
+        result = memory_stats()
+        assert "Memory System" in result
+        assert "solutions" in result.lower()
+        assert "mistakes" in result.lower()
+
+
+@pytest.mark.skipif(not MCP_AVAILABLE, reason="MCP server module not available")
+class TestAiTeamCosts:
+    """Test ai_team_costs tool"""
+
+    def test_returns_cost_report(self):
+        result = ai_team_costs()
+        assert "Costs" in result
+        assert "Budget" in result
 
 
 class TestMemorySystem:

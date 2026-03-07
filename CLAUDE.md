@@ -10,7 +10,7 @@ Renamed from FredAI on 2026-03-06. Repo: `TheGringo-ai/ElGringo`.
 - **Tools**: `ai_dev_team/tools/` — filesystem, shell, git, browser, docker, deploy
 - **API**: `products/fred_api/server.py` — FastAPI at port 8080, `/v1/*` endpoints
 - **Coding Agent**: `products/fred_api/coding_endpoints.py` — `/v1/code/*` endpoints
-- **MCP Server**: `mcp_server.py` — Claude Code integration (15 tools, FastMCP + HTTP client)
+- **MCP Server**: `mcp_server.py` — Claude Code integration (24 tools, FastMCP + HTTP/local hybrid)
 
 ## Key Endpoints
 | Endpoint | What |

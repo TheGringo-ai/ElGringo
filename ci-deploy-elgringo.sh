@@ -461,13 +461,9 @@ location /assistant/api/ {
 NGINX_EOF
 echo "  Nginx Fred Assistant config written to $NGINX_ASST_CONF"
 
-# Update nginx for Landing Page + Auth
+# Update nginx for Landing Page (auth + health + webhook handled in main config)
 NGINX_LANDING_CONF=/etc/nginx/sites-available/elgringo-landing
 cat > "$NGINX_LANDING_CONF" << 'NGINX_EOF'
-# --- Password protection (domain-wide) ---
-auth_basic "ElGringo Platform";
-auth_basic_user_file /etc/nginx/.htpasswd;
-
 # --- Landing page ---
 location = / {
     root /opt/elgringo/products/landing;
@@ -476,26 +472,8 @@ location = / {
 location /landing/ {
     alias /opt/elgringo/products/landing/;
 }
-
-# --- Exempt health checks from auth ---
-location = /health {
-    auth_basic off;
-    proxy_pass http://127.0.0.1:8080/v1/health;
-    proxy_set_header Host $host;
-}
-
-# --- Exempt GitHub webhook from auth ---
-location = /webhook {
-    auth_basic off;
-    proxy_pass http://127.0.0.1:8001/webhook;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_read_timeout 120s;
-}
 NGINX_EOF
-echo "  Nginx landing + auth config written to $NGINX_LANDING_CONF"
+echo "  Nginx landing config written to $NGINX_LANDING_CONF"
 
 # Auto-include nginx snippets in main server block if not already there
 NGINX_MAIN="/etc/nginx/sites-available/ai.chatterfix.com"

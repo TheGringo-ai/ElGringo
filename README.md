@@ -5,140 +5,167 @@
 <h1 align="center">El Gringo</h1>
 
 <p align="center">
+  <a href="https://pypi.org/project/el-gringo/"><img src="https://img.shields.io/pypi/v/el-gringo.svg" alt="PyPI"></a>
   <a href="https://github.com/TheGringo-ai/ElGringo/actions/workflows/ci.yml"><img src="https://github.com/TheGringo-ai/ElGringo/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9+-blue.svg" alt="Python 3.9+"></a>
 </p>
 
-<p align="center"><strong>Multi-agent AI orchestration platform that makes your AI models work as a team.</strong></p>
+<p align="center"><strong>Autonomous AI development agent. Give it a task — it plans, builds, tests, and fixes.</strong></p>
 
-El Gringo connects ChatGPT, Gemini, Grok, Claude, Ollama, and LlamaCloud into a single intelligent workforce. Instead of chatting with one model at a time, El Gringo routes tasks to the right model, runs them in parallel, synthesizes their responses, learns from every interaction, and never repeats mistakes.
+---
 
-Think of it as the operating system layer between AI models and real-world work.
-
-### Try it in 30 seconds (just Ollama, no API keys)
+## The Demo
 
 ```bash
+$ elgringo build "a FastAPI REST API with JWT auth and user management"
+
+============================================================
+  EL GRINGO — AUTONOMOUS BUILD
+============================================================
+
+  a FastAPI REST API with JWT auth and user management
+
+  Agents: chatgpt-coder, gemini-creative, grok-reasoner
+  Planning...
+
+  [1] Decomposing task into subtasks
+  [2] Generating project structure
+  [3] Creating database schema and models
+  [4] Writing API routes and auth middleware
+  [5] Generating test suite
+  [6] Running tests
+  [7] Fixing 2 failing tests
+  [8] Re-running tests — all passing
+
+────────────────────────────────────────────────────────────
+  BUILD COMPLETE
+────────────────────────────────────────────────────────────
+
+  Time:       34.2s
+  Confidence: 92%
+  Subtasks:   8/8 completed
+  Corrections: 1
+```
+
+One command. Multiple AI agents. Working code.
+
+---
+
+## Install
+
+```bash
+pip install el-gringo
+```
+
+Or from source:
+```bash
 git clone https://github.com/TheGringo-ai/ElGringo.git && cd ElGringo
-pip install -e .
+pip install -e ".[all]"
+```
+
+## Configure
+
+```bash
+# Add at least one API key
+export OPENAI_API_KEY=sk-...    # ChatGPT
+export GEMINI_API_KEY=...       # Gemini
+export XAI_API_KEY=xai-...      # Grok
+
+# Or use local models (no API keys needed)
 ollama pull llama3.2:3b
-python examples/demo.py
+```
+
+## Run
+
+```bash
+# Autonomous build
+elgringo build "a CLI tool that converts CSV to JSON"
+
+# Interactive mode (60+ commands)
+elgringo
+
+# Single task
+elgringo "Review this code for security issues"
+
+# MCP server (for Claude Code / Cursor)
+python elgringo/server/mcp_server.py
 ```
 
 ---
 
-## What It Does
+## How It Works
 
 ```
-You: "Review this auth system for security issues"
-
-El Gringo:
-  -> Routes to SecurityAuditor + Grok Reasoner + ChatGPT (parallel)
-  -> Each agent analyzes independently
-  -> Weighted consensus synthesizes findings
-  -> Memory system stores the solution pattern
-  -> Next time a similar task appears, it's faster and smarter
+Task: "Build a REST API with auth"
+                |
+        +-------+-------+
+        |  Orchestrator  |  Routes to best agents, manages the loop
+        +--+----+----+--+
+           |    |    |
+      +----+ +--+--+ +----+
+      | GPT | |Gemini| |Grok |   3+ agents work in parallel
+      +----+ +-----+ +----+
+           |    |    |
+        +--+----+----+--+
+        |   Consensus    |  Weighted synthesis of responses
+        +-------+-------+
+                |
+        +-------+-------+
+        |  Self-Corrector |  Detects failures, retries with new strategy
+        +-------+-------+
+                |
+        +-------+-------+
+        |    Memory      |  Stores solutions, prevents repeat mistakes
+        +---------------+
 ```
 
-## Architecture
+The orchestrator doesn't just call one model. It:
 
-```
-                        +------------------+
-                        |    El Gringo CLI    |
-                        |   MCP Server     |
-                        |   REST API       |
-                        |   Gradio UI      |
-                        +--------+---------+
-                                 |
-                    +------------+------------+
-                    |      Orchestrator       |
-                    |  (8 collaboration modes)|
-                    +--+-----+-----+-----+---+
-                       |     |     |     |
-              +--------+  +--+--+ +--+--+ +--------+
-              |ChatGPT |  |Gemini| |Grok | |Ollama  |
-              |  GPT-4 |  | 2.5  | |x2   | |Local   |
-              +--------+  +------+ +-----+ +--------+
-                    |         |        |         |
-                    +----+----+--------+---------+
-                         |
-                  +------+------+
-                  |   Memory    |
-                  | System      |
-                  | (Firestore  |
-                  |  + Local)   |
-                  +------+------+
-                         |
-              +----------+----------+
-              |    Code RAG         |
-              | (Solution Patterns) |
-              +---------------------+
-```
+1. **Plans** — TaskPlanner decomposes goals into dependency-aware subtasks
+2. **Routes** — TaskRouter picks the best agent for each subtask (based on past performance)
+3. **Executes** — GraphExecutor runs subtasks in parallel batches
+4. **Validates** — CodeExecutor sandboxes and tests generated code
+5. **Corrects** — SelfCorrector retries failures with 7 adaptive strategies
+6. **Learns** — SessionLearner records outcomes so the next build is smarter
+
+---
 
 ## Key Features
 
+### Autonomous Build Loop
+Plan, generate, test, fix, improve — repeat until done. Not just code generation. Actual autonomous development with self-correction.
+
 ### Multi-Agent Collaboration
-- **8 modes**: parallel, sequential, consensus, debate, peer review, brainstorming, devil's advocate, expert panel
-- **Intelligent routing**: tasks go to the best model based on type, complexity, and cost
-- **Weighted synthesis**: responses are merged using confidence scores, not just concatenated
-
-### Multi-Turn Sessions
-- **Conversation continuity**: agents remember what was discussed across calls using session IDs
-- **Auto-summarization**: long sessions get compressed so agents stay focused
-- **Persistent**: sessions survive restarts, stored on disk
-
-### Custom Personas
-- Define your own specialist agents with custom system prompts and behavior
-- Backed by any provider (ChatGPT, Gemini, Grok, Ollama)
-- Auto-register on startup — create once, use everywhere
-
-### GitHub PR Review
-- `ai_team_review_pr 123` — multi-agent PR review with structured output
-- Agents analyze from security, performance, and architecture angles
-- Returns severity-ranked findings with fix suggestions
-
-### Intelligence Reports
-- Every collaborate() call shows what's happening behind the scenes
-- Routing decisions, memory injections, agent perspectives, cost breakdown
-- Agreement/disagreement detection between agents
+8 modes: parallel, sequential, consensus, debate, peer review, brainstorming, devil's advocate, expert panel. Responses are weighted by confidence, not concatenated.
 
 ### Smart Memory
-- Every interaction is captured, scored, and searchable via TF-IDF
-- **Tiered storage**: hot (recent) / warm (proven valuable) / cold (compressed)
-- **Consolidation engine**: auto-deduplicates solutions, prunes trivial entries, compresses old data
-- **Mistake prevention**: past failures are injected into prompts before they happen again
-- **Auto-injection**: stored solution patterns and project conventions are automatically injected into every collaborate call — the team learns your codebase's rules and follows them
-- **Quality feedback loop**: rate outcomes (thumbs up/down), patterns gain or lose quality score, low-quality patterns auto-decay and prune
-- **Project-scoped memory**: pass `project: "my-app"` to pull only relevant patterns for that project
-- Dual persistence: local JSON + optional Firestore for cross-session memory
+Every interaction is captured, scored, and searchable. Tiered storage (hot/warm/cold). Mistake prevention injects past failures into prompts before they happen again. Memory consolidation auto-deduplicates and prunes.
 
 ### Code RAG
-- Index any codebase for retrieval-augmented generation
-- Past solutions from memory are automatically included in context
-- Pattern detection for auth, API, database, and more
+Hybrid TF-IDF + MLX vector embeddings. Indexes your codebase. Past solutions are automatically included in context. The agents understand your project, not just the current file.
 
-### FredFix Security Scanner
-- Scans entire codebases for security vulnerabilities, bugs, and performance issues
-- Categorizes findings by severity (critical, high, medium, low)
-- Auto-fix mode applies safe patches with rollback support
-- Stores findings in memory to prevent reintroduction
+### Sandboxed Execution
+CodeExecutor with subprocess and Docker modes. Resource limits, security validation, AST-level blocking of dangerous operations. Agents can run code safely.
+
+### Tool System
+18 tools (filesystem, git, docker, deploy, database, browser, k8s, terraform, GCP). Full permission system with risk levels. JSON Schema for every tool, compatible with OpenAI and Anthropic function calling.
 
 ### Specialist Agents
-- **SecurityAuditor** - OWASP/CWE pattern scanning, secret detection
-- **CodeReviewer** - complexity analysis, style checking, issue categorization
-- **SolutionArchitect** - ADR generation, architecture pattern detection
+SecurityAuditor (OWASP/CWE scanning), CodeReviewer (complexity analysis), SolutionArchitect (ADR generation, pattern detection).
 
 ### Apple Silicon Optimization
-- Smart routing between local MLX models and cloud APIs
-- GPU memory detection for optimal model selection
-- Core ML integration for on-device inference
+Smart routing between local MLX models and cloud APIs. GPU memory detection for optimal model selection.
 
 ### MCP Server (24 tools)
-Works directly with Claude Code, Cursor, or any MCP-compatible client:
+Works with Claude Code, Cursor, or any MCP client. Multi-agent collaboration, code review, security audit, memory search, PR review, personas, benchmarking, cost tracking — all as MCP tools.
+
+<details>
+<summary>Full MCP tools list</summary>
 
 | Tool | What it does |
 |------|-------------|
-| `ai_team_collaborate` | Full multi-agent collaboration (auto-injects memory patterns) |
+| `ai_team_collaborate` | Full multi-agent collaboration |
 | `ai_team_ask` | Quick single-agent question |
 | `ai_team_review` | Multi-agent code review |
 | `ai_team_security_audit` | Security vulnerability scan |
@@ -150,69 +177,65 @@ Works directly with Claude Code, Cursor, or any MCP-compatible client:
 | `memory_search` | Search past interactions |
 | `memory_store_mistake` | Record a mistake pattern |
 | `memory_store_solution` | Record a solution pattern |
-| `memory_curate` | Deduplicate and clean memory entries |
+| `memory_curate` | Deduplicate and clean memory |
 | `ai_team_teach` | Teach the team new knowledge |
 | `ai_team_insights` | Get learning analytics |
 | `ai_team_prompts` | Browse prompt templates |
-| `ai_team_status` | Team health, stats, and live cost data |
-| `ai_team_costs` | Detailed cost reports (daily/weekly/monthly/per-model) |
-| `ai_team_benchmark` | Compare agents on standardized prompts, build routing table |
-| `ai_team_routing_table` | Show which agent is best for which task type |
-| `ai_team_rate` | Rate a collaboration outcome (thumbs up/down), triggers quality decay + prune |
-| `ai_team_quality_report` | Memory quality report — scores, top patterns, pruning stats |
-| `ai_team_sessions` | List, view, or delete multi-turn conversation sessions |
-| `ai_team_review_pr` | Multi-agent GitHub PR review (security, performance, architecture) |
-| `ai_team_create_persona` | Create custom agent personas with specialized knowledge |
-| `load_project_context` | Load project files and conventions for context-aware generation |
-| `verify_code` | Run syntax checks and build verification |
+| `ai_team_status` | Team health and stats |
+| `ai_team_costs` | Cost reports (daily/weekly/monthly) |
+| `ai_team_benchmark` | Compare agents, build routing table |
+| `ai_team_routing_table` | Best agent per task type |
+| `ai_team_rate` | Rate outcomes, triggers quality decay |
+| `ai_team_quality_report` | Memory quality scores and stats |
+| `ai_team_sessions` | Manage multi-turn sessions |
+| `ai_team_review_pr` | Multi-agent GitHub PR review |
+| `ai_team_create_persona` | Create custom agent personas |
+| `load_project_context` | Load project files for context |
+| `verify_code` | Syntax checks and build verification |
 
-## Quick Start
+</details>
 
-### Prerequisites
-- Python 3.9+
-- At least one API key (OpenAI, Google, xAI, or Ollama running locally)
+---
 
-### Install
+## Python API
 
-```bash
-git clone https://github.com/TheGringo-ai/ElGringo.git
-cd ElGringo
-pip install -e .
+```python
+from elgringo.orchestrator import AIDevTeam
+
+team = AIDevTeam(project_name="my-app", enable_memory=True)
+
+# Multi-agent collaboration
+result = await team.collaborate("Design a database schema for a blog")
+print(result.final_answer)
+print(result.confidence_score)  # 0.0-1.0
+print(result.participating_agents)  # ['chatgpt-coder', 'grok-reasoner']
+
+# Autonomous build (plan → execute → test → fix → learn)
+result = await team.build("Create a FastAPI app with user auth")
+
+# Different collaboration modes
+result = await team.collaborate("Is this code secure?", mode="consensus")
+result = await team.collaborate("How should we architect this?", mode="debate")
 ```
 
-### Configure
+## REST API
 
 ```bash
-cp .env.template .env
-# Add your API keys:
-#   OPENAI_API_KEY=sk-...
-#   GEMINI_API_KEY=...
-#   XAI_API_KEY=xai-...
+# Start the API server
+uvicorn products.fred_api.server:app --port 8080
+
+# Collaborate
+curl -X POST http://localhost:8080/v1/collaborate \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Review this auth system", "mode": "parallel"}'
+
+# Stream responses
+curl -X POST http://localhost:8080/v1/stream \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Explain this code"}'
 ```
 
-For local models (no API keys needed):
-```bash
-# Install Ollama: https://ollama.com
-ollama pull llama3.2:3b
-```
-
-### Run
-
-```bash
-# Interactive CLI
-fred
-
-# Quick demo (no API keys, just Ollama)
-python examples/demo.py
-
-# MCP Server (for Claude Code / Cursor)
-python elgringo/server/mcp_server.py
-
-# Gradio UI
-fred-studio
-```
-
-### MCP Integration
+## MCP Integration
 
 Add to your `.mcp.json`:
 ```json
@@ -231,65 +254,54 @@ Add to your `.mcp.json`:
 }
 ```
 
+---
+
 ## Project Structure
 
 ```
 ElGringo/
   elgringo/
     agents/          # ChatGPT, Gemini, Grok, Claude, Ollama, LlamaCloud, Specialists
-    cli/             # Interactive REPL
-    collaboration/   # Multi-agent engine, weighted consensus, streaming
-    core/            # Shared config, security, sessions, personas
-    memory/          # Tiered memory system, learning engine, mistake prevention
-    intelligence/    # Code RAG, embeddings, semantic analysis
-    routing/         # Task classification, cost optimization, performance tracking
     autonomous/      # Self-correction, task decomposition, session learning
-    apple/           # Apple Silicon routing, MLX inference, Core ML
-    knowledge/       # Domain knowledge bases, auto-learner, teaching system
-    server/          # MCP protocol server (24 tools), analytics middleware
-    tools/           # File, git, docker, deploy, database, browser tools
-    ui/              # Gradio web dashboard, studio, chat, command center
-    workflows/       # FredFix, parallel coding, app generator, dev consultant
-    orchestrator.py  # Core orchestration engine (2,400+ lines)
-  products/          # Standalone microservices (PR review bot, code audit, etc.)
+    cli/             # Interactive CLI (60+ commands)
+    collaboration/   # Multi-agent engine, weighted consensus
+    core/            # Shared config, security, sessions, personas
+    framework/       # ReAct agents, task planner, chain-of-thought, tool registry
+    knowledge/       # RAG system, auto-learner, teaching, domain knowledge
+    memory/          # Tiered memory, learning engine, mistake prevention
+    routing/         # Task classification, cost optimization, performance tracking
+    sandbox/         # Isolated code execution (subprocess + Docker)
+    server/          # MCP server (24 tools), REST API analytics
+    tools/           # 18 tools — file, git, docker, deploy, database, browser, k8s
+    ui/              # Gradio web UI, studio, chat, command center
+    workflows/       # FredFix scanner, parallel coding, app generator
+    orchestrator.py  # Core orchestration engine
+  products/          # Standalone microservices (PR bot, code audit, test gen, docs)
   examples/          # Demo scripts and usage examples
-  tests/             # 411 tests, all passing
+  tests/             # 440+ tests
   main.py            # Single entry point
 ```
 
 ## Stats
 
 - **69,000+** lines of Python across **149** modules
-- **6** AI providers supported (ChatGPT, Gemini 2.5 Flash, Grok, Claude, Ollama, LlamaCloud)
+- **6** AI providers (ChatGPT, Gemini, Grok, Claude, Ollama, LlamaCloud)
 - **8** collaboration modes
-- **24** MCP tools (sessions, PR review, personas, intelligence reports, cost tracking, benchmarking)
-- **3** specialist agents
-- **411** tests passing
-- **19** domain knowledge bases
-- **150+** solution patterns in memory (and growing)
-
-## How It Compares
-
-El Gringo is in the same category as [OpenClaw](https://github.com/openclaw/openclaw) - the AI agent orchestration layer. The thesis is the same: **a well-orchestrated team of models with real-world tool access outperforms any single model in a chat box.**
-
-Key differences:
-- Multi-agent consensus and debate (not just single-model routing)
-- Built-in memory that learns and consolidates across sessions
-- Specialist agents for security, architecture, and code review
-- Apple Silicon optimization for local inference
-- Cost-aware routing (budget/standard/premium tiers)
+- **24** MCP tools
+- **18** development tools
+- **7** self-correction strategies
+- **440+** tests passing
 
 ## What This Is NOT
 
-- **Not a wrapper around one model** — El Gringo orchestrates multiple models, it doesn't just proxy requests to ChatGPT
-- **Not a chatbot** — it's a tool execution platform. Agents take actions, not just generate text
-- **Not autonomous by default** — tool calls require approval through the MCP client. Nothing runs without your consent
-- **Not a hosted service** — everything runs on your machine. Your code and API keys never leave your environment
-- **Not a LangChain competitor** — LangChain is a composable framework for building chains. El Gringo is a ready-to-run platform with opinionated defaults. You configure it, not compose it
+- **Not a wrapper around one model** — orchestrates multiple models with routing, consensus, and memory
+- **Not a chatbot** — agents execute tools, write code, run tests, deploy. Not just text generation
+- **Not autonomous without consent** — tool calls require approval through the MCP client
+- **Not a hosted service** — runs on your machine. Your code and API keys stay local
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) for the full security model, tool permissions, and vulnerability reporting.
+See [SECURITY.md](SECURITY.md) for the security model, tool permissions, and vulnerability reporting.
 
 ## License
 

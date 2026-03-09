@@ -50,7 +50,7 @@ CLI_COMMANDS = [
     "/help", "/agents", "/status", "/index", "/search", "/history",
     "/clear", "/project", "/validate", "/mode", "/exit", "/quit",
     "/react", "/reason", "/plan", "/git", "/commit", "/run", "/exec",
-    "/new", "/create", "/templates", "/analyze", "/screenshot",
+    "/new", "/create", "/build", "/templates", "/analyze", "/screenshot",
     "/voice", "/listen",
 ]
 
@@ -227,8 +227,9 @@ class AITeamCLI:
   {Colors.CYAN}/run js <code>{Colors.RESET}      Execute JavaScript code
   {Colors.CYAN}/run file <path>{Colors.RESET}    Execute a file
 
-{Colors.BOLD}Project Generator:{Colors.RESET}
+{Colors.BOLD}Autonomous Build:{Colors.RESET}
 
+  {Colors.CYAN}/build <description>{Colors.RESET}    Plan, generate, test, fix — fully autonomous
   {Colors.CYAN}/new <template> <name>{Colors.RESET}  Create from template
   {Colors.CYAN}/new <description>{Colors.RESET}      AI generates project
   {Colors.CYAN}/templates{Colors.RESET}              List available templates
@@ -335,6 +336,9 @@ class AITeamCLI:
 
         elif cmd in ["/new", "/create"]:
             await self.create_project(args)
+
+        elif cmd == "/build":
+            await self.build_project(args)
 
         elif cmd == "/templates":
             await self.list_templates()
@@ -1043,6 +1047,86 @@ class AITeamCLI:
 
         print()
 
+    async def build_project(self, args: str):
+        """Autonomous build — plan, generate, test, fix, iterate."""
+        if not args:
+            print(f"\n{Colors.BOLD}Autonomous Build:{Colors.RESET}")
+            print(f"  {Colors.CYAN}/build <description>{Colors.RESET}  - Build a project from a description\n")
+            print(f"{Colors.BOLD}Examples:{Colors.RESET}")
+            print(f"  {Colors.DIM}/build a FastAPI REST API with JWT auth and PostgreSQL")
+            print(f"  /build a React dashboard with charts and dark mode")
+            print(f"  /build a CLI tool that converts CSV to JSON{Colors.RESET}\n")
+            return
+
+        description = args
+        print(f"\n{Colors.BOLD}{'=' * 60}{Colors.RESET}")
+        print(f"{Colors.CYAN}  AUTONOMOUS BUILD{Colors.RESET}")
+        print(f"{Colors.BOLD}{'=' * 60}{Colors.RESET}")
+        print(f"\n  {Colors.DIM}{description}{Colors.RESET}\n")
+
+        step_num = [0]
+
+        def on_progress(update):
+            step_num[0] += 1
+            status = update if isinstance(update, str) else update.get("status", str(update))
+            print(f"  {Colors.GREEN}[{step_num[0]}]{Colors.RESET} {status}")
+
+        try:
+            team = self.orchestrator
+            print(f"  {Colors.DIM}Agents: {', '.join(team.available_agents)}{Colors.RESET}")
+            print(f"  {Colors.DIM}Planning...{Colors.RESET}\n")
+
+            result = await team.build(
+                description=description,
+                on_progress=on_progress,
+            )
+
+            print(f"\n{Colors.BOLD}{'─' * 60}{Colors.RESET}")
+
+            if result.get("success"):
+                print(f"{Colors.GREEN}  BUILD COMPLETE{Colors.RESET}")
+                print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}\n")
+
+                total_time = result.get("total_time", 0)
+                print(f"  {Colors.BOLD}Time:{Colors.RESET}       {total_time:.1f}s")
+
+                confidence = result.get("confidence", 0)
+                if confidence:
+                    print(f"  {Colors.BOLD}Confidence:{Colors.RESET}  {confidence:.0%}")
+
+                corrections = result.get("corrections", 0)
+                if corrections:
+                    print(f"  {Colors.BOLD}Corrections:{Colors.RESET} {corrections}")
+
+                subtasks = result.get("subtasks", {})
+                if subtasks:
+                    completed = sum(1 for t in subtasks.values() if t.get("status") == "completed")
+                    print(f"  {Colors.BOLD}Subtasks:{Colors.RESET}    {completed}/{len(subtasks)} completed")
+
+                stats = result.get("session_stats", {})
+                if stats.get("total_tasks"):
+                    print(f"  {Colors.BOLD}Session:{Colors.RESET}     {stats['total_tasks']} tasks, "
+                          f"{stats.get('success_rate', 0):.0%} success rate")
+
+                response = result.get("response", "")
+                if response:
+                    print(f"\n{Colors.BOLD}{'─' * 60}{Colors.RESET}")
+                    print(response[:5000])
+                    if len(response) > 5000:
+                        print(f"\n{Colors.DIM}... ({len(response)} chars total){Colors.RESET}")
+                    print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}")
+            else:
+                print(f"{Colors.RED}  BUILD FAILED{Colors.RESET}")
+                print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}\n")
+                print(f"  {result.get('response', 'Unknown error')}")
+
+        except Exception as e:
+            print(f"\n{Colors.RED}Build error: {e}{Colors.RESET}")
+            import traceback
+            traceback.print_exc()
+
+        print()
+
     async def analyze_screenshot(self, args: str):
         """Analyze a screenshot or image."""
         if not args:
@@ -1401,8 +1485,88 @@ async def run_single_task(team, prompt: str, mode: str = "parallel"):
     return result
 
 
+async def _run_build(description: str):
+    """Run an autonomous build from the command line."""
+    from elgringo.orchestrator import AIDevTeam
+
+    print(f"\n{Colors.BOLD}{'=' * 60}{Colors.RESET}")
+    print(f"{Colors.CYAN}  EL GRINGO — AUTONOMOUS BUILD{Colors.RESET}")
+    print(f"{Colors.BOLD}{'=' * 60}{Colors.RESET}")
+    print(f"\n  {Colors.DIM}{description}{Colors.RESET}\n")
+
+    team = AIDevTeam(project_name="build", enable_memory=True)
+
+    if not team.agents:
+        print(f"{Colors.RED}No AI agents available. Set at least one API key:{Colors.RESET}")
+        print(f"  export OPENAI_API_KEY=sk-...")
+        print(f"  export GEMINI_API_KEY=...")
+        print(f"  export XAI_API_KEY=xai-...")
+        return
+
+    print(f"  {Colors.DIM}Agents: {', '.join(team.available_agents)}{Colors.RESET}")
+    print(f"  {Colors.DIM}Planning...{Colors.RESET}\n")
+
+    step_num = [0]
+
+    def on_progress(update):
+        step_num[0] += 1
+        status = update if isinstance(update, str) else update.get("status", str(update))
+        print(f"  {Colors.GREEN}[{step_num[0]}]{Colors.RESET} {status}")
+
+    result = await team.build(description=description, on_progress=on_progress)
+
+    print(f"\n{Colors.BOLD}{'─' * 60}{Colors.RESET}")
+
+    if result.get("success"):
+        print(f"{Colors.GREEN}  BUILD COMPLETE{Colors.RESET}")
+        print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}\n")
+
+        total_time = result.get("total_time", 0)
+        print(f"  {Colors.BOLD}Time:{Colors.RESET}       {total_time:.1f}s")
+
+        confidence = result.get("confidence", 0)
+        if confidence:
+            print(f"  {Colors.BOLD}Confidence:{Colors.RESET}  {confidence:.0%}")
+
+        corrections = result.get("corrections", 0)
+        if corrections:
+            print(f"  {Colors.BOLD}Corrections:{Colors.RESET} {corrections}")
+
+        subtasks = result.get("subtasks", {})
+        if subtasks:
+            completed = sum(1 for t in subtasks.values() if t.get("status") == "completed")
+            print(f"  {Colors.BOLD}Subtasks:{Colors.RESET}    {completed}/{len(subtasks)} completed")
+
+        response = result.get("response", "")
+        if response:
+            print(f"\n{Colors.BOLD}{'─' * 60}{Colors.RESET}")
+            print(response[:5000])
+            if len(response) > 5000:
+                print(f"\n{Colors.DIM}... ({len(response)} chars total){Colors.RESET}")
+            print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}")
+    else:
+        print(f"{Colors.RED}  BUILD FAILED{Colors.RESET}")
+        print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}\n")
+        print(f"  {result.get('response', 'Unknown error')}")
+
+    print()
+
+
 def main():
     """Main CLI entry point"""
+    # Intercept "build" subcommand before argparse
+    if len(sys.argv) > 1 and sys.argv[1] == "build":
+        description = " ".join(sys.argv[2:]) if len(sys.argv) > 2 else ""
+        if not description:
+            print(f"\n{Colors.BOLD}Usage:{Colors.RESET} elgringo build <description>\n")
+            print(f"{Colors.BOLD}Examples:{Colors.RESET}")
+            print(f"  elgringo build \"a FastAPI REST API with JWT auth\"")
+            print(f"  elgringo build \"a React dashboard with charts\"")
+            print(f"  elgringo build \"a CLI tool that converts CSV to JSON\"\n")
+            sys.exit(0)
+        asyncio.run(_run_build(description))
+        sys.exit(0)
+
     # Intercept "products" subcommand before argparse (avoids conflict with positional prompt)
     if len(sys.argv) > 1 and sys.argv[1] == "products":
         from products.cli import handle_products_command
@@ -1421,11 +1585,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  ai-team                         # Interactive mode
-  ai-team "Build a REST API"      # Single task
-  ai-team -m consensus "Design a database schema"
-  ai-team --status                # Show team status
-  ai-team --check-keys            # Check API key configuration
+  elgringo                                    # Interactive mode
+  elgringo build "a FastAPI app with auth"    # Autonomous build
+  elgringo "Build a REST API"                 # Single task
+  elgringo -m consensus "Design a schema"     # Consensus mode
+  elgringo --status                           # Show team status
         """,
     )
 

@@ -48,8 +48,8 @@ app.add_middleware(
 )
 
 # ── Usage Analytics ──────────────────────────────────────────────────
-from middleware.analytics import UsageAnalyticsMiddleware, get_analytics_store
-from middleware.analytics_api import analytics_router
+from elgringo.server.analytics import UsageAnalyticsMiddleware, get_analytics_store
+from elgringo.server.analytics_api import analytics_router
 
 app.add_middleware(UsageAnalyticsMiddleware, store=get_analytics_store())
 app.include_router(analytics_router)

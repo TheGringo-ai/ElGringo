@@ -1054,7 +1054,7 @@ class AITeamCLI:
             print(f"  {Colors.CYAN}/build <description>{Colors.RESET}  - Build a project from a description\n")
             print(f"{Colors.BOLD}Examples:{Colors.RESET}")
             print(f"  {Colors.DIM}/build a FastAPI REST API with JWT auth and PostgreSQL")
-            print(f"  /build a React dashboard with charts and dark mode")
+            print("  /build a React dashboard with charts and dark mode")
             print(f"  /build a CLI tool that converts CSV to JSON{Colors.RESET}\n")
             return
 
@@ -1498,9 +1498,9 @@ async def _run_build(description: str):
 
     if not team.agents:
         print(f"{Colors.RED}No AI agents available. Set at least one API key:{Colors.RESET}")
-        print(f"  export OPENAI_API_KEY=sk-...")
-        print(f"  export GEMINI_API_KEY=...")
-        print(f"  export XAI_API_KEY=xai-...")
+        print("  export OPENAI_API_KEY=sk-...")
+        print("  export GEMINI_API_KEY=...")
+        print("  export XAI_API_KEY=xai-...")
         return
 
     print(f"  {Colors.DIM}Agents: {', '.join(team.available_agents)}{Colors.RESET}")
@@ -1560,9 +1560,9 @@ def main():
         if not description:
             print(f"\n{Colors.BOLD}Usage:{Colors.RESET} elgringo build <description>\n")
             print(f"{Colors.BOLD}Examples:{Colors.RESET}")
-            print(f"  elgringo build \"a FastAPI REST API with JWT auth\"")
-            print(f"  elgringo build \"a React dashboard with charts\"")
-            print(f"  elgringo build \"a CLI tool that converts CSV to JSON\"\n")
+            print("  elgringo build \"a FastAPI REST API with JWT auth\"")
+            print("  elgringo build \"a React dashboard with charts\"")
+            print("  elgringo build \"a CLI tool that converts CSV to JSON\"\n")
             sys.exit(0)
         asyncio.run(_run_build(description))
         sys.exit(0)

@@ -9,7 +9,7 @@ Setup in ~/.claude/mcp.json or project .mcp.json:
   "mcpServers": {
     "el-gringo": {
       "command": "python3",
-      "args": ["/Users/fredtaylor/Development/Projects/ElGringo/mcp_server.py"],
+      "args": ["/Users/fredtaylor/Development/Projects/ElGringo/elgringo/server/mcp_server.py"],
       "env": {
         "ELGRINGO_API_URL": "https://ai.chatterfix.com",
         "ELGRINGO_API_KEY": "your-api-key-here"

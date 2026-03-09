@@ -5,9 +5,9 @@ Multi-agent AI orchestration platform. 5 AI agents (ChatGPT, Gemini, Grok x2, Ll
 Renamed from FredAI on 2026-03-06. Repo: `TheGringo-ai/ElGringo`.
 
 ## Architecture
-- **Orchestrator**: `ai_dev_team/orchestrator.py` — AIDevTeam class coordinates agents
-- **Agents**: `ai_dev_team/agents/` — ChatGPT, Gemini, Grok, Ollama, LlamaCloud
-- **Tools**: `ai_dev_team/tools/` — filesystem, shell, git, browser, docker, deploy
+- **Orchestrator**: `elgringo/orchestrator.py` — AIDevTeam class coordinates agents
+- **Agents**: `elgringo/agents/` — ChatGPT, Gemini, Grok, Ollama, LlamaCloud
+- **Tools**: `elgringo/tools/` — filesystem, shell, git, browser, docker, deploy
 - **API**: `products/fred_api/server.py` — FastAPI at port 8080, `/v1/*` endpoints
 - **Coding Agent**: `products/fred_api/coding_endpoints.py` — `/v1/code/*` endpoints
 - **MCP Server**: `mcp_server.py` — Claude Code integration (24 tools, FastMCP + HTTP/local hybrid)

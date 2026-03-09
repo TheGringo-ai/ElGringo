@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ai_dev_team.orchestrator import AIDevTeam, CollaborationResult
-from ai_dev_team.agents.base import AIAgent, AgentResponse, ModelType
+from elgringo.orchestrator import AIDevTeam, CollaborationResult
+from elgringo.agents.base import AIAgent, AgentResponse, ModelType
 
 
 # =============================================================================
@@ -288,7 +288,7 @@ class TestSetupAgents:
         """Test setup with Anthropic API key"""
         env = {"ANTHROPIC_API_KEY": "test-key"}
         with patch.dict(os.environ, env, clear=True):
-            with patch('ai_dev_team.orchestrator.ClaudeAgent') as MockClaude:
+            with patch('elgringo.orchestrator.ClaudeAgent') as MockClaude:
                 mock_instance = MagicMock()
                 mock_instance.name = "claude"
                 MockClaude.return_value = mock_instance
@@ -301,7 +301,7 @@ class TestSetupAgents:
     def test_setup_with_no_keys_warns(self):
         """Test setup with no API keys logs warning"""
         with patch.dict(os.environ, {}, clear=True):
-            with patch('ai_dev_team.orchestrator.logger') as mock_logger:
+            with patch('elgringo.orchestrator.logger') as mock_logger:
                 with patch.object(AIDevTeam, '_setup_llama_cloud_agents'):
                     with patch.object(AIDevTeam, '_setup_local_agents'):
                         AIDevTeam(auto_setup=True)
@@ -313,7 +313,7 @@ class TestSetupAgents:
         """Test setup in local-only mode skips cloud APIs"""
         env = {"ANTHROPIC_API_KEY": "test-key"}
         with patch.dict(os.environ, env, clear=True):
-            with patch('ai_dev_team.orchestrator.ClaudeAgent') as MockClaude:
+            with patch('elgringo.orchestrator.ClaudeAgent') as MockClaude:
                 with patch.object(AIDevTeam, '_setup_local_agents') as mock_local:
                     AIDevTeam(local_only=True)
 

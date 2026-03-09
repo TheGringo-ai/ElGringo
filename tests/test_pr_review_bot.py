@@ -26,7 +26,7 @@ class TestProductRegistry:
         assert "pr-review-bot" in names
         assert "code-audit" in names
         assert "fred-api" in names
-        assert "maintenance-advisor" in names
+        assert "test-generator" in names
 
     def test_pr_review_bot_is_active(self):
         p = get_product("pr-review-bot")
@@ -46,8 +46,8 @@ class TestProductRegistry:
         assert p.status == "active"
         assert p.is_active
 
-    def test_maintenance_advisor_is_active(self):
-        p = get_product("maintenance-advisor")
+    def test_doc_generator_is_active(self):
+        p = get_product("doc-generator")
         assert p is not None
         assert p.status == "active"
         assert p.is_active

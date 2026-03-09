@@ -10,7 +10,7 @@ Endpoints:
     POST /docs/architecture  - Generate architecture docs with Mermaid diagrams
     GET  /docs/health        - Health check
 
-Reuses: AIDevTeam from ai_dev_team.orchestrator
+Reuses: AIDevTeam from elgringo.orchestrator
 """
 
 import logging
@@ -83,7 +83,7 @@ def get_team():
     """Lazy-load the AIDevTeam to avoid import overhead at startup."""
     global _team
     if _team is None:
-        from ai_dev_team.orchestrator import AIDevTeam
+        from elgringo.orchestrator import AIDevTeam
 
         _team = AIDevTeam(project_name="doc-generator", enable_memory=True)
     return _team

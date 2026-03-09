@@ -3,19 +3,19 @@ Tests for advanced routing: PerformanceTracker, DecisionLogger, CostTracker
 """
 
 import pytest
-from ai_dev_team.routing.performance_tracker import (
+from elgringo.routing.performance_tracker import (
     PerformanceTracker,
     ModelPerformance,
     get_performance_tracker,
 )
-from ai_dev_team.routing.decision import (
+from elgringo.routing.decision import (
     RoutingDecision,
     AgentScore,
     DecisionFactor,
     DecisionLogger,
     get_decision_logger,
 )
-from ai_dev_team.routing.cost_tracker import CostTracker, get_cost_tracker
+from elgringo.routing.cost_tracker import CostTracker, get_cost_tracker
 
 
 class TestModelPerformance:

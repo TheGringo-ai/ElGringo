@@ -4,7 +4,7 @@ El Gringo Command Center API
 
 FastAPI backend for the Command Center dashboard.
 Exposes sprint board, content queue, AI chat, and automation
-endpoints backed by existing ai_dev_team workflow modules.
+endpoints backed by existing elgringo workflow modules.
 
 Run: uvicorn products.command_center.server:app --port 7862
 """

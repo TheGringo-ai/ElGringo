@@ -3,19 +3,19 @@ Tests for Validation and Routing modules
 """
 
 import pytest
-from ai_dev_team.validation.code_validator import (
+from elgringo.validation.code_validator import (
     CodeValidator,
     ValidationError,
     ValidationWarning,
     ValidationResult,
 )
-from ai_dev_team.routing import (
+from elgringo.routing import (
     TaskRouter,
     TaskType,
     CostOptimizer,
     ModelTier,
 )
-from ai_dev_team.routing.cost_optimizer import MODEL_TIER_MAPPING, MODEL_COSTS, COMPLEXITY_TO_TIER
+from elgringo.routing.cost_optimizer import MODEL_TIER_MAPPING, MODEL_COSTS, COMPLEXITY_TO_TIER
 
 
 class TestValidationDataclasses:

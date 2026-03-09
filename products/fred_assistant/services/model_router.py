@@ -22,11 +22,11 @@ _AGENT_FACTORIES = {}
 
 def _make_agent(provider: str):
     """Lazy-create agent instances. Returns (agent, model_name, provider_name) or None."""
-    from ai_dev_team.agents.base import AgentConfig, ModelType
+    from elgringo.agents.base import AgentConfig, ModelType
 
     try:
         if provider == "gemini":
-            from ai_dev_team.agents.gemini import GeminiAgent
+            from elgringo.agents.gemini import GeminiAgent
             model = os.getenv("FRED_CHAT_MODEL", "gemini-2.5-flash")
             agent = GeminiAgent(AgentConfig(
                 name="fred", model_type=ModelType.GEMINI, role="AI Personal Assistant",
@@ -36,7 +36,7 @@ def _make_agent(provider: str):
             return agent, model, "gemini"
 
         elif provider == "openai":
-            from ai_dev_team.agents.chatgpt import ChatGPTAgent
+            from elgringo.agents.chatgpt import ChatGPTAgent
             model = os.getenv("FRED_OPENAI_MODEL", "gpt-4o-mini")
             agent = ChatGPTAgent(AgentConfig(
                 name="fred-openai", model_type=ModelType.CHATGPT, role="AI Personal Assistant",
@@ -46,7 +46,7 @@ def _make_agent(provider: str):
             return agent, model, "openai"
 
         elif provider == "anthropic":
-            from ai_dev_team.agents.claude import ClaudeAgent
+            from elgringo.agents.claude import ClaudeAgent
             model = os.getenv("FRED_CLAUDE_MODEL", "claude-sonnet-4-20250514")
             agent = ClaudeAgent(AgentConfig(
                 name="fred-claude", model_type=ModelType.CLAUDE, role="AI Personal Assistant",
@@ -56,7 +56,7 @@ def _make_agent(provider: str):
             return agent, model, "anthropic"
 
         elif provider == "grok":
-            from ai_dev_team.agents.grok import GrokAgent
+            from elgringo.agents.grok import GrokAgent
             model = os.getenv("FRED_GROK_MODEL", "grok-3-fast")
             agent = GrokAgent(AgentConfig(
                 name="fred-grok", model_type=ModelType.GROK, role="AI Personal Assistant",
@@ -66,7 +66,7 @@ def _make_agent(provider: str):
             return agent, model, "grok"
 
         elif provider == "ollama":
-            from ai_dev_team.agents.ollama import OllamaAgent
+            from elgringo.agents.ollama import OllamaAgent
             model = os.getenv("FRED_OLLAMA_MODEL", "llama3.2:3b")
             agent = OllamaAgent(AgentConfig(
                 name="fred-ollama", model_type=ModelType.LOCAL, role="AI Personal Assistant",
@@ -76,7 +76,7 @@ def _make_agent(provider: str):
             return agent, model, "ollama"
 
         elif provider == "mlx":
-            from ai_dev_team.agents.mlx_agent import MLXAgent
+            from elgringo.agents.mlx_agent import MLXAgent
             model = os.getenv("FRED_MLX_MODEL", "mlx-coder")
             agent = MLXAgent(AgentConfig(
                 name="fred-mlx", model_type=ModelType.LOCAL, role="AI Personal Assistant",
@@ -86,7 +86,7 @@ def _make_agent(provider: str):
             return agent, model, "mlx"
 
         elif provider == "llama_cloud":
-            from ai_dev_team.agents.llama_cloud import LlamaCloudAgent
+            from elgringo.agents.llama_cloud import LlamaCloudAgent
             model = os.getenv("FRED_LLAMA_MODEL", "llama-3.3-70b-versatile")
             agent = LlamaCloudAgent(AgentConfig(
                 name="fred-llama", model_type=ModelType.LOCAL, role="AI Personal Assistant",

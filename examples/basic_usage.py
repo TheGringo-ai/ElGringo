@@ -9,7 +9,7 @@ import asyncio
 # export ANTHROPIC_API_KEY=your_key
 # export OPENAI_API_KEY=your_key
 
-from ai_dev_team import AIDevTeam
+from elgringo import AIDevTeam
 
 
 async def main():

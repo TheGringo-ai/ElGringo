@@ -18,8 +18,8 @@ def get_gemini():
     global _gemini_agent
     if _gemini_agent is None:
         try:
-            from ai_dev_team.agents.gemini import GeminiAgent
-            from ai_dev_team.agents.base import AgentConfig, ModelType
+            from elgringo.agents.gemini import GeminiAgent
+            from elgringo.agents.base import AgentConfig, ModelType
 
             model = os.getenv("FRED_CHAT_MODEL", "gemini-2.5-flash")
             _gemini_agent = GeminiAgent(AgentConfig(

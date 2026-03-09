@@ -109,7 +109,7 @@ class PRReviewer:
         )
 
         # Import orchestrator lazily to avoid circular deps at module level
-        from ai_dev_team.orchestrator import AIDevTeam
+        from elgringo.orchestrator import AIDevTeam
 
         team = AIDevTeam(project_name="pr-review-bot", enable_memory=False)
         collab_result = await team.collaborate(

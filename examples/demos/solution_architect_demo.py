@@ -1,6 +1,6 @@
 """SolutionArchitect: AI agent specialized in system design."""
 
-from ai_dev_team.agents import create_solution_architect
+from elgringo.agents import create_solution_architect
 
 
 async def demonstrate_solution_architect():

@@ -12,12 +12,12 @@ import asyncio
 from pathlib import Path
 import tempfile
 
-from ai_dev_team.workflows import (
+from elgringo.workflows.workflows import (
     create_pre_commit_workflow,
     create_cicd_workflow,
     create_code_review_pipeline,
 )
-from ai_dev_team.agents import (
+from elgringo.agents import (
     create_security_auditor,
     create_code_reviewer,
 )
@@ -306,7 +306,7 @@ Integration as Git Pre-Commit Hook:
 1. Create the hook script (.git/hooks/pre-commit):
 
    #!/bin/bash
-   python -m ai_dev_team.workflows.pre_commit
+   python -m elgringo.workflows.pre_commit
 
 2. Or use the provided function in your own hook:
 
@@ -315,7 +315,7 @@ Integration as Git Pre-Commit Hook:
    #!/usr/bin/env python3
 
    import asyncio
-   from ai_dev_team.workflows import run_pre_commit
+   from elgringo.workflows.workflows import run_pre_commit
 
    async def main():
        exit_code = await run_pre_commit()

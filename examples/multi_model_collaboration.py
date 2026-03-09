@@ -14,7 +14,7 @@ Demonstrates the different collaboration modes available in the AI Team Platform
 """
 
 import asyncio
-from ai_dev_team import AIDevTeam, CollaborationMode
+from elgringo import AIDevTeam, CollaborationMode
 
 
 async def parallel_execution():

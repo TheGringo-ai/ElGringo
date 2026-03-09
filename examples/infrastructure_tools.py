@@ -9,7 +9,7 @@ Demonstrates the infrastructure management capabilities:
 """
 
 import asyncio
-from ai_dev_team.tools import (
+from elgringo.tools import (
     create_kubernetes_tools,
     create_terraform_tools,
     create_gcp_tools,
@@ -353,7 +353,7 @@ def demonstrate_integrated_tools():
 Create all development and infrastructure tools with a single call:
 
 ```python
-from ai_dev_team.tools import create_all_tools
+from elgringo.tools import create_all_tools
 
 # Create all tools with configuration
 tools = create_all_tools(
@@ -401,7 +401,7 @@ The AIDevTeam orchestrator can use infrastructure tools to perform
 complex DevOps tasks through natural language:
 
 ```python
-from ai_dev_team import AIDevTeam
+from elgringo import AIDevTeam
 
 team = AIDevTeam(project_name="my-project")
 

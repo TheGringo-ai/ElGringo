@@ -45,7 +45,7 @@ Use descriptive branch names with a category prefix:
 ### Project Structure
 
 ```
-ai_dev_team/agents/   # AI agent implementations (extend BaseAgent)
+elgringo/agents/   # AI agent implementations (extend BaseAgent)
 products/             # Standalone FastAPI micro-services
 tools/                # Shared tooling used by agents
 config/               # Configuration and environment handling
@@ -63,17 +63,17 @@ python -m pytest tests/ -x -q
 Run with coverage:
 
 ```bash
-python -m pytest tests/ --cov=ai_dev_team --cov=products -x -q
+python -m pytest tests/ --cov=elgringo --cov=products -x -q
 ```
 
 Do not commit coverage artifacts (`.coverage`, `coverage.json`).
 
 ## Adding New AI Agents
 
-1. Create a new file in `ai_dev_team/agents/` (e.g., `my_agent.py`).
-2. Extend `BaseAgent` from `ai_dev_team/agents/base.py`.
+1. Create a new file in `elgringo/agents/` (e.g., `my_agent.py`).
+2. Extend `BaseAgent` from `elgringo/agents/base.py`.
 3. Implement the required abstract methods.
-4. Register the agent in `ai_dev_team/agents/__init__.py`.
+4. Register the agent in `elgringo/agents/__init__.py`.
 5. Add tests in `tests/` covering the new agent.
 
 ## Adding New Products

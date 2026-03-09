@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ai_dev_team.fredfix import (
+from elgringo.workflows.fredfix import (
     FredFix,
     FixResult,
     Issue,
@@ -138,7 +138,7 @@ class TestFredFix:
     @pytest.fixture
     def fixer(self, tmp_path):
         """Create FredFix without team"""
-        from ai_dev_team.memory import MemorySystem
+        from elgringo.memory import MemorySystem
         memory = MemorySystem(storage_dir=str(tmp_path / "memory"))
         return FredFix(memory=memory, safe_mode=True)
 

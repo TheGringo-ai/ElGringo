@@ -113,7 +113,7 @@ _team = None
 def get_team():
     global _team
     if _team is None:
-        from ai_dev_team.orchestrator import AIDevTeam
+        from elgringo.orchestrator import AIDevTeam
         _team = AIDevTeam(project_name="fred-api", enable_memory=True)
         logger.info(f"Fred API: initialized AIDevTeam with {len(_team.agents)} agents")
     return _team
@@ -345,7 +345,7 @@ async def memory_search(req: MemorySearchRequest):
     team = get_team()
     memory = team._memory if hasattr(team, '_memory') and team._memory else None
     if not memory:
-        from ai_dev_team.memory import MemorySystem
+        from elgringo.memory import MemorySystem
         memory = MemorySystem()
 
     results = {"solutions": [], "mistakes": []}
@@ -375,7 +375,7 @@ async def memory_store(req: MemoryStoreRequest):
     team = get_team()
     memory = team._memory if hasattr(team, '_memory') and team._memory else None
     if not memory:
-        from ai_dev_team.memory import MemorySystem
+        from elgringo.memory import MemorySystem
         memory = MemorySystem()
 
     if req.type == "solution":
@@ -387,7 +387,7 @@ async def memory_store(req: MemoryStoreRequest):
         )
         return {"stored": "solution", "id": solution_id, "problem": req.problem}
     elif req.type == "mistake":
-        from ai_dev_team.memory.system import MistakeType
+        from elgringo.memory.system import MistakeType
         type_map = {t.value: t for t in MistakeType}
         mt = type_map.get(req.mistake_type, MistakeType.CODE_ERROR)
         mistake_id = await memory.capture_mistake(
@@ -408,7 +408,7 @@ async def memory_stats():
     team = get_team()
     memory = team._memory if hasattr(team, '_memory') and team._memory else None
     if not memory:
-        from ai_dev_team.memory import MemorySystem
+        from elgringo.memory import MemorySystem
         memory = MemorySystem()
     return memory.get_statistics()
 
@@ -418,7 +418,7 @@ async def memory_stats():
 @app.get("/v1/costs", dependencies=[Depends(verify_api_key)])
 async def costs():
     """Get cost tracking report."""
-    from ai_dev_team.routing.cost_tracker import get_cost_tracker
+    from elgringo.routing.cost_tracker import get_cost_tracker
     ct = get_cost_tracker()
     return {
         "statistics": ct.get_statistics(),
@@ -433,7 +433,7 @@ async def costs():
 @app.post("/v1/teach", dependencies=[Depends(verify_api_key)])
 async def teach(req: TeachRequest):
     """Teach the AI team new knowledge."""
-    from ai_dev_team.knowledge import TeachingSystem
+    from elgringo.knowledge import TeachingSystem
     teacher = TeachingSystem()
     result = await teacher.teach(topic=req.topic, content=req.content, domain=req.domain)
     return {"taught": True, "topic": req.topic, "domain": req.domain, "result": result}
@@ -448,7 +448,7 @@ class VerifyCodeRequest(BaseModel):
 @app.post("/v1/verify", dependencies=[Depends(verify_api_key)])
 async def verify_code(req: VerifyCodeRequest):
     """Validate code for syntax errors, security issues, and lint warnings."""
-    from ai_dev_team.validation.code_validator import CodeValidator
+    from elgringo.validation.code_validator import CodeValidator
     validator = CodeValidator()
     result = validator.validate(req.code, language=req.language or None)
     return {

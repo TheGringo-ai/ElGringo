@@ -10,7 +10,7 @@ Endpoints:
     POST /audit/full      - Full audit (security + quality)
     GET  /audit/health    - Health check
 
-Reuses: SecurityAuditor, CodeReviewer from ai_dev_team.agents.specialists
+Reuses: SecurityAuditor, CodeReviewer from elgringo.agents.specialists
 """
 
 import logging
@@ -79,7 +79,7 @@ _team = None
 def get_team():
     global _team
     if _team is None:
-        from ai_dev_team.orchestrator import AIDevTeam
+        from elgringo.orchestrator import AIDevTeam
         _team = AIDevTeam(project_name="code-audit", enable_memory=True)
     return _team
 

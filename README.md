@@ -238,7 +238,7 @@ Add to your `.mcp.json`:
 
 ```
 El Gringo/
-  ai_dev_team/
+  elgringo/
     agents/          # ChatGPT, Gemini, Grok, Claude, Ollama, LlamaCloud, Specialists
     collaboration/   # Multi-agent engine, weighted consensus, streaming
     memory/          # Tiered memory system, learning engine, mistake prevention

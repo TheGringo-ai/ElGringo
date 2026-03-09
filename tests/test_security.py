@@ -3,7 +3,7 @@ Tests for Security module
 """
 
 import pytest
-from ai_dev_team.security import (
+from elgringo.core.security import (
     SecurityValidator,
     ThreatLevel,
     ValidationResult,

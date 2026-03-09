@@ -43,21 +43,21 @@ def mock_env(monkeypatch):
 @pytest.fixture
 def memory_system(temp_storage):
     """Create a test memory system"""
-    from ai_dev_team.memory import MemorySystem
+    from elgringo.memory import MemorySystem
     return MemorySystem(storage_dir=str(temp_storage))
 
 
 @pytest.fixture
 def weighted_consensus():
     """Create a weighted consensus instance"""
-    from ai_dev_team.collaboration import WeightedConsensus
+    from elgringo.collaboration import WeightedConsensus
     return WeightedConsensus()
 
 
 @pytest.fixture
 def fredfix(memory_system):
     """Create a FredFix instance without team"""
-    from ai_dev_team.fredfix import FredFix
+    from elgringo.workflows.fredfix import FredFix
     return FredFix(memory=memory_system)
 
 

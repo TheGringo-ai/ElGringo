@@ -28,7 +28,7 @@ async def demo_firebase_rag():
     print("Demo 1: Firebase Documentation RAG")
     print("="*60)
 
-    from ai_dev_team.knowledge import get_firebase_docs
+    from elgringo.knowledge import get_firebase_docs
 
     docs = get_firebase_docs()
 
@@ -59,7 +59,7 @@ async def demo_code_validation():
     print("Demo 2: Code Validation Pipeline")
     print("="*60)
 
-    from ai_dev_team.validation import get_validator
+    from elgringo.validation import get_validator
 
     validator = get_validator()
 
@@ -155,7 +155,7 @@ async def demo_semantic_delta():
     print("Demo 3: Semantic Delta for Code Reviews")
     print("="*60)
 
-    from ai_dev_team.intelligence import SemanticDeltaExtractor
+    from elgringo.intelligence import SemanticDeltaExtractor
 
     extractor = SemanticDeltaExtractor(use_mlx=False)
 
@@ -234,7 +234,7 @@ async def demo_negative_space():
     print("Demo 4: Negative-Space Detection")
     print("="*60)
 
-    from ai_dev_team.autonomous import NegativeSpaceWatcher
+    from elgringo.autonomous import NegativeSpaceWatcher
 
     # Create watcher for a hypothetical project
     watcher = NegativeSpaceWatcher(project_root=".")
@@ -274,7 +274,7 @@ async def demo_coding_context():
     print("Demo 5: Integrated Coding Context")
     print("="*60)
 
-    from ai_dev_team.knowledge import get_coding_hub
+    from elgringo.knowledge import get_coding_hub
 
     hub = get_coding_hub()
 

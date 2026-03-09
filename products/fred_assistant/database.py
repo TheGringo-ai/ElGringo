@@ -438,7 +438,7 @@ def _migrate_columns(conn):
 def _get_model_costs():
     """Import MODEL_COSTS lazily to avoid circular imports."""
     try:
-        from ai_dev_team.routing.cost_optimizer import MODEL_COSTS
+        from elgringo.routing.cost_optimizer import MODEL_COSTS
         return MODEL_COSTS
     except ImportError:
         return {}

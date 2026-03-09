@@ -11,7 +11,7 @@ Endpoints:
     POST /tests/analyze  - Analyze test coverage and suggest missing tests
     POST /tests/improve  - Improve existing tests for better coverage/quality
 
-Reuses: AIDevTeam orchestrator from ai_dev_team.orchestrator
+Reuses: AIDevTeam orchestrator from elgringo.orchestrator
 """
 
 import logging
@@ -82,7 +82,7 @@ def get_team():
     """Lazy-load the AIDevTeam to avoid import overhead at module level."""
     global _team
     if _team is None:
-        from ai_dev_team.orchestrator import AIDevTeam
+        from elgringo.orchestrator import AIDevTeam
 
         _team = AIDevTeam(project_name="test-generator", enable_memory=True)
     return _team

@@ -11,11 +11,11 @@ Demonstrates the security features of the AI Team Platform:
 """
 
 import asyncio
-from ai_dev_team.security import (
+from elgringo.core.security import (
     SecurityValidator,
     ThreatLevel,
 )
-from ai_dev_team.tools.base import OperationRisk
+from elgringo.tools.base import OperationRisk
 
 
 def demonstrate_basic_validation():
@@ -250,7 +250,7 @@ Integration Points:
 
 2. Automatic Protection:
    ```python
-   from ai_dev_team import AIDevTeam
+   from elgringo import AIDevTeam
 
    team = AIDevTeam()
 
@@ -263,7 +263,7 @@ Integration Points:
 
 3. Custom Security Policies:
    ```python
-   from ai_dev_team.security import SecurityValidator
+   from elgringo.core.security import SecurityValidator
 
    # Create custom validator with stricter rules
    validator = SecurityValidator()

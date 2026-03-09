@@ -11,8 +11,8 @@ async def demonstrate_agent_collaboration():
 Specialized agents can work together in the AI Team Platform:
 
 ```python
-from ai_dev_team import AIDevTeam
-from ai_dev_team.agents import (
+from elgringo import AIDevTeam
+from elgringo.agents import (
     create_security_auditor,
     create_code_reviewer,
     create_solution_architect,
@@ -50,7 +50,7 @@ Workflow Integration:
 Custom Specialist Creation:
 
 ```python
-from ai_dev_team.agents import AIAgent
+from elgringo.agents import AIAgent
 
 class PerformanceAnalyzer(AIAgent):
     '''Custom specialist for performance analysis.'''

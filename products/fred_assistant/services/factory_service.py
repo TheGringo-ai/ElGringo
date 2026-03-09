@@ -92,7 +92,7 @@ def create_app(data: dict) -> dict:
     # Optionally scaffold from a template
     if template:
         try:
-            from ai_dev_team.tools.scaffolding import ProjectScaffolder
+            from elgringo.tools.scaffolding import ProjectScaffolder
             scaffolder = ProjectScaffolder()
             scaffolder.create_project(template, display_name, output_dir=project_dir)
             logger.info("Scaffolded %s from template %s", name, template)
@@ -226,7 +226,7 @@ async def generate_app(app_id: str, enrich: bool = True, template: Optional[str]
         os.makedirs(project_dir, exist_ok=True)
 
         # Build an AppProject spec from the app metadata
-        from ai_dev_team.app_builder.models import create_default_project
+        from elgringo.app_builder.models import create_default_project
 
         app_type_map = {
             "api": "crud",
@@ -239,7 +239,7 @@ async def generate_app(app_id: str, enrich: bool = True, template: Optional[str]
         project.display_name = app["display_name"]
 
         # Use BackendGenerator for backend files
-        from ai_dev_team.app_builder.generator import IntentDetector, BackendGenerator
+        from elgringo.app_builder.generator import IntentDetector, BackendGenerator
 
         intent = IntentDetector().analyze_project(project)
         backend_files = BackendGenerator().generate(project, intent)
@@ -384,7 +384,7 @@ async def build_app(app_id: str) -> dict:
     # Step 3: Docker build
     docker_build_id = _create_build_step(app_id, "docker", version)
     try:
-        from ai_dev_team.tools.docker import DockerTools
+        from elgringo.tools.docker import DockerTools
         docker = DockerTools(default_cwd=app["project_dir"])
         tag = f"elgringo-factory/{app['name']}:v{version}"
         build_result = docker._build(tag=tag, context=".", cwd=app["project_dir"])
@@ -510,7 +510,7 @@ def list_templates() -> list:
 
     # From scaffolding PROJECT_TEMPLATES
     try:
-        from ai_dev_team.tools.scaffolding import PROJECT_TEMPLATES
+        from elgringo.tools.scaffolding import PROJECT_TEMPLATES
         for key, tmpl in PROJECT_TEMPLATES.items():
             templates.append({
                 "id": key,

@@ -409,7 +409,7 @@ class KnowledgeHubExtractor:
         examples = []
 
         try:
-            from ai_dev_team.knowledge import get_coding_hub
+            from elgringo.knowledge import get_coding_hub
             hub = get_coding_hub()
 
             # Extract snippets
@@ -483,7 +483,7 @@ class RAGConversationExtractor:
         examples = []
 
         try:
-            from ai_dev_team.knowledge import get_rag
+            from elgringo.knowledge import get_rag
             rag = get_rag()
 
             for doc in rag._index.get_all_documents():

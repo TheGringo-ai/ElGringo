@@ -1,6 +1,6 @@
 """SecurityAuditor: AI agent specialized in security vulnerability detection."""
 
-from ai_dev_team.agents import create_security_auditor
+from elgringo.agents import create_security_auditor
 
 
 async def demonstrate_security_auditor():

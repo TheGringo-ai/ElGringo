@@ -42,8 +42,8 @@ start_service() {
 }
 
 # Start services
-start_service "chat"       7860 "python -m ai_dev_team.chat_ui"
-start_service "studio"     7861 "python -m ai_dev_team.studio_ui"
+start_service "chat"       7860 "python -m elgringo.chat_ui"
+start_service "studio"     7861 "python -m elgringo.studio_ui"
 start_service "code-audit" 8081 "uvicorn products.code_audit.server:app --host 127.0.0.1 --port 8081 --log-level info"
 start_service "test-gen"   8082 "uvicorn products.test_generator.server:app --host 127.0.0.1 --port 8082 --log-level info"
 start_service "doc-gen"    8083 "uvicorn products.doc_generator.server:app --host 127.0.0.1 --port 8083 --log-level info"

@@ -1,6 +1,6 @@
 """CodeReviewer: AI agent specialized in code quality analysis."""
 
-from ai_dev_team.agents import create_code_reviewer
+from elgringo.agents import create_code_reviewer
 
 
 async def demonstrate_code_reviewer():

@@ -198,7 +198,7 @@ Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin
 Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=7860
 EnvironmentFile=/opt/elgringo/.env
-ExecStart=/opt/elgringo/venv/bin/python -m ai_dev_team.chat_ui
+ExecStart=/opt/elgringo/venv/bin/python -m elgringo.chat_ui
 Restart=always
 RestartSec=5
 StandardOutput=append:/opt/elgringo/logs/chat.log
@@ -226,7 +226,7 @@ Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin
 Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=7861
 EnvironmentFile=/opt/elgringo/.env
-ExecStart=/opt/elgringo/venv/bin/python -m ai_dev_team.studio_ui
+ExecStart=/opt/elgringo/venv/bin/python -m elgringo.studio_ui
 Restart=always
 RestartSec=5
 StandardOutput=append:/opt/elgringo/logs/studio.log

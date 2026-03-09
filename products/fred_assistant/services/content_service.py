@@ -134,7 +134,7 @@ async def generate_content(topic: str, content_type: str = "post",
     )
 
     try:
-        from ai_dev_team.orchestrator import AIDevTeam
+        from elgringo.orchestrator import AIDevTeam
         team = AIDevTeam(enable_memory=True)
         await team.setup_agents()
         response = await team.ask(prompt)

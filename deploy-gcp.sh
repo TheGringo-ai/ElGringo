@@ -100,12 +100,12 @@ deploy_service "elgringo-api" \
 
 # elgringo-chat: Gradio Chat UI
 deploy_service "elgringo-chat" \
-    "python -m ai_dev_team.chat_ui" \
+    "python -m elgringo.chat_ui" \
     "1Gi" "1" "5" "${SHARED_SECRETS}"
 
 # elgringo-studio: Gradio Studio IDE
 deploy_service "elgringo-studio" \
-    "python -m ai_dev_team.studio_ui" \
+    "python -m elgringo.studio_ui" \
     "1Gi" "1" "5" "${SHARED_SECRETS}"
 
 # ----------------------------------------------------------

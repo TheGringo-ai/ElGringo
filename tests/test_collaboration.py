@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ai_dev_team.collaboration.engine import (
+from elgringo.collaboration.engine import (
     CollaborationEngine,
     CollaborationMode,
     CollaborationContext,
@@ -19,13 +19,13 @@ from ai_dev_team.collaboration.engine import (
     ConsensusBuilder,
     ChallengeGenerator,
 )
-from ai_dev_team.collaboration.weighted_consensus import (
+from elgringo.collaboration.weighted_consensus import (
     WeightedConsensus,
     Vote,
     ConsensusResult,
     DebateRound,
 )
-from ai_dev_team.agents.base import AgentResponse, ModelType
+from elgringo.agents.base import AgentResponse, ModelType
 
 
 class TestCollaborationMode:

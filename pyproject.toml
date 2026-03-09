@@ -88,10 +88,11 @@ dev = [
 ]
 
 [project.scripts]
-fred = "ai_dev_team.cli:main"
-fred-chat = "ai_dev_team.chat_ui:main"
-fred-studio = "ai_dev_team.studio_ui:main"
-fred-launch = "ai_dev_team.launcher:main"
+fred = "elgringo.cli.cli:main"
+fred-chat = "elgringo.ui.chat_ui:main"
+fred-studio = "elgringo.ui.studio_ui:main"
+elgringo = "elgringo.cli.cli:main"
+fred-launch = "elgringo.launcher:main"
 fred-pr-bot = "products.pr_review_bot.server:main"
 
 [project.urls]
@@ -101,7 +102,7 @@ Repository = "https://github.com/TheGringo-ai/ElGringo"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["ai_dev_team*", "products*"]
+include = ["elgringo*", "products*"]
 
 [tool.black]
 line-length = 100

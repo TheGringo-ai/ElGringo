@@ -165,13 +165,13 @@ class TestMemorySystem:
     @pytest.fixture
     def memory(self, tmp_path):
         """Create a test memory system"""
-        from ai_dev_team.memory import MemorySystem
+        from elgringo.memory import MemorySystem
         return MemorySystem(storage_dir=str(tmp_path / "memory"))
 
     @pytest.mark.asyncio
     async def test_capture_mistake(self, memory):
         """Test capturing a mistake"""
-        from ai_dev_team.memory.system import MistakeType
+        from elgringo.memory.system import MistakeType
 
         mistake_id = await memory.capture_mistake(
             mistake_type=MistakeType.CODE_ERROR,
@@ -200,7 +200,7 @@ class TestMemorySystem:
     @pytest.mark.asyncio
     async def test_find_similar_mistakes(self, memory):
         """Test finding similar mistakes"""
-        from ai_dev_team.memory.system import MistakeType
+        from elgringo.memory.system import MistakeType
 
         # Add some mistakes
         await memory.capture_mistake(
@@ -252,7 +252,7 @@ class TestWeightedConsensus:
 
     def test_expertise_weights(self):
         """Test that expertise weights are returned correctly"""
-        from ai_dev_team.collaboration import WeightedConsensus
+        from elgringo.collaboration import WeightedConsensus
 
         wc = WeightedConsensus()
 
@@ -270,7 +270,7 @@ class TestWeightedConsensus:
 
     def test_unknown_agent_gets_default_weight(self):
         """Unknown agents should get default weights"""
-        from ai_dev_team.collaboration import WeightedConsensus
+        from elgringo.collaboration import WeightedConsensus
 
         wc = WeightedConsensus()
         weight = wc.get_expertise_weight("unknown-agent-xyz", "coding")
@@ -283,7 +283,7 @@ class TestFredFix:
 
     def test_issue_parsing_json(self):
         """Test JSON issue parsing"""
-        from ai_dev_team.fredfix import FredFix
+        from elgringo.workflows.fredfix import FredFix
 
         fixer = FredFix()
 
@@ -308,7 +308,7 @@ class TestFredFix:
 
     def test_issue_parsing_text(self):
         """Test text issue parsing"""
-        from ai_dev_team.fredfix import FredFix
+        from elgringo.workflows.fredfix import FredFix
 
         fixer = FredFix()
 
@@ -328,7 +328,7 @@ class TestFredFix:
 
     def test_language_detection(self):
         """Test language detection from file path"""
-        from ai_dev_team.fredfix import FredFix
+        from elgringo.workflows.fredfix import FredFix
         from pathlib import Path
 
         fixer = FredFix()
@@ -342,7 +342,7 @@ class TestFredFix:
 
     def test_supported_languages(self):
         """Test that multiple languages are supported"""
-        from ai_dev_team.fredfix import LANGUAGE_CONFIG
+        from elgringo.workflows.fredfix import LANGUAGE_CONFIG
 
         assert "python" in LANGUAGE_CONFIG
         assert "javascript" in LANGUAGE_CONFIG
@@ -443,7 +443,7 @@ class TestCollaborationEngine:
 
     def test_collaboration_modes_exist(self):
         """Test that all collaboration modes are defined"""
-        from ai_dev_team.collaboration import CollaborationMode
+        from elgringo.collaboration import CollaborationMode
 
         modes = [
             "PARALLEL",
@@ -465,7 +465,7 @@ class TestTokenization:
 
     def test_tokenize(self):
         """Test basic tokenization"""
-        from ai_dev_team.memory.system import tokenize
+        from elgringo.memory.system import tokenize
 
         tokens = tokenize("Hello World! This is a test.")
 
@@ -478,7 +478,7 @@ class TestTokenization:
 
     def test_tfidf_scoring(self):
         """Test TF-IDF scoring"""
-        from ai_dev_team.memory.system import tokenize, compute_tf_idf_score
+        from elgringo.memory.system import tokenize, compute_tf_idf_score
 
         query = tokenize("database connection error")
         doc1 = tokenize("database connection pooling error handling")

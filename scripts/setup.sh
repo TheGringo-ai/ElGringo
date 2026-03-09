@@ -312,7 +312,7 @@ verify_ai_team() {
     # Test AI Team import
     info "Testing AI Team agents..."
     python3 -c "
-from ai_dev_team import AIDevTeam
+from elgringo import AIDevTeam
 team = AIDevTeam(project_name='verify')
 print(f'  Agents online: {len(team.agents)}')
 for name in team.agents:
@@ -332,7 +332,7 @@ for name in team.agents:
         info "Testing AI Team collaboration..."
         python3 -c "
 import asyncio
-from ai_dev_team import AIDevTeam
+from elgringo import AIDevTeam
 
 async def quick_test():
     team = AIDevTeam(project_name='verify-test')

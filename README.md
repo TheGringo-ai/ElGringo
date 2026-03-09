@@ -19,10 +19,10 @@ Think of it as the operating system layer between AI models and real-world work.
 ### Try it in 30 seconds (just Ollama, no API keys)
 
 ```bash
-git clone https://github.com/TheGringo-ai/ElGringo.git && cd El Gringo
+git clone https://github.com/TheGringo-ai/ElGringo.git && cd ElGringo
 pip install -e .
 ollama pull llama3.2:3b
-python demo.py
+python examples/demo.py
 ```
 
 ---
@@ -133,7 +133,7 @@ El Gringo:
 - GPU memory detection for optimal model selection
 - Core ML integration for on-device inference
 
-### MCP Server (28 tools)
+### MCP Server (24 tools)
 Works directly with Claude Code, Cursor, or any MCP-compatible client:
 
 | Tool | What it does |
@@ -176,7 +176,7 @@ Works directly with Claude Code, Cursor, or any MCP-compatible client:
 
 ```bash
 git clone https://github.com/TheGringo-ai/ElGringo.git
-cd El Gringo
+cd ElGringo
 pip install -e .
 ```
 
@@ -203,13 +203,10 @@ ollama pull llama3.2:3b
 fred
 
 # Quick demo (no API keys, just Ollama)
-python demo.py
+python examples/demo.py
 
 # MCP Server (for Claude Code / Cursor)
-python mcp_server.py
-
-# REST API
-python servers/api_server.py
+python elgringo/server/mcp_server.py
 
 # Gradio UI
 fred-studio
@@ -223,9 +220,9 @@ Add to your `.mcp.json`:
   "mcpServers": {
     "el-gringo": {
       "command": "python3",
-      "args": ["path/to/ElGringo/mcp_server.py"],
+      "args": ["path/to/ElGringo/elgringo/server/mcp_server.py"],
       "env": {
-        "PYTHONPATH": "path/to/El Gringo",
+        "PYTHONPATH": "path/to/ElGringo",
         "OPENAI_API_KEY": "sk-...",
         "XAI_API_KEY": "xai-..."
       }
@@ -237,26 +234,27 @@ Add to your `.mcp.json`:
 ## Project Structure
 
 ```
-El Gringo/
+ElGringo/
   elgringo/
     agents/          # ChatGPT, Gemini, Grok, Claude, Ollama, LlamaCloud, Specialists
+    cli/             # Interactive REPL
     collaboration/   # Multi-agent engine, weighted consensus, streaming
+    core/            # Shared config, security, sessions, personas
     memory/          # Tiered memory system, learning engine, mistake prevention
     intelligence/    # Code RAG, embeddings, semantic analysis
     routing/         # Task classification, cost optimization, performance tracking
     autonomous/      # Self-correction, task decomposition, session learning
     apple/           # Apple Silicon routing, MLX inference, Core ML
     knowledge/       # Domain knowledge bases, auto-learner, teaching system
+    server/          # MCP protocol server (24 tools), analytics middleware
     tools/           # File, git, docker, deploy, database, browser tools
-    cli.py           # Interactive REPL
+    ui/              # Gradio web dashboard, studio, chat, command center
+    workflows/       # FredFix, parallel coding, app generator, dev consultant
     orchestrator.py  # Core orchestration engine (2,400+ lines)
-    sessions.py      # Multi-turn conversation sessions with persistence
-    personas.py      # Custom agent personas — user-defined specialists
-    dashboard_ui.py  # Gradio web dashboard (costs, quality, agents, routing)
-  servers/
-    mcp_server.py    # MCP protocol server (28 tools)
-    api_server.py    # REST API
-  tests/             # 219 tests, all passing
+  products/          # Standalone microservices (PR review bot, code audit, etc.)
+  examples/          # Demo scripts and usage examples
+  tests/             # 411 tests, all passing
+  main.py            # Single entry point
 ```
 
 ## Stats
@@ -264,9 +262,9 @@ El Gringo/
 - **69,000+** lines of Python across **149** modules
 - **6** AI providers supported (ChatGPT, Gemini 2.5 Flash, Grok, Claude, Ollama, LlamaCloud)
 - **8** collaboration modes
-- **28** MCP tools (sessions, PR review, personas, intelligence reports, cost tracking, benchmarking)
+- **24** MCP tools (sessions, PR review, personas, intelligence reports, cost tracking, benchmarking)
 - **3** specialist agents
-- **219** tests passing
+- **411** tests passing
 - **19** domain knowledge bases
 - **150+** solution patterns in memory (and growing)
 

@@ -127,32 +127,10 @@ chown elgringo:elgringo /opt/elgringo/projects
 # ----------------------------------------------------------
 echo "=== Creating systemd services ==="
 
-# --- elgringo-api: Flask API server (port 5050) ---
-cat > /etc/systemd/system/elgringo-api.service << 'EOF'
-[Unit]
-Description=ElGringo API Server (Flask)
-After=network.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=elgringo
-Group=elgringo
-WorkingDirectory=/opt/elgringo
-Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-Environment=PYTHONPATH=/opt/elgringo
-EnvironmentFile=/opt/elgringo/.env
-ExecStart=/opt/elgringo/venv/bin/python servers/api_server.py
-Restart=always
-RestartSec=5
-StandardOutput=append:/opt/elgringo/logs/api.log
-StandardError=append:/opt/elgringo/logs/api-error.log
-NoNewPrivileges=true
-PrivateTmp=true
-
-[Install]
-WantedBy=multi-user.target
-EOF
+# --- Remove old elgringo-api service (replaced by elgringo-fred-api on 8080) ---
+systemctl stop elgringo-api 2>/dev/null || true
+systemctl disable elgringo-api 2>/dev/null || true
+rm -f /etc/systemd/system/elgringo-api.service
 
 # --- elgringo-pr-bot: PR Review Bot (port 8001) ---
 cat > /etc/systemd/system/elgringo-pr-bot.service << 'EOF'
@@ -198,7 +176,7 @@ Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin
 Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=7860
 EnvironmentFile=/opt/elgringo/.env
-ExecStart=/opt/elgringo/venv/bin/python -m elgringo.chat_ui
+ExecStart=/opt/elgringo/venv/bin/python -m elgringo.ui.chat_ui
 Restart=always
 RestartSec=5
 StandardOutput=append:/opt/elgringo/logs/chat.log
@@ -226,7 +204,7 @@ Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin
 Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=7861
 EnvironmentFile=/opt/elgringo/.env
-ExecStart=/opt/elgringo/venv/bin/python -m elgringo.studio_ui
+ExecStart=/opt/elgringo/venv/bin/python -m elgringo.ui.studio_ui
 Restart=always
 RestartSec=5
 StandardOutput=append:/opt/elgringo/logs/studio.log
@@ -502,7 +480,7 @@ location /landing/ {
 # --- Exempt health checks from auth ---
 location = /health {
     auth_basic off;
-    proxy_pass http://127.0.0.1:5050/api/health;
+    proxy_pass http://127.0.0.1:8080/v1/health;
     proxy_set_header Host $host;
 }
 
@@ -567,8 +545,7 @@ fi
 # ----------------------------------------------------------
 echo "=== Starting services ==="
 systemctl daemon-reload
-systemctl enable elgringo-api elgringo-pr-bot elgringo-chat elgringo-studio elgringo-fred-api elgringo-code-audit elgringo-test-gen elgringo-doc-gen elgringo-command-api elgringo-assistant
-systemctl restart elgringo-api
+systemctl enable elgringo-pr-bot elgringo-chat elgringo-studio elgringo-fred-api elgringo-code-audit elgringo-test-gen elgringo-doc-gen elgringo-command-api elgringo-assistant
 systemctl restart elgringo-pr-bot
 systemctl restart elgringo-chat
 systemctl restart elgringo-studio
@@ -586,7 +563,6 @@ nginx -t && systemctl reload nginx
 # ----------------------------------------------------------
 echo ""
 echo "=== Service Status ==="
-systemctl is-active elgringo-api && echo "  elgringo-api:        RUNNING (port 5050)" || echo "  elgringo-api:        FAILED"
 systemctl is-active elgringo-pr-bot && echo "  elgringo-pr-bot:     RUNNING (port 8001)" || echo "  elgringo-pr-bot:     FAILED"
 systemctl is-active elgringo-chat && echo "  elgringo-chat:       RUNNING (port 7860)" || echo "  elgringo-chat:       FAILED"
 systemctl is-active elgringo-studio && echo "  elgringo-studio:     RUNNING (port 7861)" || echo "  elgringo-studio:     FAILED"
@@ -604,11 +580,10 @@ systemctl is-active elgringo-assistant && echo "  elgringo-assistant:  RUNNING (
 echo ""
 echo "=== Deploy complete ==="
 echo "Landing:    https://ai.chatterfix.com/ (user: fred)"
-echo "API:        http://localhost:5050/api/health"
+echo "Fred API:   http://localhost:8080/v1/health"
 echo "PR Bot:     http://localhost:8001/health"
 echo "Chat:       http://localhost:7860"
 echo "Studio:     http://localhost:7861"
-echo "Fred API:   http://localhost:8080/v1/health"
 echo "Code Audit: http://localhost:8081/audit/health"
 echo "Test Gen:   http://localhost:8082/tests/health"
 echo "Doc Gen:    http://localhost:8083/docs/health"

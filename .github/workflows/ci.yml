@@ -92,8 +92,8 @@ jobs:
 
           API_STATUS=$(gcloud compute ssh "${{ secrets.VM_NAME }}" \
             --zone="${{ secrets.VM_ZONE }}" --quiet \
-            --command="curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:5050/api/health" 2>/dev/null || echo "000")
-          echo "API Server (5050): HTTP ${API_STATUS}"
+            --command="curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/v1/health" 2>/dev/null || echo "000")
+          echo "Fred API (8080): HTTP ${API_STATUS}"
 
           BOT_STATUS=$(gcloud compute ssh "${{ secrets.VM_NAME }}" \
             --zone="${{ secrets.VM_ZONE }}" --quiet \

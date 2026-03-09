@@ -147,7 +147,7 @@ WorkingDirectory=/opt/elgringo
 Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=8001
-EnvironmentFile=/opt/elgringo/.env
+EnvironmentFile=-/opt/elgringo/.env
 ExecStart=/opt/elgringo/venv/bin/uvicorn products.pr_review_bot.server:app --host 0.0.0.0 --port 8001 --log-level info
 Restart=always
 RestartSec=5
@@ -175,7 +175,7 @@ WorkingDirectory=/opt/elgringo
 Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=7860
-EnvironmentFile=/opt/elgringo/.env
+EnvironmentFile=-/opt/elgringo/.env
 ExecStart=/opt/elgringo/venv/bin/python -m elgringo.ui.chat_ui
 Restart=always
 RestartSec=5
@@ -203,7 +203,7 @@ WorkingDirectory=/opt/elgringo
 Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=7861
-EnvironmentFile=/opt/elgringo/.env
+EnvironmentFile=-/opt/elgringo/.env
 ExecStart=/opt/elgringo/venv/bin/python -m elgringo.ui.studio_ui
 Restart=always
 RestartSec=5
@@ -231,7 +231,7 @@ WorkingDirectory=/opt/elgringo
 Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=8080
-EnvironmentFile=/opt/elgringo/.env
+EnvironmentFile=-/opt/elgringo/.env
 ExecStart=/opt/elgringo/venv/bin/uvicorn products.fred_api.server:app --host 0.0.0.0 --port 8080 --log-level info
 Restart=always
 RestartSec=5
@@ -259,7 +259,7 @@ WorkingDirectory=/opt/elgringo
 Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=8081
-EnvironmentFile=/opt/elgringo/.env
+EnvironmentFile=-/opt/elgringo/.env
 ExecStart=/opt/elgringo/venv/bin/uvicorn products.code_audit.server:app --host 0.0.0.0 --port 8081 --log-level info
 Restart=always
 RestartSec=5
@@ -287,7 +287,7 @@ WorkingDirectory=/opt/elgringo
 Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=8082
-EnvironmentFile=/opt/elgringo/.env
+EnvironmentFile=-/opt/elgringo/.env
 ExecStart=/opt/elgringo/venv/bin/uvicorn products.test_generator.server:app --host 0.0.0.0 --port 8082 --log-level info
 Restart=always
 RestartSec=5
@@ -315,7 +315,7 @@ WorkingDirectory=/opt/elgringo
 Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=8083
-EnvironmentFile=/opt/elgringo/.env
+EnvironmentFile=-/opt/elgringo/.env
 ExecStart=/opt/elgringo/venv/bin/uvicorn products.doc_generator.server:app --host 0.0.0.0 --port 8083 --log-level info
 Restart=always
 RestartSec=5
@@ -345,7 +345,7 @@ WorkingDirectory=/opt/elgringo
 Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=7870
-EnvironmentFile=/opt/elgringo/.env
+EnvironmentFile=-/opt/elgringo/.env
 ExecStart=/opt/elgringo/venv/bin/uvicorn products.fred_assistant.server:app --host 0.0.0.0 --port 7870 --log-level info
 Restart=on-failure
 RestartSec=5
@@ -374,7 +374,7 @@ WorkingDirectory=/opt/elgringo
 Environment=PATH=/opt/elgringo/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=PYTHONPATH=/opt/elgringo
 Environment=PORT=7862
-EnvironmentFile=/opt/elgringo/.env
+EnvironmentFile=-/opt/elgringo/.env
 ExecStart=/opt/elgringo/venv/bin/uvicorn products.command_center.server:app --host 127.0.0.1 --port 7862 --log-level info
 Restart=always
 RestartSec=5
@@ -546,15 +546,15 @@ fi
 echo "=== Starting services ==="
 systemctl daemon-reload
 systemctl enable elgringo-pr-bot elgringo-chat elgringo-studio elgringo-fred-api elgringo-code-audit elgringo-test-gen elgringo-doc-gen elgringo-command-api elgringo-assistant
-systemctl restart elgringo-pr-bot
-systemctl restart elgringo-chat
-systemctl restart elgringo-studio
-systemctl restart elgringo-fred-api
-systemctl restart elgringo-code-audit
-systemctl restart elgringo-test-gen
-systemctl restart elgringo-doc-gen
-systemctl restart elgringo-command-api
-systemctl restart elgringo-assistant
+systemctl restart elgringo-pr-bot || true
+systemctl restart elgringo-chat || true
+systemctl restart elgringo-studio || true
+systemctl restart elgringo-fred-api || true
+systemctl restart elgringo-code-audit || true
+systemctl restart elgringo-test-gen || true
+systemctl restart elgringo-doc-gen || true
+systemctl restart elgringo-command-api || true
+systemctl restart elgringo-assistant || true
 # Reload nginx for Command Center static files
 nginx -t && systemctl reload nginx
 

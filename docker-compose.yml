@@ -15,8 +15,7 @@ services:
   ai-platform:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: development
+      dockerfile: Dockerfile.cloud
     ports:
       - "8080:8080"
     environment:
@@ -34,7 +33,7 @@ services:
       - ai-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/health"]
       interval: 60s
       timeout: 10s
       retries: 3

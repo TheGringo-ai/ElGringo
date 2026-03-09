@@ -93,19 +93,19 @@ deploy_service "elgringo-pr-bot" \
     "uvicorn products.pr_review_bot.server:app --host 0.0.0.0 --port \$PORT" \
     "1Gi" "1" "10" "${PR_BOT_SECRETS}"
 
-# elgringo-api: Flask API server for IDE integration
+# elgringo-api: FastAPI main API server
 deploy_service "elgringo-api" \
-    "gunicorn servers.api_server:app --bind 0.0.0.0:\$PORT --workers 2 --timeout 600" \
+    "uvicorn products.fred_api.server:app --host 0.0.0.0 --port \$PORT --workers 2" \
     "2Gi" "2" "20" "${SHARED_SECRETS}"
 
 # elgringo-chat: Gradio Chat UI
 deploy_service "elgringo-chat" \
-    "python -m elgringo.chat_ui" \
+    "python -m elgringo.ui.chat_ui" \
     "1Gi" "1" "5" "${SHARED_SECRETS}"
 
 # elgringo-studio: Gradio Studio IDE
 deploy_service "elgringo-studio" \
-    "python -m elgringo.studio_ui" \
+    "python -m elgringo.ui.studio_ui" \
     "1Gi" "1" "5" "${SHARED_SECRETS}"
 
 # ----------------------------------------------------------

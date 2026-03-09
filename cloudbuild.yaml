@@ -52,7 +52,7 @@ steps:
       - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/elgringo:${SHORT_SHA}'
       - '--region=${_REGION}'
       - '--command=/bin/sh'
-      - '--args=-c,gunicorn servers.api_server:app --bind 0.0.0.0:$$PORT --workers 2 --timeout 600'
+      - '--args=-c,uvicorn products.fred_api.server:app --host 0.0.0.0 --port $$PORT --workers 2'
       - '--memory=2Gi'
       - '--cpu=2'
       - '--min-instances=0'

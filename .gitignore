@@ -23,6 +23,9 @@ htmlcov/
 .pytest_cache/
 .mypy_cache/
 
+# Linter cache
+.ruff_cache/
+
 # ML model files (too large for GitHub — use HuggingFace Hub)
 *.safetensors
 *.gguf

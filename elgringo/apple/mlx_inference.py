@@ -220,14 +220,15 @@ class MLXInference:
             if stream:
                 return self._generate_stream(formatted_prompt, max_tokens, temperature)
 
-            # Generate response
+            # Generate response — build sampler for temperature control
+            from mlx_lm.sample_utils import make_sampler
+            sampler = make_sampler(temp=temperature, top_p=self.config.top_p)
             response_text = generate(
                 self._model,
                 self._tokenizer,
                 prompt=formatted_prompt,
                 max_tokens=max_tokens,
-                temp=temperature,
-                top_p=self.config.top_p,
+                sampler=sampler,
                 repetition_penalty=self.config.repetition_penalty,
             )
 
@@ -259,25 +260,19 @@ class MLXInference:
     ) -> AsyncIterator[str]:
         """Stream tokens as they're generated."""
         try:
-            from mlx_lm import generate_step
+            from mlx_lm import stream_generate
+            from mlx_lm.sample_utils import make_sampler
 
-            # Initialize generation
-            tokens = self._tokenizer.encode(prompt)
+            sampler = make_sampler(temp=temperature, top_p=self.config.top_p)
 
-            for _ in range(max_tokens):
-                # Generate next token
-                token = generate_step(
-                    self._model,
-                    tokens,
-                    temp=temperature,
-                )
-
-                if token == self._tokenizer.eos_token_id:
-                    break
-
-                tokens.append(token)
-                decoded = self._tokenizer.decode([token])
-                yield decoded
+            for response in stream_generate(
+                self._model,
+                self._tokenizer,
+                prompt=prompt,
+                max_tokens=max_tokens,
+                sampler=sampler,
+            ):
+                yield response.text
 
                 # Allow other tasks to run
                 await asyncio.sleep(0)

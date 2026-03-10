@@ -1048,7 +1048,7 @@ class AITeamCLI:
         print()
 
     async def build_project(self, args: str):
-        """Autonomous build — plan, generate, test, fix, iterate."""
+        """Autonomous build — actually creates project files on disk."""
         if not args:
             print(f"\n{Colors.BOLD}Autonomous Build:{Colors.RESET}")
             print(f"  {Colors.CYAN}/build <description>{Colors.RESET}  - Build a project from a description\n")
@@ -1058,72 +1058,58 @@ class AITeamCLI:
             print(f"  /build a CLI tool that converts CSV to JSON{Colors.RESET}\n")
             return
 
+        import time as _time
+        from elgringo.workflows.app_generator import AppGenerator
+
         description = args
         print(f"\n{Colors.BOLD}{'=' * 60}{Colors.RESET}")
         print(f"{Colors.CYAN}  AUTONOMOUS BUILD{Colors.RESET}")
         print(f"{Colors.BOLD}{'=' * 60}{Colors.RESET}")
         print(f"\n  {Colors.DIM}{description}{Colors.RESET}\n")
+        print(f"  {Colors.GREEN}[1]{Colors.RESET} Analyzing requirements...")
 
-        step_num = [0]
-
-        def on_progress(update):
-            step_num[0] += 1
-            status = update if isinstance(update, str) else update.get("status", str(update))
-            print(f"  {Colors.GREEN}[{step_num[0]}]{Colors.RESET} {status}")
+        output_dir = self.current_project or os.getcwd()
+        generator = AppGenerator(output_dir=output_dir)
+        start = _time.time()
 
         try:
-            team = self.orchestrator
-            print(f"  {Colors.DIM}Agents: {', '.join(team.available_agents)}{Colors.RESET}")
-            print(f"  {Colors.DIM}Planning...{Colors.RESET}\n")
-
-            result = await team.build(
-                description=description,
-                on_progress=on_progress,
-            )
-
-            print(f"\n{Colors.BOLD}{'─' * 60}{Colors.RESET}")
-
-            if result.get("success"):
-                print(f"{Colors.GREEN}  BUILD COMPLETE{Colors.RESET}")
-                print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}\n")
-
-                total_time = result.get("total_time", 0)
-                print(f"  {Colors.BOLD}Time:{Colors.RESET}       {total_time:.1f}s")
-
-                confidence = result.get("confidence", 0)
-                if confidence:
-                    print(f"  {Colors.BOLD}Confidence:{Colors.RESET}  {confidence:.0%}")
-
-                corrections = result.get("corrections", 0)
-                if corrections:
-                    print(f"  {Colors.BOLD}Corrections:{Colors.RESET} {corrections}")
-
-                subtasks = result.get("subtasks", {})
-                if subtasks:
-                    completed = sum(1 for t in subtasks.values() if t.get("status") == "completed")
-                    print(f"  {Colors.BOLD}Subtasks:{Colors.RESET}    {completed}/{len(subtasks)} completed")
-
-                stats = result.get("session_stats", {})
-                if stats.get("total_tasks"):
-                    print(f"  {Colors.BOLD}Session:{Colors.RESET}     {stats['total_tasks']} tasks, "
-                          f"{stats.get('success_rate', 0):.0%} success rate")
-
-                response = result.get("response", "")
-                if response:
-                    print(f"\n{Colors.BOLD}{'─' * 60}{Colors.RESET}")
-                    print(response[:5000])
-                    if len(response) > 5000:
-                        print(f"\n{Colors.DIM}... ({len(response)} chars total){Colors.RESET}")
-                    print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}")
-            else:
-                print(f"{Colors.RED}  BUILD FAILED{Colors.RESET}")
-                print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}\n")
-                print(f"  {result.get('response', 'Unknown error')}")
-
+            result = await generator.create_app(description=description)
         except Exception as e:
             print(f"\n{Colors.RED}Build error: {e}{Colors.RESET}")
             import traceback
             traceback.print_exc()
+            print()
+            return
+
+        elapsed = _time.time() - start
+        print(f"\n{Colors.BOLD}{'─' * 60}{Colors.RESET}")
+
+        if result.get("success"):
+            print(f"{Colors.GREEN}  BUILD COMPLETE{Colors.RESET}")
+            print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}\n")
+
+            print(f"  {Colors.BOLD}Project:{Colors.RESET}    {result.get('project_name', 'unknown')}")
+            print(f"  {Colors.BOLD}Location:{Colors.RESET}   {result.get('project_path', output_dir)}")
+            print(f"  {Colors.BOLD}Template:{Colors.RESET}   {result.get('template', 'custom')}")
+            print(f"  {Colors.BOLD}Files:{Colors.RESET}      {len(result.get('files_created', []))}")
+            print(f"  {Colors.BOLD}Time:{Colors.RESET}       {elapsed:.1f}s")
+
+            files = result.get("files_created", [])
+            if files:
+                print(f"\n  {Colors.BOLD}Created:{Colors.RESET}")
+                for f in files[:15]:
+                    print(f"    {Colors.DIM}{f}{Colors.RESET}")
+                if len(files) > 15:
+                    print(f"    {Colors.DIM}... and {len(files) - 15} more{Colors.RESET}")
+
+            next_steps = result.get("next_steps", [])
+            if next_steps:
+                print(f"\n  {Colors.BOLD}Next steps:{Colors.RESET}")
+                for step in next_steps[:5]:
+                    print(f"    {step}")
+        else:
+            print(f"{Colors.RED}  BUILD FAILED{Colors.RESET}")
+            print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}")
 
         print()
 
@@ -1486,34 +1472,31 @@ async def run_single_task(team, prompt: str, mode: str = "parallel"):
 
 
 async def _run_build(description: str):
-    """Run an autonomous build from the command line."""
-    from elgringo.orchestrator import AIDevTeam
+    """Run an autonomous build from the command line — actually creates project files."""
+    import time as _time
+    from elgringo.workflows.app_generator import AppGenerator
 
     print(f"\n{Colors.BOLD}{'=' * 60}{Colors.RESET}")
     print(f"{Colors.CYAN}  EL GRINGO — AUTONOMOUS BUILD{Colors.RESET}")
     print(f"{Colors.BOLD}{'=' * 60}{Colors.RESET}")
     print(f"\n  {Colors.DIM}{description}{Colors.RESET}\n")
 
-    team = AIDevTeam(project_name="build", enable_memory=True)
+    output_dir = os.getcwd()
+    generator = AppGenerator(output_dir=output_dir)
 
-    if not team.agents:
-        print(f"{Colors.RED}No AI agents available. Set at least one API key:{Colors.RESET}")
-        print("  export OPENAI_API_KEY=sk-...")
-        print("  export GEMINI_API_KEY=...")
-        print("  export XAI_API_KEY=xai-...")
+    start = _time.time()
+
+    print(f"  {Colors.GREEN}[1]{Colors.RESET} Analyzing requirements...")
+
+    try:
+        result = await generator.create_app(description=description)
+    except Exception as e:
+        print(f"\n{Colors.RED}  BUILD FAILED: {e}{Colors.RESET}\n")
+        import traceback
+        traceback.print_exc()
         return
 
-    print(f"  {Colors.DIM}Agents: {', '.join(team.available_agents)}{Colors.RESET}")
-    print(f"  {Colors.DIM}Planning...{Colors.RESET}\n")
-
-    step_num = [0]
-
-    def on_progress(update):
-        step_num[0] += 1
-        status = update if isinstance(update, str) else update.get("status", str(update))
-        print(f"  {Colors.GREEN}[{step_num[0]}]{Colors.RESET} {status}")
-
-    result = await team.build(description=description, on_progress=on_progress)
+    elapsed = _time.time() - start
 
     print(f"\n{Colors.BOLD}{'─' * 60}{Colors.RESET}")
 
@@ -1521,33 +1504,29 @@ async def _run_build(description: str):
         print(f"{Colors.GREEN}  BUILD COMPLETE{Colors.RESET}")
         print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}\n")
 
-        total_time = result.get("total_time", 0)
-        print(f"  {Colors.BOLD}Time:{Colors.RESET}       {total_time:.1f}s")
+        print(f"  {Colors.BOLD}Project:{Colors.RESET}    {result.get('project_name', 'unknown')}")
+        print(f"  {Colors.BOLD}Location:{Colors.RESET}   {result.get('project_path', output_dir)}")
+        print(f"  {Colors.BOLD}Template:{Colors.RESET}   {result.get('template', 'custom')}")
+        print(f"  {Colors.BOLD}Files:{Colors.RESET}      {len(result.get('files_created', []))}")
+        print(f"  {Colors.BOLD}Time:{Colors.RESET}       {elapsed:.1f}s")
 
-        confidence = result.get("confidence", 0)
-        if confidence:
-            print(f"  {Colors.BOLD}Confidence:{Colors.RESET}  {confidence:.0%}")
+        files = result.get("files_created", [])
+        if files:
+            print(f"\n  {Colors.BOLD}Created:{Colors.RESET}")
+            for f in files[:20]:
+                print(f"    {Colors.DIM}{f}{Colors.RESET}")
+            if len(files) > 20:
+                print(f"    {Colors.DIM}... and {len(files) - 20} more{Colors.RESET}")
 
-        corrections = result.get("corrections", 0)
-        if corrections:
-            print(f"  {Colors.BOLD}Corrections:{Colors.RESET} {corrections}")
+        next_steps = result.get("next_steps", [])
+        if next_steps:
+            print(f"\n  {Colors.BOLD}Next steps:{Colors.RESET}")
+            for step in next_steps[:5]:
+                print(f"    {step}")
 
-        subtasks = result.get("subtasks", {})
-        if subtasks:
-            completed = sum(1 for t in subtasks.values() if t.get("status") == "completed")
-            print(f"  {Colors.BOLD}Subtasks:{Colors.RESET}    {completed}/{len(subtasks)} completed")
-
-        response = result.get("response", "")
-        if response:
-            print(f"\n{Colors.BOLD}{'─' * 60}{Colors.RESET}")
-            print(response[:5000])
-            if len(response) > 5000:
-                print(f"\n{Colors.DIM}... ({len(response)} chars total){Colors.RESET}")
-            print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}")
     else:
         print(f"{Colors.RED}  BUILD FAILED{Colors.RESET}")
-        print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}\n")
-        print(f"  {result.get('response', 'Unknown error')}")
+        print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}")
 
     print()
 

@@ -110,9 +110,9 @@ class ProjectTools:
             raise ValueError(f"Project path does not exist: {self.root}")
 
     def _validate_path(self, filepath: str) -> Path:
-        """Ensure path is within project root."""
+        """Ensure path is within project root (symlink-safe)."""
         p = Path(filepath).resolve()
-        if not str(p).startswith(str(self.root)):
+        if not p.is_relative_to(self.root):
             raise ValueError(f"Path {p} is outside project root {self.root}")
         return p
 

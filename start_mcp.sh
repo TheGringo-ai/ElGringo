@@ -12,6 +12,15 @@ if [[ -f ~/.ai_secrets ]]; then
     source ~/.ai_secrets
 fi
 
+# Point MCP at local coding agent (port 8090) if running, else use VM
+if curl -sf http://127.0.0.1:8090/v1/health > /dev/null 2>&1; then
+    export ELGRINGO_API_URL="http://127.0.0.1:8090"
+    export ELGRINGO_API_KEY="local"
+else
+    export ELGRINGO_API_URL="${ELGRINGO_API_URL:-https://ai.chatterfix.com}"
+    export ELGRINGO_API_KEY="${ELGRINGO_API_KEY:-K0-FkrsM2qiJRl-oD8V-k0LHA9gvveBo4icSvwS3Cqc}"
+fi
+
 # Use the platform venv
 VENV_PYTHON="/Users/fredtaylor/.venvs/ai-platform/bin/python3"
 

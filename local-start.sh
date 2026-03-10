@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 # ============================================================
-# El Gringo Local Services (runs on your Mac)
-# Chat UI, Studio, Code Audit, Test Gen, Doc Gen
-# VM handles: API Server, PR Bot, Fred API
+# DEPRECATED — Use local-code-agent.sh instead
+# ============================================================
+# This script starts old/unused services (Chat UI, Studio, etc.)
+# The coding agent is the only local service that matters now.
+# Run: ./local-code-agent.sh start
+# ============================================================
+echo "DEPRECATED: Use ./local-code-agent.sh instead"
+echo "  ./local-code-agent.sh start   # start coding agent"
+echo "  ./local-code-agent.sh stop    # stop it"
+exit 0
+# ============================================================
+# OLD CODE BELOW (kept for reference)
 # ============================================================
 set -euo pipefail
 

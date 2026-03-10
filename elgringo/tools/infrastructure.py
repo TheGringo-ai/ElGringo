@@ -529,7 +529,7 @@ class GCPTools(Tool):
         self.region = region
 
         # Register operations
-        # Info operations (safe)
+        # ── Read-only operations (safe, no permission needed) ──
         self.register_operation("projects_list", self._projects_list, "List projects", requires_permission=False)
         self.register_operation("run_services_list", self._run_services_list, "List Cloud Run services", requires_permission=False)
         self.register_operation("run_revisions_list", self._run_revisions_list, "List revisions", requires_permission=False)
@@ -537,15 +537,59 @@ class GCPTools(Tool):
         self.register_operation("storage_buckets_list", self._storage_buckets_list, "List storage buckets", requires_permission=False)
         self.register_operation("iam_roles_list", self._iam_roles_list, "List IAM roles", requires_permission=False)
         self.register_operation("secrets_list", self._secrets_list, "List secrets", requires_permission=False)
+        self.register_operation("compute_instances_list", self._compute_instances_list, "List VM instances", requires_permission=False)
+        self.register_operation("compute_instances_describe", self._compute_instances_describe, "Describe a VM", requires_permission=False)
+        self.register_operation("compute_firewall_list", self._compute_firewall_list, "List firewall rules", requires_permission=False)
+        self.register_operation("compute_addresses_list", self._compute_addresses_list, "List static IPs", requires_permission=False)
+        self.register_operation("compute_disks_list", self._compute_disks_list, "List disks", requires_permission=False)
+        self.register_operation("iam_service_accounts_list", self._iam_service_accounts_list, "List service accounts", requires_permission=False)
+        self.register_operation("iam_policy_get", self._iam_policy_get, "Get IAM policy", requires_permission=False)
+        self.register_operation("networks_list", self._networks_list, "List VPC networks", requires_permission=False)
+        self.register_operation("networks_subnets_list", self._networks_subnets_list, "List subnets", requires_permission=False)
+        self.register_operation("dns_zones_list", self._dns_zones_list, "List DNS zones", requires_permission=False)
+        self.register_operation("dns_record_sets_list", self._dns_record_sets_list, "List DNS records", requires_permission=False)
+        self.register_operation("sql_instances_list", self._sql_instances_list, "List Cloud SQL instances", requires_permission=False)
+        self.register_operation("sql_instances_describe", self._sql_instances_describe, "Describe SQL instance", requires_permission=False)
+        self.register_operation("sql_databases_list", self._sql_databases_list, "List SQL databases", requires_permission=False)
+        self.register_operation("logging_read", self._logging_read, "Read cloud logs", requires_permission=False)
+        self.register_operation("monitoring_dashboards_list", self._monitoring_dashboards_list, "List dashboards", requires_permission=False)
+        self.register_operation("services_list", self._services_list, "List enabled APIs", requires_permission=False)
+        self.register_operation("billing_accounts_list", self._billing_accounts_list, "List billing accounts", requires_permission=False)
+        self.register_operation("billing_projects_describe", self._billing_projects_describe, "Project billing info", requires_permission=False)
+        self.register_operation("artifacts_repositories_list", self._artifacts_repositories_list, "List Artifact Registry repos", requires_permission=False)
+        self.register_operation("artifacts_docker_images_list", self._artifacts_docker_images_list, "List Docker images", requires_permission=False)
 
-        # Action operations (require permission)
+        # ── Write operations (require permission) ──
+        # Cloud Run
         self.register_operation("run_deploy", self._run_deploy, "Deploy to Cloud Run")
         self.register_operation("run_update_traffic", self._run_update_traffic, "Update traffic split")
+        self.register_operation("run_services_delete", self._run_services_delete, "Delete Cloud Run service")
+        # Cloud Build
         self.register_operation("builds_submit", self._builds_submit, "Submit Cloud Build")
+        # Storage
         self.register_operation("storage_cp", self._storage_cp, "Copy to/from Cloud Storage")
+        # Secrets
         self.register_operation("secrets_create", self._secrets_create, "Create secret")
         self.register_operation("secrets_versions_add", self._secrets_versions_add, "Add secret version")
-        self.register_operation("run_services_delete", self._run_services_delete, "Delete Cloud Run service")
+        # Compute Engine
+        self.register_operation("compute_instances_create", self._compute_instances_create, "Create a VM")
+        self.register_operation("compute_instances_stop", self._compute_instances_stop, "Stop a VM")
+        self.register_operation("compute_instances_start", self._compute_instances_start, "Start a VM")
+        self.register_operation("compute_instances_delete", self._compute_instances_delete, "Delete a VM")
+        self.register_operation("compute_ssh", self._compute_ssh, "SSH command on a VM")
+        self.register_operation("compute_scp", self._compute_scp, "Copy files to/from VM")
+        self.register_operation("compute_firewall_create", self._compute_firewall_create, "Create firewall rule")
+        self.register_operation("compute_firewall_delete", self._compute_firewall_delete, "Delete firewall rule")
+        self.register_operation("compute_addresses_create", self._compute_addresses_create, "Reserve static IP")
+        self.register_operation("compute_snapshots_create", self._compute_snapshots_create, "Create disk snapshot")
+        # IAM
+        self.register_operation("iam_service_accounts_create", self._iam_service_accounts_create, "Create service account")
+        self.register_operation("iam_policy_bindings_add", self._iam_policy_bindings_add, "Grant IAM role")
+        self.register_operation("iam_policy_bindings_remove", self._iam_policy_bindings_remove, "Revoke IAM role")
+        self.register_operation("iam_service_accounts_keys_create", self._iam_service_accounts_keys_create, "Create SA key")
+        # Services
+        self.register_operation("services_enable", self._services_enable, "Enable a GCP API")
+        self.register_operation("services_disable", self._services_disable, "Disable a GCP API")
 
     async def _run_gcloud(
         self,
@@ -755,15 +799,261 @@ class GCPTools(Tool):
         args = ["run", "services", "delete", service, "--region", region or self.region, "--quiet"]
         return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
 
+    # ── Compute Engine ──────────────────────────────────────────────
+    def _compute_instances_list(self, zone: Optional[str] = None) -> ToolResult:
+        args = ["compute", "instances", "list"]
+        if zone:
+            args.extend(["--zones", zone])
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
+
+    def _compute_instances_describe(self, instance: str, zone: str) -> ToolResult:
+        args = ["compute", "instances", "describe", instance, "--zone", zone]
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
+
+    def _compute_instances_create(
+        self, name: str, zone: str, machine_type: str = "e2-medium",
+        image_family: str = "debian-12", image_project: str = "debian-cloud",
+        disk_size: str = "20GB", tags: Optional[List[str]] = None,
+        startup_script: Optional[str] = None,
+    ) -> ToolResult:
+        args = ["compute", "instances", "create", name, "--zone", zone,
+                "--machine-type", machine_type,
+                f"--image-family={image_family}", f"--image-project={image_project}",
+                f"--boot-disk-size={disk_size}"]
+        if tags:
+            args.extend(["--tags", ",".join(tags)])
+        if startup_script:
+            args.extend(["--metadata", f"startup-script={startup_script}"])
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args, timeout=120))
+
+    def _compute_instances_stop(self, instance: str, zone: str) -> ToolResult:
+        args = ["compute", "instances", "stop", instance, "--zone", zone, "--quiet"]
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args, timeout=120))
+
+    def _compute_instances_start(self, instance: str, zone: str) -> ToolResult:
+        args = ["compute", "instances", "start", instance, "--zone", zone]
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args, timeout=120))
+
+    def _compute_instances_delete(self, instance: str, zone: str) -> ToolResult:
+        args = ["compute", "instances", "delete", instance, "--zone", zone, "--quiet"]
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args, timeout=120))
+
+    def _compute_ssh(self, instance: str, zone: str, command: str) -> ToolResult:
+        args = ["compute", "ssh", instance, "--zone", zone, "--command", command, "--quiet"]
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args, timeout=120))
+
+    def _compute_scp(self, source: str, destination: str, zone: str) -> ToolResult:
+        args = ["compute", "scp", source, destination, "--zone", zone, "--quiet"]
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args, timeout=120))
+
+    def _compute_firewall_list(self) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["compute", "firewall-rules", "list"]))
+
+    def _compute_firewall_create(
+        self, name: str, allow: str, source_ranges: str = "0.0.0.0/0",
+        target_tags: Optional[str] = None, description: Optional[str] = None,
+    ) -> ToolResult:
+        args = ["compute", "firewall-rules", "create", name,
+                f"--allow={allow}", f"--source-ranges={source_ranges}"]
+        if target_tags:
+            args.extend([f"--target-tags={target_tags}"])
+        if description:
+            args.extend([f"--description={description}"])
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
+
+    def _compute_firewall_delete(self, name: str) -> ToolResult:
+        args = ["compute", "firewall-rules", "delete", name, "--quiet"]
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
+
+    def _compute_addresses_list(self) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["compute", "addresses", "list"]))
+
+    def _compute_addresses_create(self, name: str, region: Optional[str] = None) -> ToolResult:
+        args = ["compute", "addresses", "create", name, "--region", region or self.region]
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
+
+    def _compute_disks_list(self, zone: Optional[str] = None) -> ToolResult:
+        args = ["compute", "disks", "list"]
+        if zone:
+            args.extend(["--zones", zone])
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
+
+    def _compute_snapshots_create(self, disk: str, zone: str, name: str) -> ToolResult:
+        args = ["compute", "disks", "snapshot", disk, "--zone", zone, f"--snapshot-names={name}"]
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
+
+    # ── IAM & Service Accounts ───────────────────────────────────────
+    def _iam_service_accounts_list(self) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["iam", "service-accounts", "list"]))
+
+    def _iam_service_accounts_create(self, name: str, display_name: Optional[str] = None) -> ToolResult:
+        args = ["iam", "service-accounts", "create", name]
+        if display_name:
+            args.extend([f"--display-name={display_name}"])
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
+
+    def _iam_policy_bindings_add(self, member: str, role: str) -> ToolResult:
+        args = ["projects", "add-iam-policy-binding", self.project,
+                f"--member={member}", f"--role={role}"]
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
+
+    def _iam_policy_bindings_remove(self, member: str, role: str) -> ToolResult:
+        args = ["projects", "remove-iam-policy-binding", self.project,
+                f"--member={member}", f"--role={role}"]
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
+
+    def _iam_policy_get(self) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["projects", "get-iam-policy", self.project]))
+
+    def _iam_service_accounts_keys_create(self, sa_email: str, output_file: str) -> ToolResult:
+        args = ["iam", "service-accounts", "keys", "create", output_file,
+                f"--iam-account={sa_email}"]
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
+
+    # ── Networking (VPC, Subnets, DNS) ───────────────────────────────
+    def _networks_list(self) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["compute", "networks", "list"]))
+
+    def _networks_subnets_list(self, region: Optional[str] = None) -> ToolResult:
+        args = ["compute", "networks", "subnets", "list"]
+        if region:
+            args.extend(["--regions", region])
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
+
+    def _dns_zones_list(self) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["dns", "managed-zones", "list"]))
+
+    def _dns_record_sets_list(self, zone: str) -> ToolResult:
+        args = ["dns", "record-sets", "list", "--zone", zone]
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
+
+    # ── Cloud SQL ────────────────────────────────────────────────────
+    def _sql_instances_list(self) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["sql", "instances", "list"]))
+
+    def _sql_instances_describe(self, instance: str) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["sql", "instances", "describe", instance]))
+
+    def _sql_databases_list(self, instance: str) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["sql", "databases", "list", "--instance", instance]))
+
+    # ── Logging & Monitoring ─────────────────────────────────────────
+    def _logging_read(self, log_filter: str = "", limit: int = 50) -> ToolResult:
+        args = ["logging", "read", f"--limit={limit}"]
+        if log_filter:
+            args.append(log_filter)
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args, timeout=60))
+
+    def _monitoring_dashboards_list(self) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["monitoring", "dashboards", "list"]))
+
+    # ── Services & APIs ──────────────────────────────────────────────
+    def _services_list(self) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["services", "list", "--enabled"]))
+
+    def _services_enable(self, service: str) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["services", "enable", service]))
+
+    def _services_disable(self, service: str) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["services", "disable", service, "--quiet"]))
+
+    # ── Billing ──────────────────────────────────────────────────────
+    def _billing_accounts_list(self) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["billing", "accounts", "list"]))
+
+    def _billing_projects_describe(self) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["billing", "projects", "describe", self.project]))
+
+    # ── Artifact Registry / Container Registry ───────────────────────
+    def _artifacts_repositories_list(self, location: Optional[str] = None) -> ToolResult:
+        args = ["artifacts", "repositories", "list"]
+        if location:
+            args.extend(["--location", location])
+        return asyncio.get_event_loop().run_until_complete(self._run_gcloud(args))
+
+    def _artifacts_docker_images_list(self, repository: str) -> ToolResult:
+        return asyncio.get_event_loop().run_until_complete(
+            self._run_gcloud(["artifacts", "docker", "images", "list", repository]))
+
     def get_capabilities(self) -> List[Dict[str, str]]:
         return [
+            # Compute Engine
+            {"operation": "compute_instances_list", "description": "List all VM instances"},
+            {"operation": "compute_instances_describe", "description": "Get VM details (CPU, RAM, IP, status)"},
+            {"operation": "compute_instances_create", "description": "Create a new VM instance"},
+            {"operation": "compute_instances_stop", "description": "Stop a VM instance"},
+            {"operation": "compute_instances_start", "description": "Start a VM instance"},
+            {"operation": "compute_instances_delete", "description": "Delete a VM instance"},
+            {"operation": "compute_ssh", "description": "Run a command on a VM via SSH"},
+            {"operation": "compute_scp", "description": "Copy files to/from a VM"},
+            {"operation": "compute_firewall_list", "description": "List firewall rules"},
+            {"operation": "compute_firewall_create", "description": "Create a firewall rule"},
+            {"operation": "compute_firewall_delete", "description": "Delete a firewall rule"},
+            {"operation": "compute_addresses_list", "description": "List static IP addresses"},
+            {"operation": "compute_addresses_create", "description": "Reserve a static IP"},
+            {"operation": "compute_disks_list", "description": "List persistent disks"},
+            {"operation": "compute_snapshots_create", "description": "Create a disk snapshot"},
+            # Cloud Run
             {"operation": "projects_list", "description": "List GCP projects"},
             {"operation": "run_services_list", "description": "List Cloud Run services"},
             {"operation": "run_deploy", "description": "Deploy to Cloud Run"},
-            {"operation": "builds_submit", "description": "Submit Cloud Build"},
+            {"operation": "run_update_traffic", "description": "Update Cloud Run traffic split"},
+            {"operation": "run_services_delete", "description": "Delete a Cloud Run service"},
+            # Cloud Build
+            {"operation": "builds_list", "description": "List Cloud Build history"},
+            {"operation": "builds_submit", "description": "Submit a Cloud Build"},
+            # Cloud Storage
+            {"operation": "storage_buckets_list", "description": "List storage buckets"},
             {"operation": "storage_cp", "description": "Copy to/from Cloud Storage"},
+            # IAM & Security
+            {"operation": "iam_roles_list", "description": "List IAM roles in project"},
+            {"operation": "iam_service_accounts_list", "description": "List service accounts"},
+            {"operation": "iam_service_accounts_create", "description": "Create a service account"},
+            {"operation": "iam_policy_bindings_add", "description": "Grant IAM role to a member"},
+            {"operation": "iam_policy_bindings_remove", "description": "Revoke IAM role from a member"},
+            {"operation": "iam_policy_get", "description": "Get project IAM policy"},
+            {"operation": "iam_service_accounts_keys_create", "description": "Create SA key file"},
+            # Secrets
             {"operation": "secrets_list", "description": "List Secret Manager secrets"},
             {"operation": "secrets_create", "description": "Create a new secret"},
+            {"operation": "secrets_versions_add", "description": "Add a secret version"},
+            # Networking
+            {"operation": "networks_list", "description": "List VPC networks"},
+            {"operation": "networks_subnets_list", "description": "List subnets"},
+            {"operation": "dns_zones_list", "description": "List DNS managed zones"},
+            {"operation": "dns_record_sets_list", "description": "List DNS records in a zone"},
+            # Cloud SQL
+            {"operation": "sql_instances_list", "description": "List Cloud SQL instances"},
+            {"operation": "sql_instances_describe", "description": "Describe a Cloud SQL instance"},
+            {"operation": "sql_databases_list", "description": "List databases in a SQL instance"},
+            # Logging & Monitoring
+            {"operation": "logging_read", "description": "Read cloud logs (with filter)"},
+            {"operation": "monitoring_dashboards_list", "description": "List monitoring dashboards"},
+            # Services & APIs
+            {"operation": "services_list", "description": "List enabled APIs/services"},
+            {"operation": "services_enable", "description": "Enable a GCP API/service"},
+            {"operation": "services_disable", "description": "Disable a GCP API/service"},
+            # Billing
+            {"operation": "billing_accounts_list", "description": "List billing accounts"},
+            {"operation": "billing_projects_describe", "description": "Get project billing info"},
+            # Artifacts
+            {"operation": "artifacts_repositories_list", "description": "List Artifact Registry repos"},
+            {"operation": "artifacts_docker_images_list", "description": "List Docker images in a repo"},
         ]
 
 

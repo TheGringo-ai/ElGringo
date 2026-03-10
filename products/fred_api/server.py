@@ -15,6 +15,7 @@ Endpoints:
     POST /v1/test-generate  - Smart test writer
     POST /v1/deploy-check   - Pre-deploy risk assessment
     POST /v1/onboard        - Project explainer for onboarding
+    POST /v1/feedback       - Record outcome feedback for suggestions
     GET  /v1/agents         - List available agents
     GET  /v1/health         - Health check
 
@@ -184,6 +185,19 @@ class HealthResponse(BaseModel):
     version: str
     agents_count: int
     timestamp: str
+
+
+class FeedbackRequest(BaseModel):
+    node_id: str = Field(..., description="The neural memory node ID (returned in responses)")
+    success: bool = Field(..., description="Whether the suggestion worked")
+    feedback: str = Field("", description="Optional feedback text")
+
+
+class FeedbackResponse(BaseModel):
+    request_id: str
+    status: str
+    node_id: str
+    new_confidence: float
 
 
 # ── Endpoints ────────────────────────────────────────────────────────
@@ -988,6 +1002,34 @@ async def list_team_roles():
     }
 
 
+# ── Feedback Endpoint ────────────────────────────────────────────────
+
+@app.post("/v1/feedback", response_model=FeedbackResponse,
+          dependencies=[Depends(verify_api_key), Depends(rate_limit)])
+async def record_feedback(req: FeedbackRequest):
+    """Record outcome feedback for a previous suggestion to improve future results."""
+    request_id = str(uuid.uuid4())[:8]
+    try:
+        team = get_team()
+        # Use neural memory if available
+        neural = getattr(team, '_neural_memory', None)
+        if neural:
+            neural.record_outcome(req.node_id, req.success, req.feedback)
+            node = neural._nodes.get(req.node_id)
+            new_confidence = node.confidence if node else 0.0
+        else:
+            new_confidence = 0.0
+
+        return FeedbackResponse(
+            request_id=request_id,
+            status="recorded",
+            node_id=req.node_id,
+            new_confidence=new_confidence,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── Memory Endpoints ─────────────────────────────────────────────────
 
 class MemorySearchRequest(BaseModel):
@@ -1145,6 +1187,7 @@ class DiagnoseRequest(BaseModel):
 
 class DiagnoseResponse(BaseModel):
     request_id: str
+    node_id: str = ""
     root_cause: str
     explanation: str
     suggested_fix: str
@@ -1239,8 +1282,22 @@ Be specific and actionable. Reference exact lines/functions when possible."""
         explanation = "\n".join(sections["explanation"]).strip() or answer
         suggested_fix = "\n".join(sections["suggested_fix"]).strip() or ""
 
+        node_id = ""
+        neural = getattr(team, '_neural_memory', None)
+        if neural:
+            try:
+                node_id = neural.store(
+                    content=f"diagnose: {root_cause[:200]}",
+                    node_type="solution",
+                    tags=["diagnose"],
+                    confidence=result.confidence_score,
+                )
+            except Exception:
+                pass
+
         return DiagnoseResponse(
             request_id=request_id,
+            node_id=node_id,
             root_cause=root_cause,
             explanation=explanation,
             suggested_fix=suggested_fix,
@@ -1264,6 +1321,7 @@ class ChangelogRequest(BaseModel):
 
 class ChangelogResponse(BaseModel):
     request_id: str
+    node_id: str = ""
     changelog: str
     commits_analyzed: int
     categories: Dict[str, List[str]]
@@ -1344,8 +1402,22 @@ Be concise. One line per change."""
             elif line.strip().startswith("-") or line.strip().startswith("*"):
                 categories[current_cat].append(line.strip().lstrip("-*").strip())
 
+        node_id = ""
+        neural = getattr(team, '_neural_memory', None)
+        if neural:
+            try:
+                node_id = neural.store(
+                    content=f"changelog: {len(commits)} commits analyzed",
+                    node_type="solution",
+                    tags=["changelog"],
+                    confidence=result.confidence_score,
+                )
+            except Exception:
+                pass
+
         return ChangelogResponse(
             request_id=request_id,
+            node_id=node_id,
             changelog=result.final_answer,
             commits_analyzed=len(commits),
             categories=categories,
@@ -1368,6 +1440,7 @@ class RefactorRequest(BaseModel):
 
 class RefactorResponse(BaseModel):
     request_id: str
+    node_id: str = ""
     summary: str
     recommendations: List[Dict]
     tech_debt_score: float
@@ -1476,8 +1549,22 @@ Also provide:
         if not summary:
             summary = answer[:300]
 
+        node_id = ""
+        neural = getattr(team, '_neural_memory', None)
+        if neural:
+            try:
+                node_id = neural.store(
+                    content=f"refactor: {summary[:200]}",
+                    node_type="solution",
+                    tags=["refactor"],
+                    confidence=result.confidence_score,
+                )
+            except Exception:
+                pass
+
         return RefactorResponse(
             request_id=request_id,
+            node_id=node_id,
             summary=summary,
             recommendations=recommendations,
             tech_debt_score=tech_debt_score,
@@ -1501,6 +1588,7 @@ class TestGenRequest(BaseModel):
 
 class TestGenResponse(BaseModel):
     request_id: str
+    node_id: str = ""
     test_code: str
     test_file_path: str
     tests_count: int
@@ -1626,8 +1714,22 @@ COVERAGE AREAS:
         else:
             tests_count = len(re.findall(r'(?:def|func|function)\s+[Tt]est', test_code))
 
+        node_id = ""
+        neural = getattr(team, '_neural_memory', None)
+        if neural:
+            try:
+                node_id = neural.store(
+                    content=f"test-generate: {tests_count} tests for {req.target_file}",
+                    node_type="solution",
+                    tags=["test-generate"],
+                    confidence=result.confidence_score,
+                )
+            except Exception:
+                pass
+
         return TestGenResponse(
             request_id=request_id,
+            node_id=node_id,
             test_code=test_code,
             test_file_path=test_file,
             tests_count=tests_count,
@@ -1651,6 +1753,7 @@ class DeployCheckRequest(BaseModel):
 
 class DeployCheckResponse(BaseModel):
     request_id: str
+    node_id: str = ""
     risk_score: float
     risk_level: str
     findings: List[Dict]
@@ -1784,8 +1887,22 @@ Consider:
         if current_finding.get("category"):
             findings.append(current_finding)
 
+        node_id = ""
+        neural = getattr(team, '_neural_memory', None)
+        if neural:
+            try:
+                node_id = neural.store(
+                    content=f"deploy-check: {go_no_go} risk={risk_score:.1f} ({risk_level})",
+                    node_type="solution",
+                    tags=["deploy-check"],
+                    confidence=result.confidence_score,
+                )
+            except Exception:
+                pass
+
         return DeployCheckResponse(
             request_id=request_id,
+            node_id=node_id,
             risk_score=risk_score,
             risk_level=risk_level,
             findings=findings,
@@ -1809,6 +1926,7 @@ class OnboardRequest(BaseModel):
 
 class OnboardResponse(BaseModel):
     request_id: str
+    node_id: str = ""
     summary: str
     architecture: str
     key_files: List[Dict]
@@ -1957,8 +2075,22 @@ Provide these sections:
             if line and not line.lower().startswith("gotcha"):
                 gotchas.append(line)
 
+        node_id = ""
+        neural = getattr(team, '_neural_memory', None)
+        if neural:
+            try:
+                node_id = neural.store(
+                    content=f"onboard: {summary[:200]}",
+                    node_type="solution",
+                    tags=["onboard"],
+                    confidence=result.confidence_score,
+                )
+            except Exception:
+                pass
+
         return OnboardResponse(
             request_id=request_id,
+            node_id=node_id,
             summary=summary,
             architecture=architecture,
             key_files=key_files,

@@ -13,6 +13,14 @@ from .weighted_consensus import WeightedConsensus, ConsensusResult
 
 logger = logging.getLogger(__name__)
 
+# Anti-drift instruction injected into all multi-round prompts
+FOCUS_ANCHOR = (
+    "\n\n⚠️ CRITICAL: Your response MUST directly address the topic above. "
+    "Do NOT introduce unrelated subjects, technologies, or debates. "
+    "Every sentence must connect back to the original question. "
+    "If you drift off-topic, your response will be discarded."
+)
+
 
 class CollaborationMode(Enum):
     """Available collaboration modes"""
@@ -360,6 +368,7 @@ class CollaborationEngine:
                     f"Original task: {prompt}\n\n"
                     f"Solution from {peer_response.agent_name}:\n{peer_response.content}\n\n"
                     f"Provide constructive feedback and improvements."
+                    f"{FOCUS_ANCHOR}"
                 )
                 review_response = await agent.generate_response(review_prompt, context)
                 all_responses.append(review_response)
@@ -385,6 +394,7 @@ class CollaborationEngine:
             f"Task: {prompt}\n\n"
             f"Generate innovative, creative ideas. Don't worry about being practical yet - "
             f"focus on novel approaches and unique solutions."
+            f"{FOCUS_ANCHOR}"
         )
 
         tasks = [agent.generate_response(brainstorm_prompt, context) for agent in agents]
@@ -445,7 +455,7 @@ State your position clearly and forcefully:
 2. **Evidence and reasoning** (3-4 specific supporting points)
 3. **Why the opposing view is wrong** (anticipate and attack counterarguments)
 
-Do NOT hedge or try to be balanced. Commit fully to your assigned perspective. The other debaters will challenge you."""
+Do NOT hedge or try to be balanced. Commit fully to your assigned perspective. The other debaters will challenge you.{FOCUS_ANCHOR}"""
 
             tasks.append(agent.generate_response(position_prompt, context))
 
@@ -492,7 +502,7 @@ Your cross-examination:
 3. **Challenge their evidence** — is their reasoning sound or are they cherry-picking?
 4. **Strengthen your own position** — how does their weakness prove you right?
 
-Be direct and specific. Name the agent you're challenging. No generic responses."""
+Be direct and specific. Name the agent you're challenging. No generic responses.{FOCUS_ANCHOR}"""
 
                 exam_tasks.append(agent.generate_response(cross_prompt, context))
             else:
@@ -551,7 +561,7 @@ Your rebuttal:
 3. **Counter-attack** — turn their critique back on them
 4. **Final position update** — has your view evolved? State your updated position clearly.
 
-Be honest about what changed your mind and what didn't."""
+Be honest about what changed your mind and what didn't.{FOCUS_ANCHOR}"""
 
             rebuttal_tasks.append(agent.generate_response(rebuttal_prompt, context))
 
@@ -594,7 +604,7 @@ Give your FINAL verdict:
 4. **Unresolved**: What remains genuinely uncertain?
 5. **Recommendation**: Your final, concrete recommendation.
 
-Be decisive. Don't hedge."""
+Be decisive. Don't hedge.{FOCUS_ANCHOR}"""
 
         verdict_tasks = [agent.generate_response(verdict_prompt, context) for agent in agents]
         verdict_responses = await asyncio.gather(*verdict_tasks, return_exceptions=True)
@@ -664,7 +674,7 @@ Please contribute:
 3. Recommendations based on your expertise area
 4. Any concerns or risks from your perspective
 
-Be thorough but focused on your area of expertise."""
+Be thorough but focused on your area of expertise.{FOCUS_ANCHOR}"""
 
             tasks.append(agent.generate_response(expert_prompt, context))
 

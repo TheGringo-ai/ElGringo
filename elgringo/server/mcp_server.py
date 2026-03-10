@@ -126,9 +126,10 @@ def elgringo_collaborate(prompt: str, context: str = "", mode: str = "parallel")
         prompt: The task or question for the AI team
         context: Additional context (code snippets, error messages, etc.)
         mode: Collaboration mode:
+            - turbo           Fastest (<2s). Picks the single best agent, skips synthesis. Auto-selected for low-complexity high-confidence tasks.
             - parallel        Fast (~12s). All agents answer simultaneously, results merged.
             - sequential      Each agent builds on the previous answer.
-            - single          Fastest (~2s). Auto-routes to one best-fit agent.
+            - single          Fast (~2s). Auto-routes to one best-fit agent.
             - debate          Slow (~60s). Agents argue positions, best argument wins.
             - consensus       Slow (60s+). Agents must reach agreement.
             - peer_review     Agents critique and refine a draft answer.
@@ -295,9 +296,10 @@ def ai_team_execute(prompt: str, context: str = "", agents: str = "", mode: str 
                 Available: chatgpt-coder, gemini-creative, grok-reasoner, grok-coder,
                 llama-llama-3-3-70b-groq, claude-analyst (requires ANTHROPIC_API_KEY on server)
         mode: Collaboration mode:
+            - turbo           Fastest (<2s). Picks the single best agent, skips synthesis. Auto-selected for low-complexity high-confidence tasks.
             - parallel        Fast (~12s). All agents answer simultaneously, results merged.
             - sequential      Each agent builds on the previous answer.
-            - single          Fastest (~2s). Auto-routes to one best-fit agent.
+            - single          Fast (~2s). Auto-routes to one best-fit agent.
             - debate          Agents argue positions, best argument wins.
             - consensus       Slow (60s+). Agents must reach agreement.
             - peer_review     One agent drafts, others critique and refine.
@@ -481,6 +483,25 @@ def elgringo_stream(prompt: str, agent: str = "") -> str:
         return f"Error: HTTP {e.code}: {error_body}"
     except Exception as e:
         return f"Error: {e}"
+
+
+@mcp.tool()
+def elgringo_feedback(node_id: str, success: bool, feedback: str = "") -> str:
+    """Record whether a previous El Gringo suggestion worked or not. This improves future results by adjusting confidence scores. Use after applying a suggestion from diagnose, refactor, or other tools."""
+    data = _api("POST", "/v1/feedback", {
+        "node_id": node_id,
+        "success": success,
+        "feedback": feedback,
+    })
+    if isinstance(data, str) and data.startswith("ERROR"):
+        return data
+    if "error" in data:
+        return f"Error: {data['error']}"
+    return (
+        f"Feedback recorded for {node_id}\n"
+        f"Success: {'Yes' if success else 'No'}\n"
+        f"New confidence: {data.get('new_confidence', 'N/A')}"
+    )
 
 
 @mcp.tool()

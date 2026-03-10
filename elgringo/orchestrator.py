@@ -36,6 +36,7 @@ from .preferences import get_preference_store, DevConstraints
 from .monitoring import get_health_monitor
 from .failover import get_failover_manager, get_circuit_breaker
 from .memory import MemorySystem, LearningEngine, MistakePrevention
+from .memory.neural import NeuralMemory
 from .collaboration import WeightedConsensus
 from .knowledge import TeachingSystem, get_domain_context, AutoLearner, get_coding_hub, get_rag
 from .tools import FileSystemTools, BrowserTools, ShellTools, PermissionManager
@@ -138,6 +139,15 @@ class AIDevTeam:
             self._memory_system = None
             self._learning_engine = None
             self._prevention = None
+
+        # Initialize neural memory (vector + knowledge graph)
+        self._neural_memory: Optional[NeuralMemory] = None
+        if enable_memory:
+            try:
+                self._neural_memory = NeuralMemory()
+                logger.info(f"NeuralMemory initialized: {self._neural_memory.get_graph_stats()['total_nodes']} nodes")
+            except Exception as e:
+                logger.warning(f"NeuralMemory init failed, falling back to legacy: {e}")
 
         # Initialize knowledge/teaching system
         self._teaching_system = TeachingSystem()
@@ -681,8 +691,12 @@ class AIDevTeam:
 
         # Auto-select mode if not specified
         if not mode:
-            mode = classification.recommended_mode
-            collaboration_log.append(f"Auto-selected mode: {mode}")
+            if classification.complexity == "low" and classification.confidence > 0.8:
+                mode = "turbo"
+                collaboration_log.append("Auto-selected turbo mode (low complexity, high confidence)")
+            else:
+                mode = classification.recommended_mode
+                collaboration_log.append(f"Auto-selected mode: {mode}")
 
         intel["routing"]["selected_agents"] = agents
         intel["routing"]["mode"] = mode
@@ -761,6 +775,25 @@ class AIDevTeam:
                         })
             except Exception as e:
                 logger.debug(f"Memory solution search skipped: {e}")
+
+        # Neural memory contextual recall
+        if self._neural_memory:
+            try:
+                recalls = self._neural_memory.contextual_recall(
+                    task_description=prompt,
+                    error_message=context[:500] if "error" in context.lower() else None,
+                    limit=3,
+                )
+                if recalls:
+                    neural_context = "\n".join(
+                        f"- [{r.node.node_type}] {r.node.content[:200]} (confidence: {r.node.confidence:.0%})"
+                        for r in recalls
+                    )
+                    enhanced_prompt = f"RELEVANT PAST EXPERIENCE:\n{neural_context}\n\n{enhanced_prompt}"
+                    collaboration_log.append(f"Neural memory: injected {len(recalls)} relevant memories")
+                    intel["memory"]["neural_recalls"] = len(recalls)
+            except Exception as e:
+                logger.debug(f"Neural recall skipped: {e}")
 
         # Live codebase awareness: auto-index project if path is available
         if _needs_context and self._rag and self.project_name != "default":
@@ -866,7 +899,13 @@ class AIDevTeam:
                     mode = "parallel"
                     collaboration_log.append(f"Auto-routing: {classification.complexity} task → parallel")
 
-            if mode == "single":
+            if mode == "turbo":
+                # Turbo: single best agent, no synthesis overhead
+                best = active_agents[0]
+                collaboration_log.append(f"Turbo mode: {best.name} only")
+                response = await best.generate_response(enhanced_prompt, context)
+                agent_responses = [response]
+            elif mode == "single":
                 # Use only the best agent (first in sorted list)
                 best_agent = active_agents[0]
                 collaboration_log.append(f"Single-agent mode: using {best_agent.name}")
@@ -1029,6 +1068,25 @@ class AIDevTeam:
                         intel["learning"]["stored"] = True
                     mem_stats = self._memory_system.get_statistics() if self._memory_system else {}
                     intel["learning"]["total_patterns"] = mem_stats.get("total_solutions", 0)
+
+            # Store in neural memory
+            if self._neural_memory and result.success:
+                try:
+                    node_id = self._neural_memory.store(
+                        content=f"Task: {prompt[:300]}\nAnswer: {final_answer[:500]}",
+                        node_type="solution" if result.success else "mistake",
+                        metadata={
+                            "task_type": classification.primary_type.value,
+                            "mode": mode,
+                            "confidence": avg_confidence,
+                            "agents": [a.name for a in active_agents],
+                        },
+                        tags=[classification.primary_type.value, mode],
+                        confidence=avg_confidence,
+                    )
+                    intel["memory"]["neural_stored"] = node_id
+                except Exception as e:
+                    logger.debug(f"Neural store skipped: {e}")
 
             # Auto-learn from this interaction (extracts prompts, patterns, lessons)
             if self.enable_auto_learning and self._auto_learner:

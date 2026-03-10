@@ -891,6 +891,24 @@ class AIDevTeam:
                     active_agents, enhanced_prompt, context, max_iterations, collaboration_log,
                     task_type=classification.primary_type.value
                 )
+            elif mode in ("debate", "devils_advocate", "peer_review", "brainstorming", "expert_panel"):
+                from elgringo.collaboration.engine import CollaborationEngine, CollaborationMode, CollaborationContext
+                engine = CollaborationEngine()
+                collab_mode = CollaborationMode(mode)
+                collab_ctx = CollaborationContext(
+                    mode=collab_mode,
+                    max_rounds=max_iterations,
+                    consensus_threshold=0.75,
+                )
+                agent_responses = await engine.execute(
+                    active_agents, enhanced_prompt, context, collab_ctx
+                )
+                # Store engine on team so API can read rounds
+                self._collaboration_engine = engine
+                collaboration_log.append(
+                    f"{mode} mode: {len(engine.rounds)} rounds, "
+                    f"final consensus: {engine.rounds[-1].consensus_level:.2f}" if engine.rounds else f"{mode} mode completed"
+                )
             else:
                 # Default to parallel
                 agent_responses = await self._parallel_collaboration(

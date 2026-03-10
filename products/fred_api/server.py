@@ -124,7 +124,7 @@ def get_team():
 class CollaborateRequest(BaseModel):
     prompt: str = Field(..., description="Task or question for the AI team")
     context: str = Field("", description="Additional context (code, docs)")
-    mode: str = Field("parallel", description="Collaboration mode: parallel, sequential, consensus, single, fast")
+    mode: str = Field("parallel", description="Collaboration mode: parallel, sequential, consensus, debate, devils_advocate, peer_review, brainstorming, expert_panel")
     agents: Optional[List[str]] = Field(None, description="Specific agents to use (None = auto-route)")
 
 class AskRequest(BaseModel):
@@ -146,6 +146,19 @@ class AgentInfo(BaseModel):
     model_type: str
     capabilities: List[str]
 
+class AgentPosition(BaseModel):
+    agent: str
+    content: str
+    confidence: float
+    response_time: float = 0.0
+
+class DebateRound(BaseModel):
+    round_number: int
+    phase: str  # "positions", "cross_examination", "rebuttals", "synthesis"
+    responses: List[AgentPosition]
+    consensus_level: float = 0.0
+    conflicts: List[str] = []
+
 class CollaborateResponse(BaseModel):
     request_id: str
     answer: str
@@ -153,6 +166,11 @@ class CollaborateResponse(BaseModel):
     confidence: float
     mode: str
     total_time: float
+    # Rich collaboration data (populated for debate/consensus/peer_review modes)
+    rounds: Optional[List[DebateRound]] = None
+    agent_positions: Optional[List[AgentPosition]] = None
+    disagreements: Optional[List[str]] = None
+    consensus_level: Optional[float] = None
 
 class HealthResponse(BaseModel):
     status: str
@@ -205,6 +223,54 @@ async def collaborate(req: CollaborateRequest):
             mode=req.mode,
         )
 
+        # Extract rich collaboration data from engine rounds
+        rounds_data = None
+        agent_positions_data = None
+        disagreements_data = None
+        consensus_data = None
+
+        engine = getattr(team, '_collaboration_engine', None)
+        if engine and hasattr(engine, 'rounds') and engine.rounds:
+            rounds_data = []
+            for r in engine.rounds:
+                phase = "positions"
+                if r.round_number == 2:
+                    phase = "cross_examination" if req.mode == "debate" else "refinement"
+                elif r.round_number == 3:
+                    phase = "synthesis"
+                rounds_data.append(DebateRound(
+                    round_number=r.round_number,
+                    phase=phase,
+                    responses=[
+                        AgentPosition(
+                            agent=resp.agent_name,
+                            content=resp.content[:2000] if resp.content else "",
+                            confidence=resp.confidence,
+                            response_time=resp.response_time,
+                        )
+                        for resp in r.responses if resp.success
+                    ],
+                    consensus_level=r.consensus_level,
+                    conflicts=r.conflicts or [],
+                ))
+            if rounds_data:
+                consensus_data = rounds_data[-1].consensus_level
+                disagreements_data = []
+                for rd in rounds_data:
+                    disagreements_data.extend(rd.conflicts)
+
+        # Individual agent positions from responses
+        if result.agent_responses:
+            agent_positions_data = [
+                AgentPosition(
+                    agent=resp.agent_name,
+                    content=resp.content[:2000] if resp.content else "",
+                    confidence=resp.confidence,
+                    response_time=resp.response_time,
+                )
+                for resp in result.agent_responses if resp.success
+            ]
+
         return CollaborateResponse(
             request_id=request_id,
             answer=result.final_answer,
@@ -212,6 +278,10 @@ async def collaborate(req: CollaborateRequest):
             confidence=result.confidence_score,
             mode=req.mode,
             total_time=result.total_time,
+            rounds=rounds_data,
+            agent_positions=agent_positions_data,
+            disagreements=disagreements_data if disagreements_data else None,
+            consensus_level=consensus_data,
         )
     except Exception as e:
         logger.error(f"Collaboration error: {e}")
@@ -312,6 +382,93 @@ async def stream(req: StreamRequest):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── Debate Endpoint ──────────────────────────────────────────────────
+
+class DebateRequest(BaseModel):
+    topic: str = Field(..., description="The topic or question to debate")
+    context: str = Field("", description="Additional context")
+    agents: Optional[List[str]] = Field(None, description="Agents to participate (min 2, default all)")
+
+@app.post("/v1/debate", response_model=CollaborateResponse,
+          dependencies=[Depends(verify_api_key), Depends(rate_limit)])
+async def debate(req: DebateRequest):
+    """Structured multi-agent debate with forced opposing viewpoints.
+
+    Returns full debate transcript with each agent's positions, cross-examinations,
+    rebuttals, and final verdicts. Agents are assigned FOR/AGAINST/PRAGMATIST/INNOVATOR roles.
+    """
+    team = get_team()
+    request_id = str(uuid.uuid4())[:8]
+
+    try:
+        result = await team.collaborate(
+            prompt=req.topic,
+            context=req.context,
+            agents=req.agents,
+            mode="debate",
+        )
+
+        # Build rich debate data
+        rounds_data = None
+        agent_positions_data = None
+        disagreements_data = None
+        consensus_data = None
+
+        engine = getattr(team, '_collaboration_engine', None)
+        if engine and hasattr(engine, 'rounds') and engine.rounds:
+            phase_names = ["positions", "cross_examination", "rebuttals", "verdict"]
+            rounds_data = []
+            for r in engine.rounds:
+                phase = phase_names[r.round_number - 1] if r.round_number <= len(phase_names) else "extra"
+                rounds_data.append(DebateRound(
+                    round_number=r.round_number,
+                    phase=phase,
+                    responses=[
+                        AgentPosition(
+                            agent=resp.agent_name,
+                            content=resp.content[:2000] if resp.content else "",
+                            confidence=resp.confidence,
+                            response_time=resp.response_time,
+                        )
+                        for resp in r.responses if resp.success
+                    ],
+                    consensus_level=r.consensus_level,
+                    conflicts=r.conflicts or [],
+                ))
+            if rounds_data:
+                consensus_data = rounds_data[-1].consensus_level
+                disagreements_data = []
+                for rd in rounds_data:
+                    disagreements_data.extend(rd.conflicts)
+
+        if result.agent_responses:
+            agent_positions_data = [
+                AgentPosition(
+                    agent=resp.agent_name,
+                    content=resp.content[:2000] if resp.content else "",
+                    confidence=resp.confidence,
+                    response_time=resp.response_time,
+                )
+                for resp in result.agent_responses if resp.success
+            ]
+
+        return CollaborateResponse(
+            request_id=request_id,
+            answer=result.final_answer,
+            agents_used=result.participating_agents,
+            confidence=result.confidence_score,
+            mode="debate",
+            total_time=result.total_time,
+            rounds=rounds_data,
+            agent_positions=agent_positions_data,
+            disagreements=disagreements_data if disagreements_data else None,
+            consensus_level=consensus_data,
+        )
+    except Exception as e:
+        logger.error(f"Debate error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── Memory Endpoints ─────────────────────────────────────────────────

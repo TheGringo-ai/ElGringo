@@ -409,113 +409,206 @@ class CollaborationEngine:
         config: CollaborationContext,
     ) -> List[AgentResponse]:
         """
-        Structured debate mode for complex decisions.
+        Structured debate mode with forced opposing viewpoints.
 
-        Phase 1: Initial positions from all agents
-        Phase 2: Cross-examination (each agent responds to others)
-        Phase 3: Final synthesis with weighted voting
+        Phase 1: Agents assigned different sides / perspectives
+        Phase 2: Cross-examination — agents challenge each other directly
+        Phase 3: Rebuttals — agents defend their position against specific critiques
+        Phase 4: Final verdict — each agent gives final position + what changed their mind
         """
         if len(agents) < 2:
             return await self._execute_parallel(agents, prompt, context)
 
         all_responses = []
 
-        # Phase 1: Initial positions
-        logger.info("Debate Phase 1: Initial positions")
-        position_prompt = f"""DEBATE - STATE YOUR POSITION
+        # Assign opposing perspectives to force real debate
+        perspectives = [
+            "You MUST argue FOR this position. Find the strongest possible case in favor. Be a passionate advocate.",
+            "You MUST argue AGAINST this position. Find every flaw, risk, and better alternative. Be a rigorous critic.",
+            "You are the PRAGMATIST. Evaluate both sides dispassionately. What does the evidence actually support? What are the real-world tradeoffs?",
+            "You are the INNOVATOR. Reject both obvious positions. What is everyone missing? Propose a third way that's better than either side.",
+        ]
+
+        # Phase 1: Forced opposing positions
+        logger.info("Debate Phase 1: Assigned positions")
+        tasks = []
+        for i, agent in enumerate(agents):
+            perspective = perspectives[i % len(perspectives)]
+            position_prompt = f"""DEBATE — TAKE YOUR ASSIGNED POSITION
 
 Topic: {prompt}
 
-You are participating in a structured debate. State your position clearly:
-1. Your main argument (1-2 sentences)
-2. Key supporting points (2-3 bullet points)
-3. Potential counterarguments you anticipate
+YOUR ROLE: {perspective}
 
-Be direct and substantive."""
+State your position clearly and forcefully:
+1. **Your core argument** (2-3 sentences — make it sharp)
+2. **Evidence and reasoning** (3-4 specific supporting points)
+3. **Why the opposing view is wrong** (anticipate and attack counterarguments)
 
-        tasks = [agent.generate_response(position_prompt, context) for agent in agents]
+Do NOT hedge or try to be balanced. Commit fully to your assigned perspective. The other debaters will challenge you."""
+
+            tasks.append(agent.generate_response(position_prompt, context))
+
         initial_responses = await asyncio.gather(*tasks, return_exceptions=True)
         initial_responses = [r for r in initial_responses if isinstance(r, AgentResponse)]
         all_responses.extend(initial_responses)
 
         self.rounds.append(CollaborationRound(
             round_number=1,
-            prompt=position_prompt,
+            prompt="Phase 1: Assigned positions",
             responses=initial_responses,
             consensus_level=self._calculate_consensus(initial_responses),
-            insights=["Initial positions stated"],
+            insights=[f"{r.agent_name}: {perspectives[i % len(perspectives)][:60]}" for i, r in enumerate(initial_responses) if r.success],
         ))
 
-        # Phase 2: Cross-examination
+        # Phase 2: Direct cross-examination — each agent targets another
         logger.info("Debate Phase 2: Cross-examination")
-        positions_summary = "\n\n".join(
-            f"[{r.agent_name}]: {r.content[:400]}..."
-            for r in initial_responses if r.success
-        )
+        exam_tasks = []
+        for i, agent in enumerate(agents):
+            # Target the next agent's position
+            target_idx = (i + 1) % len(initial_responses)
+            target = initial_responses[target_idx] if target_idx < len(initial_responses) else None
 
-        cross_exam_prompt = f"""DEBATE - CROSS-EXAMINATION
+            if target and target.success:
+                # Also show all other positions for context
+                others = "\n\n".join(
+                    f"**[{r.agent_name}]**: {r.content[:600]}"
+                    for j, r in enumerate(initial_responses)
+                    if r.success and j != i
+                )
+                cross_prompt = f"""DEBATE — CROSS-EXAMINATION
 
 Original Topic: {prompt}
 
-Other Participants' Positions:
-{positions_summary}
+You are directly challenging **{target.agent_name}**'s argument:
+{target.content[:800]}
 
-Respond to the other positions:
-1. What are the strongest points in opposing views?
-2. What are the weaknesses or gaps in their arguments?
-3. How does your position address these concerns?
-4. Have you updated your position based on what you've heard?
+Other positions for context:
+{others}
 
-Be respectful but critical. Focus on the ideas, not the participants."""
+Your cross-examination:
+1. **Attack their weakest point** — what's the biggest hole in their argument?
+2. **Present a counterexample** — give a specific scenario where their approach fails
+3. **Challenge their evidence** — is their reasoning sound or are they cherry-picking?
+4. **Strengthen your own position** — how does their weakness prove you right?
 
-        tasks = [agent.generate_response(cross_exam_prompt, context) for agent in agents]
-        exam_responses = await asyncio.gather(*tasks, return_exceptions=True)
-        exam_responses = [r for r in exam_responses if isinstance(r, AgentResponse)]
+Be direct and specific. Name the agent you're challenging. No generic responses."""
+
+                exam_tasks.append(agent.generate_response(cross_prompt, context))
+            else:
+                exam_tasks.append(agent.generate_response(
+                    f"Respond to the debate on: {prompt}\nChallenge the weakest argument presented.",
+                    context
+                ))
+
+        exam_responses_raw = await asyncio.gather(*exam_tasks, return_exceptions=True)
+        exam_responses = [r for r in exam_responses_raw if isinstance(r, AgentResponse)]
+
         all_responses.extend(exam_responses)
 
         self.rounds.append(CollaborationRound(
             round_number=2,
-            prompt="Cross-examination",
+            prompt="Phase 2: Cross-examination",
             responses=exam_responses,
             consensus_level=self._calculate_consensus(exam_responses),
-            insights=["Cross-examination complete"],
+            insights=["Direct agent-to-agent challenges"],
             conflicts=self._identify_conflicts(initial_responses, exam_responses),
         ))
 
-        # Phase 3: Final synthesis (optional third round if no consensus)
-        current_consensus = self._calculate_consensus(exam_responses)
-        if current_consensus < config.consensus_threshold and len(agents) > 0:
-            logger.info("Debate Phase 3: Final synthesis")
+        # Phase 3: Rebuttals — agents defend against critiques aimed at them
+        logger.info("Debate Phase 3: Rebuttals")
+        rebuttal_tasks = []
+        for i, agent in enumerate(agents):
+            # Find critiques aimed at this agent
+            critiques_aimed_at_me = []
+            for j, exam_r in enumerate(exam_responses):
+                if exam_r.success and agent.name.lower() in exam_r.content.lower():
+                    critiques_aimed_at_me.append(f"**{exam_r.agent_name}** said: {exam_r.content[:400]}")
 
-            all_positions = "\n\n".join(
-                f"[{r.agent_name}]: {r.content[:300]}..."
-                for r in all_responses[-len(agents)*2:] if r.success
-            )
+            if not critiques_aimed_at_me:
+                # Use the previous agent's cross-exam as the critique
+                prev_idx = (i - 1) % len(exam_responses)
+                if prev_idx < len(exam_responses) and exam_responses[prev_idx].success:
+                    critiques_aimed_at_me.append(
+                        f"**{exam_responses[prev_idx].agent_name}** challenged: {exam_responses[prev_idx].content[:400]}"
+                    )
 
-            synthesis_prompt = f"""DEBATE - FINAL SYNTHESIS
+            critiques_text = "\n\n".join(critiques_aimed_at_me[:2]) if critiques_aimed_at_me else "No direct critiques found."
 
-The debate is concluding. Based on all arguments:
+            rebuttal_prompt = f"""DEBATE — REBUTTAL
 
-{all_positions}
+Original Topic: {prompt}
 
-Provide your final position:
-1. The strongest conclusion supported by the debate
-2. Key areas where consensus was reached
-3. Remaining disagreements that may need further discussion
-4. Your final recommendation"""
+Your original position was:
+{initial_responses[i].content[:400] if i < len(initial_responses) and initial_responses[i].success else "See round 1"}
 
-            # Use one agent to synthesize
-            synthesis_agent = agents[0]
-            synthesis_response = await synthesis_agent.generate_response(synthesis_prompt, context)
-            if synthesis_response.success:
-                all_responses.append(synthesis_response)
-                self.rounds.append(CollaborationRound(
-                    round_number=3,
-                    prompt="Final synthesis",
-                    responses=[synthesis_response],
-                    consensus_level=current_consensus,
-                    insights=["Debate concluded with synthesis"],
-                ))
+Critiques you must address:
+{critiques_text}
+
+Your rebuttal:
+1. **Concede valid points** — what did the critics get right? (shows intellectual honesty)
+2. **Defend your core argument** — why are you still right despite the critiques?
+3. **Counter-attack** — turn their critique back on them
+4. **Final position update** — has your view evolved? State your updated position clearly.
+
+Be honest about what changed your mind and what didn't."""
+
+            rebuttal_tasks.append(agent.generate_response(rebuttal_prompt, context))
+
+        rebuttal_responses = await asyncio.gather(*rebuttal_tasks, return_exceptions=True)
+        rebuttal_responses = [r for r in rebuttal_responses if isinstance(r, AgentResponse)]
+        all_responses.extend(rebuttal_responses)
+
+        self.rounds.append(CollaborationRound(
+            round_number=3,
+            prompt="Phase 3: Rebuttals",
+            responses=rebuttal_responses,
+            consensus_level=self._calculate_consensus(rebuttal_responses),
+            insights=["Agents defended positions and conceded points"],
+            conflicts=self._identify_conflicts(exam_responses, rebuttal_responses),
+        ))
+
+        # Phase 4: Final verdict — what's the best answer after the full debate?
+        logger.info("Debate Phase 4: Final verdict")
+
+        debate_transcript = []
+        for round_data in self.rounds:
+            debate_transcript.append(f"### {round_data.prompt}")
+            for r in round_data.responses:
+                if r.success:
+                    debate_transcript.append(f"**{r.agent_name}** (confidence: {r.confidence:.0%}):\n{r.content[:500]}\n")
+
+        transcript_text = "\n\n".join(debate_transcript[-12:])  # Last 12 entries max
+
+        verdict_prompt = f"""DEBATE — FINAL VERDICT
+
+After a full debate on: {prompt}
+
+Debate transcript (summary):
+{transcript_text}
+
+Give your FINAL verdict:
+1. **Winner**: Which side had the strongest argument and why?
+2. **Key insight**: What's the single most important thing this debate revealed?
+3. **Consensus points**: What did ALL sides agree on?
+4. **Unresolved**: What remains genuinely uncertain?
+5. **Recommendation**: Your final, concrete recommendation.
+
+Be decisive. Don't hedge."""
+
+        verdict_tasks = [agent.generate_response(verdict_prompt, context) for agent in agents]
+        verdict_responses = await asyncio.gather(*verdict_tasks, return_exceptions=True)
+        verdict_responses = [r for r in verdict_responses if isinstance(r, AgentResponse)]
+        all_responses.extend(verdict_responses)
+
+        self.rounds.append(CollaborationRound(
+            round_number=4,
+            prompt="Phase 4: Final verdict",
+            responses=verdict_responses,
+            consensus_level=self._calculate_consensus(verdict_responses),
+            insights=["Final verdicts delivered"],
+            conflicts=self._identify_conflicts(rebuttal_responses, verdict_responses),
+        ))
 
         return all_responses
 

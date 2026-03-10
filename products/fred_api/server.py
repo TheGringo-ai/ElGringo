@@ -770,15 +770,54 @@ async def team_debate(req: TeamDebateRequest):
     """
     request_id = str(uuid.uuid4())[:8]
 
-    # Resolve preset if a single preset name is passed
+    # Auto-select team based on topic keywords
+    AUTO_ROUTING = [
+        (["build", "implement", "code", "write", "create app", "develop", "function", "class", "api endpoint"],
+         ["lead-developer", "backend-developer"]),
+        (["frontend", "ui", "react", "component", "page", "dashboard", "layout", "css", "tailwind"],
+         ["frontend-developer", "ux-designer"]),
+        (["database", "schema", "model", "table", "migration", "sql", "firestore", "query"],
+         ["database-engineer", "backend-developer"]),
+        (["security", "auth", "vulnerability", "owasp", "encrypt", "permission", "hack", "threat"],
+         ["security-engineer", "lead-developer"]),
+        (["deploy", "docker", "ci/cd", "infrastructure", "server", "vm", "cloud", "monitor", "nginx"],
+         ["devops-engineer", "system-architect"]),
+        (["test", "bug", "quality", "coverage", "edge case", "regression"],
+         ["qa-engineer", "lead-developer"]),
+        (["design", "architect", "stack", "pattern", "scale", "structure", "monolith", "microservice"],
+         ["system-architect", "lead-developer", "product-manager"]),
+        (["idea", "app", "startup", "business", "saas", "product", "feature", "mvp", "market"],
+         ["product-manager", "business-analyst", "ux-designer"]),
+        (["pricing", "revenue", "growth", "onboarding", "churn", "convert", "monetiz"],
+         ["growth-engineer", "product-manager"]),
+        (["analytics", "kpi", "metric", "dashboard", "report", "data", "insight"],
+         ["data-analyst", "backend-developer"]),
+        (["docs", "documentation", "readme", "guide", "tutorial", "api doc"],
+         ["technical-writer", "api-designer"]),
+        (["review", "refactor", "optimize", "clean", "improve", "performance"],
+         ["lead-developer", "qa-engineer", "system-architect"]),
+    ]
+
+    # Resolve preset or auto-select
     team_roles = req.team
-    if len(team_roles) == 1 and team_roles[0] in TEAM_PRESETS:
+    if len(team_roles) == 1 and team_roles[0] == "auto":
+        # Auto-select based on topic keywords
+        topic_lower = req.topic.lower()
+        matched_roles = set()
+        for keywords, roles in AUTO_ROUTING:
+            if any(kw in topic_lower for kw in keywords):
+                matched_roles.update(roles)
+        # Default to architect + lead-dev + PM if nothing matched
+        if len(matched_roles) < 2:
+            matched_roles = {"system-architect", "lead-developer", "product-manager"}
+        # Cap at 4 roles to keep costs down
+        team_roles = list(matched_roles)[:4]
+    elif len(team_roles) == 1 and team_roles[0] in TEAM_PRESETS:
         team_roles = TEAM_PRESETS[team_roles[0]]
     elif len(team_roles) == 1 and team_roles[0] not in TEAM_PERSONAS:
-        # Maybe they passed a preset name as the only item
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown role or preset: {team_roles[0]}. Presets: {list(TEAM_PRESETS.keys())}. Roles: {list(TEAM_PERSONAS.keys())}"
+            detail=f"Unknown role or preset: {team_roles[0]}. Use 'auto', a preset ({list(TEAM_PRESETS.keys())}), or roles ({list(TEAM_PERSONAS.keys())})"
         )
 
     # Validate team roles

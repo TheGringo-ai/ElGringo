@@ -126,6 +126,7 @@ class CollaborateRequest(BaseModel):
     context: str = Field("", description="Additional context (code, docs)")
     mode: str = Field("parallel", description="Collaboration mode: parallel, sequential, consensus, debate, devils_advocate, peer_review, brainstorming, expert_panel")
     agents: Optional[List[str]] = Field(None, description="Specific agents to use (None = auto-route)")
+    budget: str = Field("standard", description="Budget tier: budget (cheapest agents), standard (mixed), premium (best models)")
 
 class AskRequest(BaseModel):
     prompt: str = Field(..., description="Question for the best-matched agent")
@@ -216,10 +217,24 @@ async def collaborate(req: CollaborateRequest):
     request_id = str(uuid.uuid4())[:8]
 
     try:
+        # Apply budget-aware agent selection
+        agents_to_use = req.agents
+        if not agents_to_use and req.budget != "premium":
+            # Budget tiers: prefer cheaper models
+            budget_agents = {
+                "budget": ["gemini-creative"],  # $0.0008/request
+                "standard": ["gemini-creative", "chatgpt-coder"],  # Mix cheap + mid
+            }
+            preferred = budget_agents.get(req.budget)
+            if preferred:
+                available = [a for a in preferred if a in team.agents]
+                if available:
+                    agents_to_use = available
+
         result = await team.collaborate(
             prompt=req.prompt,
             context=req.context,
-            agents=req.agents,
+            agents=agents_to_use,
             mode=req.mode,
         )
 
@@ -384,12 +399,82 @@ async def stream(req: StreamRequest):
     )
 
 
-# ── Debate Endpoint ──────────────────────────────────────────────────
+# ── Debate Endpoints ─────────────────────────────────────────────────
 
 class DebateRequest(BaseModel):
     topic: str = Field(..., description="The topic or question to debate")
     context: str = Field("", description="Additional context")
     agents: Optional[List[str]] = Field(None, description="Agents to participate (min 2, default all)")
+
+# Pre-defined team personas for single-model debates
+TEAM_PERSONAS = {
+    "lead-developer": {
+        "role": "Lead Developer & Architect",
+        "capabilities": ["architecture", "coding", "system-design", "best-practices", "debugging"],
+        "system_prompt": (
+            "You are the Lead Developer. You prioritize clean architecture, maintainability, "
+            "and proven patterns. You push back on over-engineering and prefer simplicity. "
+            "You care about developer experience, testing, and long-term code health."
+        ),
+    },
+    "security-engineer": {
+        "role": "Security Engineer",
+        "capabilities": ["security", "threat-modeling", "compliance", "penetration-testing", "risk-assessment"],
+        "system_prompt": (
+            "You are the Security Engineer. You see threats everywhere and that's your job. "
+            "You challenge every design decision from a security perspective. You know OWASP, "
+            "zero-trust, least privilege, and defense in depth. You are paranoid by profession."
+        ),
+    },
+    "product-manager": {
+        "role": "Product Manager",
+        "capabilities": ["user-research", "prioritization", "roadmap", "business-value", "customer-empathy"],
+        "system_prompt": (
+            "You are the Product Manager. You care about users, business value, and shipping fast. "
+            "You push back on technical perfection that delays delivery. You ask 'does the user care?' "
+            "and 'what's the ROI?' You balance technical debt against speed-to-market."
+        ),
+    },
+    "devops-engineer": {
+        "role": "DevOps & Infrastructure Engineer",
+        "capabilities": ["deployment", "monitoring", "scaling", "CI-CD", "cloud-infrastructure", "reliability"],
+        "system_prompt": (
+            "You are the DevOps Engineer. You care about reliability, observability, and operational "
+            "simplicity. You hate snowflake deployments and manual processes. You champion automation, "
+            "infrastructure-as-code, and boring technology that works at 3am."
+        ),
+    },
+    "ux-designer": {
+        "role": "UX Designer & Frontend Advocate",
+        "capabilities": ["user-experience", "accessibility", "performance", "design-systems", "usability"],
+        "system_prompt": (
+            "You are the UX Designer. You advocate for the end user relentlessly. You care about "
+            "page load times, accessibility, intuitive workflows, and delightful interactions. "
+            "You challenge engineers when they optimize for developer convenience over user experience."
+        ),
+    },
+    "qa-engineer": {
+        "role": "QA Engineer & Quality Advocate",
+        "capabilities": ["testing", "edge-cases", "regression", "automation", "quality-metrics"],
+        "system_prompt": (
+            "You are the QA Engineer. You find the bugs nobody else sees. You think about edge cases, "
+            "race conditions, data corruption, and what happens when users do the unexpected. "
+            "You push for comprehensive testing and refuse to ship without confidence."
+        ),
+    },
+}
+
+class TeamDebateRequest(BaseModel):
+    topic: str = Field(..., description="The topic or question to debate")
+    context: str = Field("", description="Additional context")
+    team: List[str] = Field(
+        default=["lead-developer", "security-engineer", "product-manager"],
+        description=f"Team roles to participate. Available: {', '.join(TEAM_PERSONAS.keys())}"
+    )
+    model: str = Field(
+        default="gemini",
+        description="Base model for all personas: gemini (cheapest), chatgpt, grok"
+    )
 
 @app.post("/v1/debate", response_model=CollaborateResponse,
           dependencies=[Depends(verify_api_key), Depends(rate_limit)])
@@ -469,6 +554,160 @@ async def debate(req: DebateRequest):
     except Exception as e:
         logger.error(f"Debate error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/v1/team-debate", response_model=CollaborateResponse,
+          dependencies=[Depends(verify_api_key), Depends(rate_limit)])
+async def team_debate(req: TeamDebateRequest):
+    """Single-model team debate — one cheap model plays multiple expert roles.
+
+    Creates a virtual dev team where each persona (lead-developer, security-engineer,
+    product-manager, etc.) is the SAME underlying model with different system prompts.
+    Runs a full 4-phase debate for ~$0.005 instead of ~$0.25.
+
+    Available roles: lead-developer, security-engineer, product-manager,
+    devops-engineer, ux-designer, qa-engineer
+    """
+    request_id = str(uuid.uuid4())[:8]
+
+    # Validate team roles
+    invalid_roles = [r for r in req.team if r not in TEAM_PERSONAS]
+    if invalid_roles:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown roles: {invalid_roles}. Available: {list(TEAM_PERSONAS.keys())}"
+        )
+    if len(req.team) < 2:
+        raise HTTPException(status_code=400, detail="Need at least 2 team members for a debate")
+
+    # Create persona agents from the chosen base model
+    from elgringo.agents.base import AgentConfig, ModelType
+
+    agents = []
+    for role_name in req.team:
+        persona = TEAM_PERSONAS[role_name]
+        config = AgentConfig(
+            name=role_name,
+            model_type=ModelType.GEMINI,  # default
+            role=persona["role"],
+            capabilities=persona["capabilities"],
+            system_prompt=persona["system_prompt"],
+        )
+
+        if req.model == "gemini":
+            from elgringo.agents.gemini import GeminiAgent
+            config.model_type = ModelType.GEMINI
+            config.model_name = "gemini-2.5-flash"
+            agent = GeminiAgent(config=config)
+        elif req.model == "chatgpt":
+            from elgringo.agents.chatgpt import ChatGPTAgent
+            config.model_type = ModelType.CHATGPT
+            config.model_name = "gpt-4o-mini"
+            agent = ChatGPTAgent(config=config)
+        elif req.model == "grok":
+            from elgringo.agents.grok import GrokAgent
+            config.model_type = ModelType.GROK
+            config.model_name = "grok-3-fast"
+            agent = GrokAgent(config=config)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown model: {req.model}. Use: gemini, chatgpt, grok")
+
+        agents.append(agent)
+
+    # Run the debate using the collaboration engine directly
+    try:
+        from elgringo.collaboration.engine import CollaborationEngine, CollaborationMode, CollaborationContext
+
+        engine = CollaborationEngine()
+        collab_ctx = CollaborationContext(
+            mode=CollaborationMode.DEBATE,
+            max_rounds=4,
+            consensus_threshold=0.75,
+        )
+
+        start_time = time.time()
+        all_responses = await engine.execute(agents, req.topic, req.context, collab_ctx)
+        total_time = time.time() - start_time
+
+        # Synthesize final answer from all responses
+        successful = [r for r in all_responses if r.success]
+        if not successful:
+            raise HTTPException(status_code=500, detail="No successful responses from team")
+
+        # Use the last round's responses for synthesis (verdicts)
+        verdict_responses = engine.rounds[-1].responses if engine.rounds else successful
+        verdict_text = "\n\n".join(
+            f"**{r.agent_name}** ({TEAM_PERSONAS.get(r.agent_name, {}).get('role', 'Expert')}):\n{r.content}"
+            for r in verdict_responses if r.success
+        )
+
+        # Have one agent synthesize the final answer
+        synthesis_prompt = (
+            f"Synthesize these expert verdicts on: {req.topic}\n\n{verdict_text}\n\n"
+            "Combine into a clear, actionable recommendation. Credit specific experts where relevant."
+        )
+        synthesis_response = await agents[0].generate_response(synthesis_prompt, req.context)
+        final_answer = synthesis_response.content if synthesis_response.success else verdict_text
+
+        # Build rounds data
+        phase_names = ["positions", "cross_examination", "rebuttals", "verdict"]
+        rounds_data = []
+        for r in engine.rounds:
+            phase = phase_names[r.round_number - 1] if r.round_number <= len(phase_names) else "extra"
+            rounds_data.append(DebateRound(
+                round_number=r.round_number,
+                phase=phase,
+                responses=[
+                    AgentPosition(
+                        agent=resp.agent_name,
+                        content=resp.content[:2000] if resp.content else "",
+                        confidence=resp.confidence,
+                        response_time=resp.response_time,
+                    )
+                    for resp in r.responses if resp.success
+                ],
+                consensus_level=r.consensus_level,
+                conflicts=r.conflicts or [],
+            ))
+
+        disagreements_data = []
+        for rd in rounds_data:
+            disagreements_data.extend(rd.conflicts)
+
+        return CollaborateResponse(
+            request_id=request_id,
+            answer=final_answer,
+            agents_used=[r for r in req.team],
+            confidence=sum(r.confidence for r in successful) / len(successful),
+            mode=f"team-debate ({req.model})",
+            total_time=total_time,
+            rounds=rounds_data,
+            agent_positions=[
+                AgentPosition(
+                    agent=r.agent_name,
+                    content=r.content[:2000] if r.content else "",
+                    confidence=r.confidence,
+                    response_time=r.response_time,
+                )
+                for r in successful
+            ],
+            disagreements=disagreements_data if disagreements_data else None,
+            consensus_level=rounds_data[-1].consensus_level if rounds_data else None,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Team debate error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/v1/team-roles")
+async def list_team_roles():
+    """List available team roles for team-debate."""
+    return {
+        name: {"role": p["role"], "capabilities": p["capabilities"]}
+        for name, p in TEAM_PERSONAS.items()
+    }
 
 
 # ── Memory Endpoints ─────────────────────────────────────────────────

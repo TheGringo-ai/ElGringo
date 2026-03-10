@@ -484,6 +484,267 @@ def elgringo_stream(prompt: str, agent: str = "") -> str:
 
 
 @mcp.tool()
+def elgringo_diagnose(
+    error_message: str, stacktrace: str = "", project_path: str = "",
+    language: str = "", files_context: str = "",
+) -> str:
+    """
+    AI debugger: multi-agent root cause analysis for errors and bugs.
+    Sends the error to the full AI team for diagnosis.
+
+    Args:
+        error_message: The error message to diagnose
+        stacktrace: Full stack trace if available
+        project_path: Absolute path to the project (for reading files)
+        language: Programming language (auto-detect if empty)
+        files_context: Comma-separated file paths to read for context
+    """
+    files = [f.strip() for f in files_context.split(",") if f.strip()] if files_context else []
+    result = _api("POST", "/v1/diagnose", {
+        "error_message": error_message,
+        "stacktrace": stacktrace,
+        "project_path": project_path,
+        "language": language,
+        "files_context": files,
+    })
+    if "error" in result:
+        return f"Error: {result['error']}"
+    agents = ", ".join(result.get("agents_used", []))
+    confidence = result.get("confidence", 0)
+    parts = [
+        f"[Agents: {agents} | Confidence: {confidence:.0%} | {result.get('total_time', 0):.1f}s]",
+        "",
+        f"## Root Cause",
+        result.get("root_cause", "Unknown"),
+        "",
+        f"## Explanation",
+        result.get("explanation", ""),
+    ]
+    if result.get("suggested_fix"):
+        parts.extend(["", "## Suggested Fix", result["suggested_fix"]])
+    if result.get("related_files"):
+        parts.extend(["", f"Related files: {', '.join(result['related_files'])}"])
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def elgringo_changelog(
+    project_path: str, git_range: str = "HEAD~10..HEAD",
+    audience: str = "developer", format: str = "markdown",
+) -> str:
+    """
+    Generate changelog from git history for developers or stakeholders.
+    Analyzes commits and categorizes changes automatically.
+
+    Args:
+        project_path: Absolute path to the project (must be a git repo)
+        git_range: Git commit range (e.g. HEAD~10..HEAD, v1.0..HEAD)
+        audience: Target audience — developer (technical), stakeholder (business), user (simple)
+        format: Output format — markdown or json
+    """
+    result = _api("POST", "/v1/changelog", {
+        "project_path": project_path,
+        "git_range": git_range,
+        "audience": audience,
+        "format": format,
+    })
+    if "error" in result:
+        return f"Error: {result['error']}"
+    commits = result.get("commits_analyzed", 0)
+    parts = [
+        f"[{commits} commits analyzed | {result.get('total_time', 0):.1f}s]",
+        "",
+        result.get("changelog", ""),
+    ]
+    categories = result.get("categories", {})
+    non_empty = {k: v for k, v in categories.items() if v}
+    if non_empty:
+        parts.extend(["", "---", f"Categories: {', '.join(f'{k} ({len(v)})' for k, v in non_empty.items())}"])
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def elgringo_refactor(
+    project_path: str, focus: str = "all",
+    glob_pattern: str = "**/*.py", target_files: str = "",
+) -> str:
+    """
+    Multi-agent refactor analysis: finds complexity, duplication, tech debt.
+    Returns prioritized recommendations with effort estimates.
+
+    Args:
+        project_path: Absolute path to the project
+        focus: Analysis focus — complexity, duplication, performance, security, all
+        glob_pattern: File pattern to analyze (e.g. **/*.py, src/**/*.ts)
+        target_files: Comma-separated specific files to analyze (overrides glob)
+    """
+    files = [f.strip() for f in target_files.split(",") if f.strip()] if target_files else []
+    result = _api("POST", "/v1/refactor", {
+        "project_path": project_path,
+        "focus": focus,
+        "glob_pattern": glob_pattern,
+        "target_files": files,
+    })
+    if "error" in result:
+        return f"Error: {result['error']}"
+    agents = ", ".join(result.get("agents_used", []))
+    score = result.get("tech_debt_score", 0)
+    parts = [
+        f"[Agents: {agents} | Tech Debt Score: {score:.0f}/100 | {result.get('total_time', 0):.1f}s]",
+        "",
+        f"## Summary",
+        result.get("summary", ""),
+    ]
+    recs = result.get("recommendations", [])
+    if recs:
+        parts.extend(["", f"## Recommendations ({len(recs)})"])
+        for i, rec in enumerate(recs, 1):
+            priority = rec.get("priority", "medium")
+            effort = rec.get("effort", "?")
+            parts.append(f"{i}. [{priority.upper()}] `{rec.get('file', '?')}` — {rec.get('issue', '?')}")
+            if rec.get("suggestion"):
+                parts.append(f"   Fix: {rec['suggestion']} (effort: {effort})")
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def elgringo_test_generate(
+    project_path: str, target_file: str,
+    coverage_focus: str = "edge_cases", test_framework: str = "",
+) -> str:
+    """
+    AI test writer: generates comprehensive tests for any source file.
+    Auto-detects test framework and writes tests with proper conventions.
+
+    Args:
+        project_path: Absolute path to the project
+        target_file: Relative path to the file to generate tests for
+        coverage_focus: Test focus — happy_path, edge_cases, comprehensive
+        test_framework: Test framework (auto-detect if empty): pytest, jest, go test
+    """
+    result = _api("POST", "/v1/test-generate", {
+        "project_path": project_path,
+        "target_file": target_file,
+        "coverage_focus": coverage_focus,
+        "test_framework": test_framework,
+    })
+    if "error" in result:
+        return f"Error: {result['error']}"
+    agents = ", ".join(result.get("agents_used", []))
+    count = result.get("tests_count", 0)
+    test_path = result.get("test_file_path", "")
+    parts = [
+        f"[Agents: {agents} | {count} tests | {result.get('total_time', 0):.1f}s]",
+        f"Suggested test file: `{test_path}`",
+        "",
+    ]
+    if result.get("test_code"):
+        parts.append(result["test_code"])
+    areas = result.get("coverage_areas", [])
+    if areas:
+        parts.extend(["", "## Coverage Areas"])
+        for area in areas:
+            parts.append(f"- {area}")
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def elgringo_deploy_check(
+    project_path: str, git_range: str = "HEAD~5..HEAD",
+    environment: str = "production",
+) -> str:
+    """
+    Pre-deploy risk assessment with go/no-go recommendation.
+    Analyzes git changes, config diffs, and potential risks.
+
+    Args:
+        project_path: Absolute path to the project
+        git_range: Git range to analyze (e.g. HEAD~5..HEAD)
+        environment: Target environment — production, staging, dev
+    """
+    result = _api("POST", "/v1/deploy-check", {
+        "project_path": project_path,
+        "git_range": git_range,
+        "environment": environment,
+    })
+    if "error" in result:
+        return f"Error: {result['error']}"
+    agents = ", ".join(result.get("agents_used", []))
+    risk = result.get("risk_score", 0)
+    level = result.get("risk_level", "unknown")
+    verdict = result.get("go_no_go", "?")
+    emoji_map = {"GO": "GO", "NO-GO": "!! NO-GO !!"}
+    parts = [
+        f"[Agents: {agents} | {result.get('total_time', 0):.1f}s]",
+        "",
+        f"## Verdict: {emoji_map.get(verdict, verdict)}",
+        f"Risk Score: {risk:.1f}/10 ({level})",
+        f"Environment: {environment}",
+    ]
+    findings = result.get("findings", [])
+    if findings:
+        parts.extend(["", f"## Findings ({len(findings)})"])
+        for f in findings:
+            sev = f.get("severity", "?")
+            parts.append(f"- [{sev.upper()}] {f.get('category', '?')}: {f.get('description', '?')}")
+            if f.get("recommendation"):
+                parts.append(f"  Recommendation: {f['recommendation']}")
+    else:
+        parts.append("\nNo specific findings.")
+    return "\n".join(parts)
+
+
+@mcp.tool()
+def elgringo_onboard(
+    project_path: str, focus: str = "overview", depth: str = "medium",
+) -> str:
+    """
+    Project explainer: architecture, key files, patterns, gotchas for onboarding.
+    Helps new developers understand a codebase quickly.
+
+    Args:
+        project_path: Absolute path to the project
+        focus: What to focus on — overview, architecture, api, frontend, backend
+        depth: Detail level — quick (highlights only), medium (enough to contribute), deep (thorough)
+    """
+    result = _api("POST", "/v1/onboard", {
+        "project_path": project_path,
+        "focus": focus,
+        "depth": depth,
+    })
+    if "error" in result:
+        return f"Error: {result['error']}"
+    agents = ", ".join(result.get("agents_used", []))
+    parts = [
+        f"[Agents: {agents} | Focus: {focus} | Depth: {depth} | {result.get('total_time', 0):.1f}s]",
+        "",
+        f"## Summary",
+        result.get("summary", ""),
+    ]
+    if result.get("architecture"):
+        parts.extend(["", "## Architecture", result["architecture"]])
+    key_files = result.get("key_files", [])
+    if key_files:
+        parts.extend(["", "## Key Files"])
+        for kf in key_files:
+            imp = kf.get("importance", "medium")
+            parts.append(f"- `{kf.get('path', '?')}` [{imp}] — {kf.get('purpose', '?')}")
+    patterns = result.get("patterns", [])
+    if patterns:
+        parts.extend(["", "## Patterns"])
+        for p in patterns:
+            parts.append(f"- {p}")
+    gotchas = result.get("gotchas", [])
+    if gotchas:
+        parts.extend(["", "## Gotchas"])
+        for g in gotchas:
+            parts.append(f"- {g}")
+    if result.get("getting_started"):
+        parts.extend(["", "## Getting Started", result["getting_started"]])
+    return "\n".join(parts)
+
+
+@mcp.tool()
 def elgringo_debate(prompt: str, context: str = "", mode: str = "debate") -> str:
     """
     Put a topic, decision, or design to adversarial scrutiny. Agents argue

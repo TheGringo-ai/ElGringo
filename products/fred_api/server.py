@@ -5,12 +5,18 @@ Fred API - Orchestration as a Service
 Public REST API exposing El Gringo's multi-agent orchestration capabilities.
 
 Endpoints:
-    POST /v1/collaborate  - Multi-agent collaboration
-    POST /v1/ask          - Single-agent with smart routing
-    POST /v1/review       - Code review
-    POST /v1/stream       - SSE streaming response
-    GET  /v1/agents       - List available agents
-    GET  /v1/health       - Health check
+    POST /v1/collaborate    - Multi-agent collaboration
+    POST /v1/ask            - Single-agent with smart routing
+    POST /v1/review         - Code review
+    POST /v1/stream         - SSE streaming response
+    POST /v1/diagnose       - AI debugger (root cause analysis)
+    POST /v1/changelog      - Auto changelog from git history
+    POST /v1/refactor       - Multi-agent refactor planner
+    POST /v1/test-generate  - Smart test writer
+    POST /v1/deploy-check   - Pre-deploy risk assessment
+    POST /v1/onboard        - Project explainer for onboarding
+    GET  /v1/agents         - List available agents
+    GET  /v1/health         - Health check
 
 Run: uvicorn products.fred_api.server:app --port 8080
 """
@@ -1126,6 +1132,847 @@ async def verify_code(req: VerifyCodeRequest):
         "warnings": [str(w) for w in result.warnings],
         "suggestions": result.suggestions,
     }
+
+
+# ── Diagnose Endpoint ────────────────────────────────────────────────
+
+class DiagnoseRequest(BaseModel):
+    error_message: str = Field(..., description="The error message to diagnose")
+    stacktrace: str = Field("", description="Full stack trace if available")
+    project_path: str = Field("", description="Project path to read files for context")
+    files_context: List[str] = Field(default_factory=list, description="Specific files to read for context")
+    language: str = Field("", description="Programming language (auto-detect if empty)")
+
+class DiagnoseResponse(BaseModel):
+    request_id: str
+    root_cause: str
+    explanation: str
+    suggested_fix: str
+    confidence: float
+    agents_used: List[str]
+    related_files: List[str]
+    total_time: float
+
+
+@app.post("/v1/diagnose", response_model=DiagnoseResponse,
+          dependencies=[Depends(verify_api_key), Depends(rate_limit)])
+async def diagnose(req: DiagnoseRequest):
+    """AI debugger: multi-agent root cause analysis for errors and bugs."""
+    team = get_team()
+    request_id = str(uuid.uuid4())[:8]
+    start = time.time()
+
+    try:
+        # Build context from error info + file contents
+        context_parts = [f"ERROR MESSAGE:\n{req.error_message}"]
+        if req.stacktrace:
+            context_parts.append(f"STACKTRACE:\n{req.stacktrace}")
+        if req.language:
+            context_parts.append(f"LANGUAGE: {req.language}")
+
+        related_files = []
+        if req.project_path and req.files_context:
+            from products.fred_api.coding_endpoints import ProjectTools
+            try:
+                tools = ProjectTools(req.project_path)
+                for filepath in req.files_context[:10]:
+                    abs_path = str(tools.root / filepath) if not os.path.isabs(filepath) else filepath
+                    content = tools.read_file(abs_path)
+                    if not content.startswith("[ERROR]"):
+                        context_parts.append(f"--- FILE: {filepath} ---\n{content[:6000]}")
+                        related_files.append(filepath)
+            except Exception as e:
+                logger.warning(f"Diagnose: could not read project files: {e}")
+
+        context = "\n\n".join(context_parts)
+
+        prompt = """Diagnose the root cause of this error. Provide:
+1. ROOT CAUSE: A single clear sentence identifying the root cause
+2. EXPLANATION: A detailed explanation of why this happens
+3. SUGGESTED FIX: Concrete code changes or steps to fix it
+4. RELATED FILES: Which files are most likely involved
+
+Be specific and actionable. Reference exact lines/functions when possible."""
+
+        result = await team.collaborate(
+            prompt=prompt,
+            context=context,
+            mode="peer_review",
+        )
+
+        # Parse structured sections from the response
+        answer = result.final_answer
+        root_cause = ""
+        explanation = ""
+        suggested_fix = ""
+
+        for section in ["ROOT CAUSE:", "EXPLANATION:", "SUGGESTED FIX:", "RELATED FILES:"]:
+            pass  # We'll do simple extraction below
+
+        # Simple section extraction
+        lines = answer.split("\n")
+        current_section = ""
+        sections: Dict[str, List[str]] = {
+            "root_cause": [], "explanation": [], "suggested_fix": [], "related_files": []
+        }
+        section_map = {
+            "root cause": "root_cause", "explanation": "explanation",
+            "suggested fix": "suggested_fix", "related files": "related_files",
+        }
+
+        for line in lines:
+            line_lower = line.lower().strip()
+            matched = False
+            for key, section_name in section_map.items():
+                if key in line_lower and (":" in line or "#" in line):
+                    current_section = section_name
+                    # Grab text after the colon on same line
+                    after = line.split(":", 1)[-1].strip() if ":" in line else ""
+                    if after:
+                        sections[current_section].append(after)
+                    matched = True
+                    break
+            if not matched and current_section:
+                sections[current_section].append(line)
+
+        root_cause = "\n".join(sections["root_cause"]).strip() or answer[:200]
+        explanation = "\n".join(sections["explanation"]).strip() or answer
+        suggested_fix = "\n".join(sections["suggested_fix"]).strip() or ""
+
+        return DiagnoseResponse(
+            request_id=request_id,
+            root_cause=root_cause,
+            explanation=explanation,
+            suggested_fix=suggested_fix,
+            confidence=result.confidence_score,
+            agents_used=result.participating_agents,
+            related_files=related_files,
+            total_time=time.time() - start,
+        )
+    except Exception as e:
+        logger.error(f"Diagnose error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Changelog Endpoint ──────────────────────────────────────────────
+
+class ChangelogRequest(BaseModel):
+    project_path: str = Field(..., description="Absolute path to the project")
+    git_range: str = Field("HEAD~10..HEAD", description="Git range (e.g. HEAD~10..HEAD, v1.0..HEAD)")
+    audience: str = Field("developer", description="Target audience: developer, stakeholder, user")
+    format: str = Field("markdown", description="Output format: markdown, json")
+
+class ChangelogResponse(BaseModel):
+    request_id: str
+    changelog: str
+    commits_analyzed: int
+    categories: Dict[str, List[str]]
+    total_time: float
+
+
+@app.post("/v1/changelog", response_model=ChangelogResponse,
+          dependencies=[Depends(verify_api_key), Depends(rate_limit)])
+async def changelog(req: ChangelogRequest):
+    """Generate changelog from git history using multi-agent analysis."""
+    team = get_team()
+    request_id = str(uuid.uuid4())[:8]
+    start = time.time()
+
+    try:
+        from products.fred_api.coding_endpoints import ProjectTools
+        tools = ProjectTools(req.project_path)
+
+        # Get git log
+        git_log = tools.run_command(
+            f"git log {req.git_range} --format='%h|%an|%s' --no-merges"
+        )
+        if git_log["exit_code"] != 0:
+            raise HTTPException(status_code=400, detail=f"Git log failed: {git_log['stderr']}")
+
+        log_output = git_log["stdout"].strip()
+        if not log_output:
+            raise HTTPException(status_code=400, detail="No commits found in the given range")
+
+        commits = [line for line in log_output.split("\n") if line.strip()]
+
+        # Get diff stat for context
+        diff_stat = tools.run_command(f"git diff {req.git_range} --stat")
+        stat_output = diff_stat["stdout"][:3000] if diff_stat["exit_code"] == 0 else ""
+
+        context = f"GIT LOG ({len(commits)} commits):\n{log_output}\n\nDIFF STAT:\n{stat_output}"
+
+        audience_instructions = {
+            "developer": "Include technical details, file paths, and breaking changes. Use conventional commit style.",
+            "stakeholder": "Focus on business impact, features, and improvements. Avoid technical jargon.",
+            "user": "Focus on user-facing changes, new features, and bug fixes. Keep it simple and friendly.",
+        }
+
+        prompt = f"""Generate a {req.format} changelog for the following git commits.
+Target audience: {req.audience}
+{audience_instructions.get(req.audience, audience_instructions['developer'])}
+
+Organize into categories:
+- Features (new capabilities)
+- Fixes (bug fixes)
+- Improvements (enhancements to existing features)
+- Breaking Changes (if any)
+- Other (maintenance, docs, etc.)
+
+Be concise. One line per change."""
+
+        result = await team.collaborate(
+            prompt=prompt,
+            context=context,
+            mode="parallel",
+        )
+
+        # Extract categories from the response
+        categories: Dict[str, List[str]] = {
+            "features": [], "fixes": [], "improvements": [], "breaking": [], "other": []
+        }
+        current_cat = "other"
+        for line in result.final_answer.split("\n"):
+            line_lower = line.lower().strip()
+            if "feature" in line_lower and ("#" in line or ":" in line_lower[:15]):
+                current_cat = "features"
+            elif "fix" in line_lower and ("#" in line or ":" in line_lower[:10]):
+                current_cat = "fixes"
+            elif "improvement" in line_lower and ("#" in line or ":" in line_lower[:15]):
+                current_cat = "improvements"
+            elif "breaking" in line_lower and ("#" in line or ":" in line_lower[:15]):
+                current_cat = "breaking"
+            elif line.strip().startswith("-") or line.strip().startswith("*"):
+                categories[current_cat].append(line.strip().lstrip("-*").strip())
+
+        return ChangelogResponse(
+            request_id=request_id,
+            changelog=result.final_answer,
+            commits_analyzed=len(commits),
+            categories=categories,
+            total_time=time.time() - start,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Changelog error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Refactor Endpoint ───────────────────────────────────────────────
+
+class RefactorRequest(BaseModel):
+    project_path: str = Field(..., description="Absolute path to the project")
+    target_files: List[str] = Field(default_factory=list, description="Specific files to analyze (empty = auto-detect)")
+    focus: str = Field("all", description="Focus: complexity, duplication, performance, security, all")
+    glob_pattern: str = Field("**/*.py", description="File pattern to analyze")
+
+class RefactorResponse(BaseModel):
+    request_id: str
+    summary: str
+    recommendations: List[Dict]
+    tech_debt_score: float
+    agents_used: List[str]
+    total_time: float
+
+
+@app.post("/v1/refactor", response_model=RefactorResponse,
+          dependencies=[Depends(verify_api_key), Depends(rate_limit)])
+async def refactor(req: RefactorRequest):
+    """Multi-agent refactor analysis: finds complexity, duplication, and tech debt."""
+    team = get_team()
+    request_id = str(uuid.uuid4())[:8]
+    start = time.time()
+
+    try:
+        from products.fred_api.coding_endpoints import ProjectTools
+        from fnmatch import fnmatch
+        tools = ProjectTools(req.project_path)
+
+        # Get files to analyze
+        all_files = tools.list_files()
+        if req.target_files:
+            files_to_read = req.target_files[:15]
+        else:
+            files_to_read = [f for f in all_files if fnmatch(f, req.glob_pattern)][:15]
+
+        if not files_to_read:
+            raise HTTPException(status_code=400, detail="No files matched the pattern")
+
+        # Read file contents
+        context_parts = [f"PROJECT: {req.project_path} ({len(all_files)} total files)"]
+        for filepath in files_to_read:
+            content = tools.read_file(str(tools.root / filepath))
+            if not content.startswith("[ERROR]"):
+                context_parts.append(f"--- {filepath} ({len(content.splitlines())} lines) ---\n{content[:5000]}")
+
+        context = "\n\n".join(context_parts)
+
+        focus_instructions = {
+            "complexity": "Focus on cyclomatic complexity, deeply nested logic, long functions, and god classes.",
+            "duplication": "Focus on duplicated code, copy-paste patterns, and opportunities for shared abstractions.",
+            "performance": "Focus on N+1 queries, unnecessary allocations, blocking I/O, and algorithmic inefficiency.",
+            "security": "Focus on injection vulnerabilities, auth gaps, data exposure, and insecure defaults.",
+            "all": "Analyze complexity, duplication, performance, and security comprehensively.",
+        }
+
+        prompt = f"""Analyze this codebase for refactoring opportunities.
+Focus: {req.focus}
+{focus_instructions.get(req.focus, focus_instructions['all'])}
+
+For each finding, provide:
+- FILE: which file
+- ISSUE: what the problem is
+- SUGGESTION: how to fix it
+- PRIORITY: high/medium/low
+- EFFORT: small/medium/large
+
+Also provide:
+- TECH DEBT SCORE: 0-100 (0=pristine, 100=critical debt)
+- SUMMARY: one paragraph overview"""
+
+        result = await team.collaborate(
+            prompt=prompt,
+            context=context,
+            mode="expert_panel",
+        )
+
+        # Parse recommendations from the response
+        recommendations = []
+        answer = result.final_answer
+        current_rec: Dict = {}
+
+        for line in answer.split("\n"):
+            line_stripped = line.strip()
+            line_lower = line_stripped.lower()
+
+            if line_lower.startswith("file:") or line_lower.startswith("- file:"):
+                if current_rec.get("file"):
+                    recommendations.append(current_rec)
+                current_rec = {"file": line_stripped.split(":", 1)[-1].strip()}
+            elif line_lower.startswith("issue:") or line_lower.startswith("- issue:"):
+                current_rec["issue"] = line_stripped.split(":", 1)[-1].strip()
+            elif line_lower.startswith("suggestion:") or line_lower.startswith("- suggestion:"):
+                current_rec["suggestion"] = line_stripped.split(":", 1)[-1].strip()
+            elif line_lower.startswith("priority:") or line_lower.startswith("- priority:"):
+                current_rec["priority"] = line_stripped.split(":", 1)[-1].strip().lower()
+            elif line_lower.startswith("effort:") or line_lower.startswith("- effort:"):
+                current_rec["effort"] = line_stripped.split(":", 1)[-1].strip().lower()
+
+        if current_rec.get("file"):
+            recommendations.append(current_rec)
+
+        # Extract tech debt score
+        tech_debt_score = 50.0  # default
+        import re
+        score_match = re.search(r'tech\s*debt\s*score[:\s]*(\d+)', answer, re.IGNORECASE)
+        if score_match:
+            tech_debt_score = min(100.0, max(0.0, float(score_match.group(1))))
+
+        # Extract summary
+        summary = ""
+        summary_match = re.search(r'summary[:\s]*(.*?)(?:\n\n|\nfile:|\n-\s*file:|\Z)', answer, re.IGNORECASE | re.DOTALL)
+        if summary_match:
+            summary = summary_match.group(1).strip()[:500]
+        if not summary:
+            summary = answer[:300]
+
+        return RefactorResponse(
+            request_id=request_id,
+            summary=summary,
+            recommendations=recommendations,
+            tech_debt_score=tech_debt_score,
+            agents_used=result.participating_agents,
+            total_time=time.time() - start,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Refactor error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Test Generate Endpoint ──────────────────────────────────────────
+
+class TestGenRequest(BaseModel):
+    project_path: str = Field(..., description="Absolute path to the project")
+    target_file: str = Field(..., description="File to generate tests for")
+    test_framework: str = Field("", description="Test framework (auto-detect: pytest, jest, go test)")
+    coverage_focus: str = Field("edge_cases", description="Focus: happy_path, edge_cases, comprehensive")
+
+class TestGenResponse(BaseModel):
+    request_id: str
+    test_code: str
+    test_file_path: str
+    tests_count: int
+    coverage_areas: List[str]
+    agents_used: List[str]
+    total_time: float
+
+
+@app.post("/v1/test-generate", response_model=TestGenResponse,
+          dependencies=[Depends(verify_api_key), Depends(rate_limit)])
+async def test_generate(req: TestGenRequest):
+    """AI test writer: generates comprehensive tests for any source file."""
+    team = get_team()
+    request_id = str(uuid.uuid4())[:8]
+    start = time.time()
+
+    try:
+        from products.fred_api.coding_endpoints import ProjectTools
+        from pathlib import Path as PurePath
+        tools = ProjectTools(req.project_path)
+
+        # Read the target file
+        abs_path = str(tools.root / req.target_file) if not os.path.isabs(req.target_file) else req.target_file
+        source_content = tools.read_file(abs_path)
+        if source_content.startswith("[ERROR]"):
+            raise HTTPException(status_code=400, detail=f"Cannot read file: {source_content}")
+
+        # Auto-detect test framework from file extension and project
+        ext = PurePath(req.target_file).suffix
+        framework = req.test_framework
+        if not framework:
+            if ext == ".py":
+                framework = "pytest"
+            elif ext in (".js", ".jsx", ".ts", ".tsx"):
+                framework = "jest"
+            elif ext == ".go":
+                framework = "go test"
+            elif ext == ".rs":
+                framework = "cargo test"
+            else:
+                framework = "pytest"
+
+        # Determine test file path
+        target_name = PurePath(req.target_file).stem
+        target_dir = str(PurePath(req.target_file).parent)
+        if framework == "pytest":
+            test_file = f"{target_dir}/test_{target_name}.py" if target_dir != "." else f"test_{target_name}.py"
+        elif framework in ("jest",):
+            test_file = f"{target_dir}/{target_name}.test{ext}" if target_dir != "." else f"{target_name}.test{ext}"
+        elif framework == "go test":
+            test_file = f"{target_dir}/{target_name}_test.go" if target_dir != "." else f"{target_name}_test.go"
+        else:
+            test_file = f"test_{target_name}{ext}"
+
+        # Read existing tests if they exist
+        existing_tests = ""
+        existing_path = str(tools.root / test_file)
+        try:
+            existing_content = tools.read_file(existing_path)
+            if not existing_content.startswith("[ERROR]"):
+                existing_tests = f"\n--- EXISTING TESTS: {test_file} ---\n{existing_content[:4000]}"
+        except Exception:
+            pass
+
+        context = f"--- SOURCE FILE: {req.target_file} ---\n{source_content[:8000]}{existing_tests}"
+
+        focus_instructions = {
+            "happy_path": "Focus on testing the expected normal behavior and common use cases.",
+            "edge_cases": "Focus on edge cases, boundary conditions, error handling, and unexpected inputs.",
+            "comprehensive": "Write comprehensive tests covering happy path, edge cases, error handling, and integration points.",
+        }
+
+        prompt = f"""Write {framework} tests for the source file below.
+Coverage focus: {req.coverage_focus}
+{focus_instructions.get(req.coverage_focus, focus_instructions['edge_cases'])}
+
+Requirements:
+- Output ONLY the test code (no explanations before/after)
+- Use {framework} conventions and best practices
+- Include descriptive test names that explain what's being tested
+- Test each public function/method/class
+- Include setup/teardown where appropriate
+- Mock external dependencies
+- Add brief comments for non-obvious test cases
+
+After the test code, list the COVERAGE AREAS as a bullet list like:
+COVERAGE AREAS:
+- area 1
+- area 2"""
+
+        result = await team.collaborate(
+            prompt=prompt,
+            context=context,
+            mode="peer_review",
+        )
+
+        # Extract test code and coverage areas
+        answer = result.final_answer
+        coverage_areas = []
+        test_code = answer
+
+        # Split at COVERAGE AREAS section
+        import re
+        coverage_split = re.split(r'COVERAGE\s*AREAS\s*:', answer, flags=re.IGNORECASE)
+        if len(coverage_split) > 1:
+            test_code = coverage_split[0].strip()
+            for line in coverage_split[1].split("\n"):
+                line = line.strip().lstrip("-*").strip()
+                if line:
+                    coverage_areas.append(line)
+
+        # Strip markdown code fences if present
+        test_code = re.sub(r'^```\w*\n', '', test_code)
+        test_code = re.sub(r'\n```\s*$', '', test_code)
+
+        # Count test functions
+        if framework == "pytest":
+            tests_count = len(re.findall(r'(?:def|async def)\s+test_', test_code))
+        elif framework in ("jest",):
+            tests_count = len(re.findall(r'(?:it|test)\s*\(', test_code))
+        elif framework == "go test":
+            tests_count = len(re.findall(r'func\s+Test', test_code))
+        else:
+            tests_count = len(re.findall(r'(?:def|func|function)\s+[Tt]est', test_code))
+
+        return TestGenResponse(
+            request_id=request_id,
+            test_code=test_code,
+            test_file_path=test_file,
+            tests_count=tests_count,
+            coverage_areas=coverage_areas,
+            agents_used=result.participating_agents,
+            total_time=time.time() - start,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Test generate error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Deploy Check Endpoint ───────────────────────────────────────────
+
+class DeployCheckRequest(BaseModel):
+    project_path: str = Field(..., description="Absolute path to the project")
+    git_range: str = Field("HEAD~5..HEAD", description="Git range to analyze")
+    environment: str = Field("production", description="Target environment: production, staging, dev")
+
+class DeployCheckResponse(BaseModel):
+    request_id: str
+    risk_score: float
+    risk_level: str
+    findings: List[Dict]
+    go_no_go: str
+    agents_used: List[str]
+    total_time: float
+
+
+@app.post("/v1/deploy-check", response_model=DeployCheckResponse,
+          dependencies=[Depends(verify_api_key), Depends(rate_limit)])
+async def deploy_check(req: DeployCheckRequest):
+    """Pre-deploy risk assessment with go/no-go recommendation."""
+    team = get_team()
+    request_id = str(uuid.uuid4())[:8]
+    start = time.time()
+
+    try:
+        from products.fred_api.coding_endpoints import ProjectTools
+        tools = ProjectTools(req.project_path)
+
+        # Gather deployment context
+        context_parts = [f"ENVIRONMENT: {req.environment}"]
+
+        # Git log
+        git_log = tools.run_command(f"git log {req.git_range} --format='%h %an: %s' --no-merges")
+        if git_log["exit_code"] == 0:
+            context_parts.append(f"COMMITS:\n{git_log['stdout'][:2000]}")
+
+        # Diff stat
+        diff_stat = tools.run_command(f"git diff {req.git_range} --stat")
+        if diff_stat["exit_code"] == 0:
+            context_parts.append(f"DIFF STAT:\n{diff_stat['stdout'][:2000]}")
+
+        # Actual diff (truncated)
+        diff_content = tools.run_command(f"git diff {req.git_range}")
+        if diff_content["exit_code"] == 0:
+            context_parts.append(f"DIFF:\n{diff_content['stdout'][:6000]}")
+
+        # Check for common risk signals
+        git_status = tools.git_status()
+        if git_status.strip():
+            context_parts.append(f"UNCOMMITTED CHANGES:\n{git_status}")
+
+        # Check for config/env changes
+        config_diff = tools.run_command(f"git diff {req.git_range} -- '*.env*' '*.yml' '*.yaml' 'Dockerfile*' 'docker-compose*'")
+        if config_diff["exit_code"] == 0 and config_diff["stdout"].strip():
+            context_parts.append(f"CONFIG/INFRA CHANGES:\n{config_diff['stdout'][:2000]}")
+
+        context = "\n\n".join(context_parts)
+
+        prompt = f"""Perform a pre-deployment risk assessment for deploying to {req.environment}.
+
+Analyze the changes and provide:
+
+1. RISK SCORE: 0-10 (0=completely safe, 10=extremely dangerous)
+2. RISK LEVEL: low (0-3), medium (4-5), high (6-7), critical (8-10)
+3. GO/NO-GO: "GO" or "NO-GO"
+
+4. FINDINGS: List each finding as:
+   - CATEGORY: (security/performance/reliability/data/config/dependency)
+   - DESCRIPTION: what the risk is
+   - SEVERITY: low/medium/high/critical
+   - RECOMMENDATION: how to mitigate
+
+Consider:
+- Database migrations or schema changes
+- API breaking changes
+- Security vulnerabilities introduced
+- Performance regressions
+- Missing error handling
+- Configuration changes
+- Dependency updates
+- Uncommitted changes
+- Large or risky refactors"""
+
+        result = await team.collaborate(
+            prompt=prompt,
+            context=context,
+            mode="expert_panel",
+        )
+
+        # Parse the response
+        answer = result.final_answer
+        import re
+
+        # Extract risk score
+        risk_score = 5.0
+        score_match = re.search(r'risk\s*score[:\s]*(\d+(?:\.\d+)?)', answer, re.IGNORECASE)
+        if score_match:
+            risk_score = min(10.0, max(0.0, float(score_match.group(1))))
+
+        # Determine risk level
+        if risk_score <= 3:
+            risk_level = "low"
+        elif risk_score <= 5:
+            risk_level = "medium"
+        elif risk_score <= 7:
+            risk_level = "high"
+        else:
+            risk_level = "critical"
+
+        # Override with explicit level if found
+        level_match = re.search(r'risk\s*level[:\s]*(low|medium|high|critical)', answer, re.IGNORECASE)
+        if level_match:
+            risk_level = level_match.group(1).lower()
+
+        # Extract go/no-go
+        go_no_go = "GO" if risk_score <= 5 else "NO-GO"
+        go_match = re.search(r'(GO|NO-GO|NO GO)', answer, re.IGNORECASE)
+        if go_match:
+            go_no_go = "NO-GO" if "NO" in go_match.group(1).upper() else "GO"
+
+        # Parse findings
+        findings = []
+        current_finding: Dict = {}
+        for line in answer.split("\n"):
+            line_stripped = line.strip()
+            line_lower = line_stripped.lower()
+
+            if line_lower.startswith("category:") or line_lower.startswith("- category:"):
+                if current_finding.get("category"):
+                    findings.append(current_finding)
+                current_finding = {"category": line_stripped.split(":", 1)[-1].strip()}
+            elif line_lower.startswith("description:") or line_lower.startswith("- description:"):
+                current_finding["description"] = line_stripped.split(":", 1)[-1].strip()
+            elif line_lower.startswith("severity:") or line_lower.startswith("- severity:"):
+                current_finding["severity"] = line_stripped.split(":", 1)[-1].strip().lower()
+            elif line_lower.startswith("recommendation:") or line_lower.startswith("- recommendation:"):
+                current_finding["recommendation"] = line_stripped.split(":", 1)[-1].strip()
+
+        if current_finding.get("category"):
+            findings.append(current_finding)
+
+        return DeployCheckResponse(
+            request_id=request_id,
+            risk_score=risk_score,
+            risk_level=risk_level,
+            findings=findings,
+            go_no_go=go_no_go,
+            agents_used=result.participating_agents,
+            total_time=time.time() - start,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Deploy check error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Onboard Endpoint ────────────────────────────────────────────────
+
+class OnboardRequest(BaseModel):
+    project_path: str = Field(..., description="Absolute path to the project")
+    focus: str = Field("overview", description="Focus: overview, architecture, api, frontend, backend")
+    depth: str = Field("medium", description="Detail level: quick, medium, deep")
+
+class OnboardResponse(BaseModel):
+    request_id: str
+    summary: str
+    architecture: str
+    key_files: List[Dict]
+    patterns: List[str]
+    gotchas: List[str]
+    getting_started: str
+    agents_used: List[str]
+    total_time: float
+
+
+@app.post("/v1/onboard", response_model=OnboardResponse,
+          dependencies=[Depends(verify_api_key), Depends(rate_limit)])
+async def onboard(req: OnboardRequest):
+    """Project explainer: architecture, key files, patterns, and gotchas for onboarding."""
+    team = get_team()
+    request_id = str(uuid.uuid4())[:8]
+    start = time.time()
+
+    try:
+        from products.fred_api.coding_endpoints import ProjectTools
+        tools = ProjectTools(req.project_path)
+
+        # Gather project info
+        info = tools.get_project_info()
+        all_files = tools.list_files()
+
+        context_parts = [
+            f"PROJECT: {info['project_path']}",
+            f"FILES: {info['files_count']} | LANGUAGES: {info['languages']}",
+            f"STRUCTURE:\n" + "\n".join(f"  {s}" for s in info["structure"]),
+            f"HAS GIT: {info['has_git']} | HAS TESTS: {info['has_tests']}",
+        ]
+
+        # Read key files based on focus
+        files_to_read = []
+        if req.focus in ("overview", "architecture"):
+            # Read entry points, configs, and READMEs
+            priority_patterns = [
+                "README", "readme", "main.py", "app.py", "server.py", "index.ts", "index.js",
+                "package.json", "pyproject.toml", "Cargo.toml", "go.mod",
+                "Dockerfile", "docker-compose", "Makefile",
+            ]
+            for f in all_files:
+                if any(p in f for p in priority_patterns):
+                    files_to_read.append(f)
+        elif req.focus == "api":
+            for f in all_files:
+                if any(kw in f.lower() for kw in ["route", "router", "endpoint", "api", "server", "view"]):
+                    files_to_read.append(f)
+        elif req.focus == "frontend":
+            for f in all_files:
+                if any(f.endswith(ext) for ext in [".jsx", ".tsx", ".vue", ".svelte", ".html"]):
+                    files_to_read.append(f)
+        elif req.focus == "backend":
+            for f in all_files:
+                if any(kw in f.lower() for kw in ["model", "service", "route", "main", "config", "database", "db"]):
+                    files_to_read.append(f)
+
+        # Limit based on depth
+        depth_limits = {"quick": 5, "medium": 10, "deep": 20}
+        max_files = depth_limits.get(req.depth, 10)
+        files_to_read = files_to_read[:max_files]
+
+        for filepath in files_to_read:
+            content = tools.read_file(str(tools.root / filepath))
+            if not content.startswith("[ERROR]"):
+                truncate_at = 3000 if req.depth == "quick" else 5000 if req.depth == "medium" else 8000
+                context_parts.append(f"--- {filepath} ---\n{content[:truncate_at]}")
+
+        context = "\n\n".join(context_parts)
+
+        depth_instructions = {
+            "quick": "Keep it brief — one paragraph per section. Hit the highlights only.",
+            "medium": "Provide moderate detail — enough for a developer to start contributing.",
+            "deep": "Be thorough — cover architecture decisions, data flow, and non-obvious patterns.",
+        }
+
+        prompt = f"""You are onboarding a new developer to this project.
+Focus: {req.focus}
+Depth: {req.depth}
+{depth_instructions.get(req.depth, depth_instructions['medium'])}
+
+Provide these sections:
+
+1. SUMMARY: What this project does, in plain language
+2. ARCHITECTURE: How the system is structured (components, data flow, key decisions)
+3. KEY FILES: List the most important files with:
+   - PATH: file path
+   - PURPOSE: what it does
+   - IMPORTANCE: critical/high/medium
+4. PATTERNS: Design patterns and conventions used in this codebase
+5. GOTCHAS: Common pitfalls, non-obvious behaviors, and things that could trip up a new developer
+6. GETTING STARTED: Steps to set up, run, and start developing"""
+
+        result = await team.collaborate(
+            prompt=prompt,
+            context=context,
+            mode="parallel",
+        )
+
+        # Parse the response into sections
+        answer = result.final_answer
+        import re
+
+        def extract_section(text: str, section_name: str, next_sections: List[str]) -> str:
+            """Extract text between section headers."""
+            pattern = rf'(?:#+\s*)?{section_name}\s*:?\s*\n(.*?)(?=(?:#+\s*)?(?:{"|".join(next_sections)})\s*:?|\Z)'
+            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            return match.group(1).strip() if match else ""
+
+        sections_order = ["SUMMARY", "ARCHITECTURE", "KEY FILES", "PATTERNS", "GOTCHAS", "GETTING STARTED"]
+        summary = extract_section(answer, "SUMMARY", sections_order[1:]) or answer[:300]
+        architecture = extract_section(answer, "ARCHITECTURE", sections_order[2:]) or ""
+        getting_started = extract_section(answer, "GETTING STARTED", []) or ""
+
+        # Parse key files
+        key_files = []
+        key_files_section = extract_section(answer, "KEY FILES", sections_order[3:])
+        current_kf: Dict = {}
+        for line in key_files_section.split("\n"):
+            line_lower = line.strip().lower()
+            if line_lower.startswith("path:") or line_lower.startswith("- path:"):
+                if current_kf.get("path"):
+                    key_files.append(current_kf)
+                current_kf = {"path": line.strip().split(":", 1)[-1].strip()}
+            elif line_lower.startswith("purpose:") or line_lower.startswith("- purpose:"):
+                current_kf["purpose"] = line.strip().split(":", 1)[-1].strip()
+            elif line_lower.startswith("importance:") or line_lower.startswith("- importance:"):
+                current_kf["importance"] = line.strip().split(":", 1)[-1].strip().lower()
+        if current_kf.get("path"):
+            key_files.append(current_kf)
+
+        # Parse patterns
+        patterns = []
+        patterns_section = extract_section(answer, "PATTERNS", sections_order[4:])
+        for line in patterns_section.split("\n"):
+            line = line.strip().lstrip("-*").strip()
+            if line and not line.lower().startswith("pattern"):
+                patterns.append(line)
+
+        # Parse gotchas
+        gotchas = []
+        gotchas_section = extract_section(answer, "GOTCHAS", sections_order[5:])
+        for line in gotchas_section.split("\n"):
+            line = line.strip().lstrip("-*").strip()
+            if line and not line.lower().startswith("gotcha"):
+                gotchas.append(line)
+
+        return OnboardResponse(
+            request_id=request_id,
+            summary=summary,
+            architecture=architecture,
+            key_files=key_files,
+            patterns=patterns,
+            gotchas=gotchas,
+            getting_started=getting_started,
+            agents_used=result.participating_agents,
+            total_time=time.time() - start,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Onboard error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── Coding Agent Endpoints ───────────────────────────────────────────

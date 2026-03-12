@@ -266,6 +266,16 @@ class CostOptimizer:
             remaining_monthly=max(0, self.monthly_budget - self._monthly_spent),
         )
 
+    def health_details(self):
+        """Returns current spending as a percentage of daily and monthly budgets."""
+        daily_pct = (self._daily_spent / self.daily_budget * 100) if self.daily_budget > 0 else 0.0
+        monthly_pct = (self._monthly_spent / self.monthly_budget * 100) if self.monthly_budget > 0 else 0.0
+        
+        return {
+            "daily_pct": daily_pct,
+            "monthly_pct": monthly_pct,
+        }
+
     def reset_daily(self):
         """Reset daily spending counter"""
         self._daily_spent = 0.0

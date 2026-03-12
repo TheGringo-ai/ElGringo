@@ -11,6 +11,7 @@ deduplication, per-iteration timeouts, and git safety.
 """
 
 import difflib
+import json
 import logging
 import os
 import re
@@ -18,6 +19,7 @@ import shlex
 import subprocess
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -296,6 +298,10 @@ class CodingAgentEngine:
     per-iteration timeout, structured error feedback.
     """
 
+    # Threshold for splitting a task into subtasks
+    DECOMPOSITION_KEYWORDS = {"and then", "after that", "also ", "additionally", "next ",
+                               "step 1", "step 2", "1.", "2.", "3."}
+
     def __init__(self, team, tools: ProjectTools):
         self.team = team
         self.tools = tools
@@ -303,6 +309,101 @@ class CodingAgentEngine:
         self._backups: Dict[str, str] = {}  # filepath -> original content
 
     async def execute_task(self, request: CodingTaskRequest) -> CodingTaskResponse:
+        # Check if this is a complex multi-step task that should be decomposed
+        if self._should_decompose(request.task) and not request.dry_run:
+            return await self._execute_decomposed(request)
+
+        return await self._execute_single(request)
+
+    async def _execute_decomposed(self, request: CodingTaskRequest) -> CodingTaskResponse:
+        """Break a complex task into subtasks and execute each independently."""
+        task_id = str(uuid.uuid4())[:8]
+        start_time = time.time()
+        log = lambda msg: logger.info(f"[{task_id}] {msg}")
+        log(f"Decomposing complex task: {request.task[:100]}")
+
+        # Ask AI to decompose the task
+        subtasks = await self._decompose_task(request.task, request)
+        log(f"Decomposed into {len(subtasks)} subtasks")
+
+        all_files_changed: List[FileChange] = []
+        all_errors: List[str] = []
+        all_agents: List[str] = []
+        total_iterations = 0
+        test_result: Optional[TestResult] = None
+        last_status = "success"
+
+        for i, subtask in enumerate(subtasks):
+            log(f"Subtask {i+1}/{len(subtasks)}: {subtask[:80]}")
+
+            # Create a sub-request for each subtask
+            sub_request = CodingTaskRequest(
+                task=subtask,
+                project_path=request.project_path,
+                context=request.context,
+                files_to_read=request.files_to_read,
+                run_tests=request.run_tests and (i == len(subtasks) - 1),  # Only test on last subtask
+                test_command=request.test_command,
+                auto_commit=False,  # Commit only at the end
+                mode=request.mode,
+                allowed_agents=request.allowed_agents,
+                max_iterations=request.max_iterations,
+                dry_run=False,
+            )
+
+            sub_result = await self._execute_single(sub_request)
+            all_files_changed.extend(sub_result.files_changed)
+            all_errors.extend(sub_result.errors)
+            all_agents.extend(sub_result.agents_used)
+            total_iterations += sub_result.iterations
+            if sub_result.test_results:
+                test_result = sub_result.test_results
+            if sub_result.status == "failed":
+                last_status = "partial"
+                all_errors.append(f"Subtask {i+1} failed: {subtask[:100]}")
+
+        # Deduplicate agents
+        all_agents = list(set(all_agents))
+
+        # Auto-commit if requested
+        git_commit_msg = None
+        if request.auto_commit and all_files_changed:
+            if test_result is None or test_result.passed:
+                commit_msg = f"El Gringo: {request.task[:80]}"
+                self.tools.git_commit(commit_msg)
+                git_commit_msg = commit_msg
+
+        total_time = round(time.time() - start_time, 1)
+
+        if not all_files_changed:
+            last_status = "failed"
+        elif test_result and not test_result.passed:
+            last_status = "partial"
+
+        summary = (f"Completed {len(subtasks)} subtasks: {len(all_files_changed)} files changed "
+                   f"in {total_iterations} iteration(s)")
+        if test_result:
+            summary += f", tests {'passing' if test_result.passed else 'failing'}"
+
+        # Record outcome for learning
+        self._record_outcome(task_id, request.task, last_status, all_files_changed, all_errors)
+
+        return CodingTaskResponse(
+            task_id=task_id,
+            status=last_status,
+            summary=summary,
+            files_changed=all_files_changed,
+            test_results=test_result,
+            git_commit=git_commit_msg,
+            agents_used=all_agents,
+            iterations=total_iterations,
+            total_time=total_time,
+            errors=all_errors[-10:],
+            plan=[f"Step {i+1}: {s}" for i, s in enumerate(subtasks)],
+        )
+
+    async def _execute_single(self, request: CodingTaskRequest) -> CodingTaskResponse:
+        """Execute a single coding task with self-correction."""
         task_id = str(uuid.uuid4())[:8]
         start_time = time.time()
         errors: List[str] = []
@@ -315,7 +416,7 @@ class CodingAgentEngine:
         log = lambda msg: logger.info(f"[{task_id}] {msg}")
         log(f"Starting task: {request.task[:100]}")
 
-        # Step 1: Build context
+        # Step 1: Build context (with grep-powered file discovery)
         context = await self._build_context(request)
         log(f"Context built: {len(context)} chars")
 
@@ -458,6 +559,9 @@ class CodingAgentEngine:
 
         log(f"Finished: {status} in {total_time}s")
 
+        # Record outcome for learning
+        self._record_outcome(task_id, request.task, status, files_changed, errors)
+
         return CodingTaskResponse(
             task_id=task_id,
             status=status,
@@ -470,6 +574,175 @@ class CodingAgentEngine:
             total_time=total_time,
             errors=errors[-10:],  # Cap errors in response
         )
+
+    # ── Task Decomposition ───────────────────────────────────────────
+
+    def _should_decompose(self, task: str) -> bool:
+        """Detect if a task is complex enough to warrant decomposition."""
+        task_lower = task.lower()
+
+        # Check for explicit multi-step language
+        if any(kw in task_lower for kw in self.DECOMPOSITION_KEYWORDS):
+            return True
+
+        # Check for multiple file references (changing 3+ files = complex)
+        file_refs = re.findall(r'[\w./\-]+\.(?:py|js|ts|go|rs|java)', task)
+        if len(set(file_refs)) >= 3:
+            return True
+
+        # Check for long task descriptions (>300 chars usually means multi-step)
+        if len(task) > 300:
+            return True
+
+        return False
+
+    async def _decompose_task(self, task: str, request: CodingTaskRequest) -> List[str]:
+        """Use the AI team to break a complex task into ordered subtasks."""
+        context = await self._build_context(request)
+
+        prompt = f"""Break this task into 2-5 independent, ordered subtasks.
+Each subtask should be a single, focused change that can be applied and verified independently.
+
+TASK: {task}
+
+RULES:
+- Each subtask must be self-contained (not reference other subtasks)
+- Order subtasks so later ones don't depend on earlier ones breaking
+- Each subtask should name the specific file(s) to modify
+- Keep subtasks small — one function change or one file edit each
+
+Return ONLY a numbered list, one subtask per line. No explanations.
+Example:
+1. Add the helper function parse_config() to utils/config.py
+2. Update main.py to import and call parse_config() on startup
+3. Add test for parse_config() in tests/test_config.py
+"""
+
+        try:
+            result = await self.team.collaborate(
+                prompt=prompt, context=context, mode="sequential",
+            )
+            # Parse numbered list
+            lines = result.final_answer.strip().splitlines()
+            subtasks = []
+            for line in lines:
+                # Strip "1. ", "2. ", "- ", etc.
+                cleaned = re.sub(r'^\s*\d+[\.\)]\s*', '', line).strip()
+                cleaned = re.sub(r'^\s*[-•]\s*', '', cleaned).strip()
+                if cleaned and len(cleaned) > 10:
+                    subtasks.append(cleaned)
+
+            if subtasks:
+                return subtasks
+        except Exception as e:
+            logger.warning(f"Decomposition failed: {e}")
+
+        # Fallback: execute as single task
+        return [task]
+
+    # ── Outcome Learning ─────────────────────────────────────────────
+
+    def _record_outcome(
+        self, task_id: str, task: str, status: str,
+        files_changed: List[FileChange], errors: List[str],
+    ):
+        """Record task outcome for learning. Feeds into cross-project intelligence."""
+        try:
+            # Store locally in project's .elgringo/ directory
+            outcome_dir = self.tools.root / ".elgringo" / "outcomes"
+            outcome_dir.mkdir(parents=True, exist_ok=True)
+
+            outcome = {
+                "task_id": task_id,
+                "task": task[:500],
+                "status": status,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "files_changed": [f.path for f in files_changed],
+                "error_count": len(errors),
+                "errors_summary": [e[:200] for e in errors[:3]],
+            }
+
+            # Write outcome file
+            outcome_file = outcome_dir / f"{task_id}.json"
+            outcome_file.write_text(json.dumps(outcome, indent=2))
+
+            # Also feed into KnowledgeNexus if available
+            if status == "success" and files_changed:
+                try:
+                    from elgringo.intelligence.cross_project import get_nexus
+                    nexus = get_nexus()
+                    project_name = self.tools.root.name
+                    nexus.index_solution(
+                        project=project_name,
+                        problem=task[:200],
+                        solution=f"Modified {len(files_changed)} files: {', '.join(f.path for f in files_changed[:5])}",
+                        tags=self._extract_tags(task, files_changed),
+                    )
+                except Exception:
+                    pass  # Nexus is optional
+
+            # Feed into feedback loop if available
+            if status in ("success", "failed"):
+                try:
+                    from elgringo.intelligence.feedback_loop import get_feedback_loop
+                    loop = get_feedback_loop()
+                    loop.record_feedback(
+                        task_id=task_id,
+                        rating=1.0 if status == "success" else -0.5,
+                        agents_involved=[],
+                        task_type="coding",
+                        mode="agentic",
+                        auto_detected=True,
+                    )
+                except Exception:
+                    pass  # Feedback loop is optional
+
+            logger.info(f"Recorded outcome: {task_id} = {status}")
+
+        except Exception as e:
+            logger.debug(f"Failed to record outcome: {e}")
+
+    def _get_past_outcomes(self, task: str, limit: int = 3) -> List[Dict]:
+        """Retrieve relevant past outcomes for this project."""
+        outcome_dir = self.tools.root / ".elgringo" / "outcomes"
+        if not outcome_dir.exists():
+            return []
+
+        outcomes = []
+        task_words = set(re.findall(r'[a-z_]+', task.lower()))
+
+        for f in sorted(outcome_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+            try:
+                data = json.loads(f.read_text())
+                past_words = set(re.findall(r'[a-z_]+', data.get("task", "").lower()))
+                overlap = len(task_words & past_words) / max(len(task_words), 1)
+                if overlap > 0.3:  # At least 30% keyword overlap
+                    outcomes.append(data)
+                    if len(outcomes) >= limit:
+                        break
+            except Exception:
+                continue
+
+        return outcomes
+
+    @staticmethod
+    def _extract_tags(task: str, files_changed: List[FileChange]) -> List[str]:
+        """Extract tags from a task for cross-project indexing."""
+        tags = []
+        # File extensions as tags
+        for f in files_changed:
+            ext = Path(f.path).suffix.lstrip(".")
+            if ext and ext not in tags:
+                tags.append(ext)
+        # Common task type keywords
+        task_lower = task.lower()
+        for keyword, tag in [("fix", "bugfix"), ("add", "feature"), ("refactor", "refactor"),
+                              ("test", "testing"), ("security", "security"), ("performance", "perf"),
+                              ("api", "api"), ("endpoint", "api"), ("database", "database"),
+                              ("auth", "auth"), ("deploy", "deploy"), ("docker", "docker")]:
+            if keyword in task_lower and tag not in tags:
+                tags.append(tag)
+        return tags[:10]
 
     # ── Context Building ─────────────────────────────────────────────
 
@@ -522,6 +795,31 @@ class CodingAgentEngine:
                 parts.append(diff[:5000])
                 parts.append("")
 
+        # Past outcomes for similar tasks (learning from history)
+        past = self._get_past_outcomes(request.task)
+        if past:
+            parts.append("--- PAST OUTCOMES (learn from these) ---")
+            for outcome in past:
+                status_icon = "OK" if outcome["status"] == "success" else "FAIL"
+                parts.append(f"  [{status_icon}] {outcome['task'][:150]}")
+                if outcome.get("errors_summary"):
+                    parts.append(f"    Errors: {outcome['errors_summary'][0][:200]}")
+                parts.append(f"    Files: {', '.join(outcome.get('files_changed', [])[:5])}")
+            parts.append("")
+
+        # Cross-project intelligence
+        try:
+            from elgringo.intelligence.cross_project import get_nexus
+            nexus = get_nexus()
+            nexus_results = nexus.search_across_projects(request.task[:100])
+            if nexus_results:
+                parts.append("--- CROSS-PROJECT INSIGHTS ---")
+                for r in nexus_results[:3]:
+                    parts.append(f"  [{r.project}] {r.problem[:100]} → {r.solution[:150]}")
+                parts.append("")
+        except Exception:
+            pass
+
         # User-provided context
         if request.context:
             parts.append(f"--- ADDITIONAL CONTEXT ---\n{request.context}\n")
@@ -529,42 +827,88 @@ class CodingAgentEngine:
         return "\n".join(parts)
 
     def _find_relevant_files(self, task: str) -> List[str]:
-        """Find files relevant to the task using keyword matching."""
+        """
+        Find files relevant to the task using 4 strategies:
+        1. Explicit file paths mentioned in the task
+        2. Grep search for symbols (function/class/variable names)
+        3. Grep search for error messages or specific strings
+        4. Keyword matching against file names
+        """
         all_files = self.tools.list_files()
         task_lower = task.lower()
+        scored: Dict[str, int] = {}  # filepath -> score
 
-        # Extract meaningful words (>3 chars, not common words)
+        # Strategy 1: Explicit file paths in the task
+        explicit_paths = re.findall(r'[\w./\-]+\.(?:py|js|ts|tsx|jsx|go|rs|java|rb|php|swift|kt|c|cpp|h)', task)
+        for p in explicit_paths:
+            # Match against actual files (supports partial paths like "server.py")
+            for f in all_files:
+                if f == p or f.endswith("/" + p) or f.endswith(p):
+                    scored[f] = scored.get(f, 0) + 100
+
+        # Strategy 2: Extract symbols (function names, class names, variables) and grep for them
+        # Look for identifiers: camelCase, snake_case, PascalCase, UPPER_CASE
+        symbols = re.findall(r'\b([A-Z][a-zA-Z0-9]+|[a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b', task)
+        # Filter out common English words that look like symbols
+        symbol_stop = {"should", "could", "would", "there", "where", "which",
+                       "about", "their", "after", "before", "other", "every"}
+        symbols = [s for s in symbols if s.lower() not in symbol_stop and len(s) > 3]
+
+        for symbol in symbols[:8]:  # Cap to avoid slow grep storms
+            grep_results = self.tools.search_files(
+                re.escape(symbol),
+                glob_pattern="**/*.{py,js,ts,tsx,jsx,go,rs,java}",
+            )
+            for r in grep_results[:20]:
+                f = r.get("file", "")
+                if f:
+                    # Higher score for definition lines (def, class, function, const)
+                    line = r.get("content", "")
+                    if re.match(r'\s*(def|class|function|const|let|var|type|interface|func)\s', line):
+                        scored[f] = scored.get(f, 0) + 25  # Definition found
+                    else:
+                        scored[f] = scored.get(f, 0) + 5   # Usage found
+
+        # Strategy 3: Grep for quoted strings (error messages, specific text)
+        quoted = re.findall(r'["\']([^"\']{5,60})["\']', task)
+        for q in quoted[:3]:
+            grep_results = self.tools.search_files(re.escape(q))
+            for r in grep_results[:10]:
+                f = r.get("file", "")
+                if f:
+                    scored[f] = scored.get(f, 0) + 30  # Exact string match
+
+        # Strategy 4: Keyword matching against file names (fallback)
         stop_words = {"this", "that", "with", "from", "have", "will", "should", "could",
                       "would", "make", "change", "update", "modify", "create", "file",
-                      "code", "function", "method", "class", "the", "and", "for", "add"}
+                      "code", "function", "method", "class", "the", "and", "for", "add",
+                      "need", "want", "please", "help", "like", "just", "also", "into"}
         keywords = [w for w in re.findall(r'[a-z_]+', task_lower) if len(w) > 3 and w not in stop_words]
 
-        # Also extract explicit file paths from the task
-        explicit_paths = re.findall(r'[\w./]+\.(?:py|js|ts|go|rs|java|rb|php|swift|kt)', task)
-
-        scored: List[Tuple[str, int]] = []
         for f in all_files:
-            score = 0
             f_lower = f.lower()
             fname = Path(f).stem.lower()
-
-            # Exact path match (highest priority)
-            if f in explicit_paths or f_lower in [p.lower() for p in explicit_paths]:
-                score += 100
-
-            # Filename contains task keywords
             for kw in keywords:
                 if kw in fname:
-                    score += 10
+                    scored[f] = scored.get(f, 0) + 10
                 elif kw in f_lower:
-                    score += 3
+                    scored[f] = scored.get(f, 0) + 3
 
-            if score > 0:
-                scored.append((f, score))
+        # Sort by score, return top matches
+        ranked = sorted(scored.items(), key=lambda x: -x[1])
+        result = [f for f, _ in ranked[:MAX_CONTEXT_FILES]]
 
-        # Sort by score descending, return top matches
-        scored.sort(key=lambda x: -x[1])
-        return [f for f, _ in scored[:MAX_CONTEXT_FILES]]
+        if result:
+            logger.info(f"Found {len(result)} relevant files: {result[:5]}")
+        else:
+            # Fallback: return main entry points
+            for f in all_files:
+                if any(n in f for n in ("main.", "app.", "server.", "index.", "__init__.")):
+                    result.append(f)
+            result = result[:5]
+            logger.info(f"No files matched task, using entry points: {result}")
+
+        return result
 
     @staticmethod
     def _add_line_numbers(content: str) -> str:

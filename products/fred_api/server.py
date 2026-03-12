@@ -233,6 +233,128 @@ async def list_agents():
     return agents
 
 
+def _auto_enrich_context(prompt: str, existing_context: str) -> str:
+    """
+    If the prompt mentions a project path, auto-read relevant files into context.
+    This prevents generic/hallucinated responses when asking about real code.
+    """
+    import re
+    from pathlib import Path
+
+    # Already has substantial context — don't override
+    if len(existing_context) > 500:
+        return existing_context
+
+    # Extract absolute paths from the prompt
+    paths = re.findall(r'(/[\w./-]+)', prompt)
+    project_path = None
+    for p in paths:
+        resolved = Path(p)
+        if resolved.is_dir():
+            project_path = resolved
+            break
+        elif resolved.parent.is_dir() and resolved.suffix:
+            # Single file reference — use its parent as project
+            project_path = resolved.parent
+            break
+
+    if not project_path:
+        return existing_context
+
+    # Extract specific file paths mentioned in the prompt
+    file_refs = re.findall(r'[\w./\-]+\.(?:py|js|jsx|ts|tsx|go|rs|java|rb)', prompt)
+
+    try:
+        from products.fred_api.coding_endpoints import ProjectTools
+        tools = ProjectTools(str(project_path))
+        parts = [existing_context] if existing_context else []
+
+        # Project overview
+        info = tools.get_project_info()
+        parts.append(f"PROJECT: {info['project_path']} | {info['files_count']} files | {info['languages']}")
+        parts.append("")
+
+        files_read = 0
+        max_files = 10
+        max_total = 60_000
+
+        # Read explicitly mentioned files first
+        all_files = tools.list_files()
+        for ref in file_refs:
+            for f in all_files:
+                if f == ref or f.endswith("/" + ref) or f.endswith(ref):
+                    abs_path = str(tools.root / f)
+                    content = tools.read_file(abs_path)
+                    if not content.startswith("[ERROR]") and len(content) < 15_000:
+                        parts.append(f"--- {f} ---")
+                        parts.append(content)
+                        parts.append("")
+                        files_read += 1
+                    break
+            if files_read >= max_files:
+                break
+
+        # Grep for keywords from the prompt to find relevant files
+        if files_read < max_files:
+            import re as _re
+            stop = {"this", "that", "with", "from", "have", "will", "should", "project",
+                    "what", "does", "name", "exact", "files", "only", "report", "code",
+                    "guess", "which", "use", "uses", "used", "using", "methods"}
+            keywords = [w for w in _re.findall(r'[a-z_]+', prompt.lower())
+                        if len(w) > 3 and w not in stop]
+            grep_scored: Dict[str, int] = {}
+            for kw in keywords[:6]:
+                try:
+                    grep_hits = tools.search_files(
+                        kw, glob_pattern="**/*.{py,js,jsx,ts,tsx}")
+                    for hit in grep_hits[:15]:
+                        f = hit.get("file", "")
+                        if f:
+                            grep_scored[f] = grep_scored.get(f, 0) + 1
+                except Exception:
+                    pass
+
+            # Read top-scoring files that weren't already read
+            for f, _ in sorted(grep_scored.items(), key=lambda x: -x[1]):
+                if files_read >= max_files:
+                    break
+                abs_path = str(tools.root / f)
+                content = tools.read_file(abs_path)
+                if not content.startswith("[ERROR]") and len(content) < 15_000:
+                    total = sum(len(p) for p in parts)
+                    if total + len(content) > max_total:
+                        break
+                    parts.append(f"--- {f} ---")
+                    parts.append(content)
+                    parts.append("")
+                    files_read += 1
+
+        # If still nothing, read entry points
+        if files_read == 0:
+            for f in all_files:
+                if any(n in f for n in ("main.", "app.", "server.", "index.")):
+                    abs_path = str(tools.root / f)
+                    content = tools.read_file(abs_path)
+                    if not content.startswith("[ERROR]") and len(content) < 15_000:
+                        parts.append(f"--- {f} ---")
+                        parts.append(content)
+                        parts.append("")
+                        files_read += 1
+                if files_read >= 3:
+                    break
+
+        result = "\n".join(parts)
+        if len(result) > max_total:
+            result = result[:max_total] + "\n... (context truncated)"
+
+        logger.info(f"Auto-enriched context: {files_read} files from {project_path}")
+        return result
+
+    except Exception as e:
+        logger.debug(f"Auto-enrich failed: {e}")
+        return existing_context
+
+
 @app.post("/v1/collaborate", response_model=CollaborateResponse,
           dependencies=[Depends(verify_api_key), Depends(rate_limit)])
 async def collaborate(req: CollaborateRequest):
@@ -241,6 +363,9 @@ async def collaborate(req: CollaborateRequest):
     request_id = str(uuid.uuid4())[:8]
 
     try:
+        # Auto-enrich context if prompt references a project path
+        context = _auto_enrich_context(req.prompt, req.context)
+
         # Apply budget-aware agent selection — local-first, escalate if needed
         agents_to_use = req.agents
         if not agents_to_use and req.budget != "premium":
@@ -254,9 +379,20 @@ async def collaborate(req: CollaborateRequest):
                 if available:
                     agents_to_use = available
 
+        # If context was auto-enriched with real code, tell agents to ground their answers
+        effective_prompt = req.prompt
+        if context and context != req.context and len(context) > 1000:
+            effective_prompt = (
+                "IMPORTANT: Real source code from the project is provided below in the context. "
+                "Base your answer ONLY on what you can see in the actual code. "
+                "Do NOT guess, assume, or fill in gaps with common patterns. "
+                "If you can't find something in the provided code, say so.\n\n"
+                + req.prompt
+            )
+
         result = await team.collaborate(
-            prompt=req.prompt,
-            context=req.context,
+            prompt=effective_prompt,
+            context=context,
             agents=agents_to_use,
             mode=req.mode,
         )

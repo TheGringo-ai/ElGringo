@@ -556,10 +556,12 @@ class AIDevTeam:
                 collaboration_log.append(f"Session {session_id}: injected {session.turn_count} turns of history")
 
         # Smart cache: check if we've answered a similar prompt before
+        # Skip cache if context is provided — context means the caller wants a fresh,
+        # context-aware answer, not a cached generic one
         try:
             from .intelligence.smart_cache import get_smart_cache
             cache = get_smart_cache()
-            cache_hit = cache.get(prompt, task_type="")
+            cache_hit = cache.get(prompt, task_type="") if not context else None
             if cache_hit:
                 collaboration_log.append(
                     f"CACHE HIT ({cache_hit['match_type']}, "

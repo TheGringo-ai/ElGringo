@@ -34,6 +34,7 @@ Modes:
   ask -q "prompt"                      Quick Qwen direct (fastest, no synthesis)
   ask -d "prompt"                      Debate (agents argue, then consensus)
   ask -r <file>                        Review a file
+  ask -r <directory>                   Review a project (reads actual code)
   ask -s "code"                        Scan for security / hallucinations
 
 Agentic:
@@ -214,8 +215,31 @@ fi
 
 # ── Review mode ───────────────────────────────────────────────────
 if $REVIEW; then
+    # If target is a directory, use the project review endpoint
+    if [ -d "$INPUT" ]; then
+        PROJECT_PATH="$(cd "$INPUT" 2>/dev/null && pwd)" || { echo "Error: Invalid path" >&2; exit 1; }
+        echo "El Gringo Project Review"
+        echo "Project: $PROJECT_PATH"
+        echo "Focus: security"
+        echo "---"
+        echo ""
+
+        python3 -c "
+import json, sys, urllib.request
+payload = json.dumps({'project_path': sys.argv[1], 'focus': 'security', 'glob_pattern': '**/*.py'}).encode()
+req = urllib.request.Request('$API/v1/code/review', data=payload, headers={'Content-Type': 'application/json'}, method='POST')
+r = json.loads(urllib.request.urlopen(req, timeout=600).read())
+agents = ', '.join(r.get('agents_used', []))
+print(f'\033[90m[{r.get(\"files_reviewed\", 0)} files | {agents} | conf:{r.get(\"confidence\", 0):.0%}]\033[0m')
+print()
+print(r.get('findings', 'No findings'))
+" "$PROJECT_PATH"
+        exit 0
+    fi
+
+    # Single file review
     if [ ! -f "$INPUT" ]; then
-        echo "Error: File not found: $INPUT" >&2
+        echo "Error: File or directory not found: $INPUT" >&2
         exit 1
     fi
     FILE_CONTENT=$(cat "$INPUT")

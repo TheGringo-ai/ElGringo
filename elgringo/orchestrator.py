@@ -53,6 +53,12 @@ from .autonomous import (
 from .tools.tool_manager import ToolManager
 from .autonomous.executor import AutonomousExecutor
 from .framework.facade import FrameworkFacade
+from .intelligence.quality_scorer import get_quality_scorer
+from .intelligence.reasoning_transparency import get_reasoning_transparency
+from .intelligence.auto_failure_detector import get_failure_detector
+from .intelligence.feedback_loop import get_feedback_loop
+from .intelligence.roi_dashboard import get_roi_dashboard
+from .intelligence.agentic_workflow import AgenticWorkflow
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +201,20 @@ class AIDevTeam:
         self.enable_self_correction = True
         self.enable_task_decomposition = True
         self.enable_session_learning = True
+
+        # Intelligence v2: Quality, Transparency, Failure Detection, Feedback, ROI
+        self._quality_scorer = get_quality_scorer()
+        self._reasoning_transparency = get_reasoning_transparency()
+        self._failure_detector = get_failure_detector()
+        self._feedback_loop = get_feedback_loop(
+            memory_system=self._memory_system,
+            performance_tracker=self._performance_tracker,
+        )
+        self._roi_dashboard = get_roi_dashboard()
+        self._agentic_workflow = AgenticWorkflow(
+            collaborate_fn=self.collaborate,
+            max_fix_cycles=3,
+        )
 
         # Extracted managers (delegate to reduce orchestrator size)
         self.tool_manager = ToolManager(self)
@@ -355,21 +375,21 @@ class AIDevTeam:
                 self.register_agent(create_local_agent("llama-coder-custom"))
                 logger.info("Registered local agent: Llama Coder Custom (Fine-tuned)")
 
-        # Register MLX agents (faster than Ollama on Apple Silicon)
+        # Register Qwen agents via MLX (faster than Ollama on Apple Silicon)
         try:
-            from .agents.mlx_agent import create_mlx_coder, create_mlx_general
+            from .agents.mlx_agent import create_qwen_coder, create_qwen_general
 
-            mlx_coder = create_mlx_coder()
-            if mlx_coder:
-                self.register_agent(mlx_coder)
-                logger.info("Registered MLX agent: Qwen 2.5 Coder 7B (native Metal)")
+            qwen_coder = create_qwen_coder()
+            if qwen_coder:
+                self.register_agent(qwen_coder)
+                logger.info("Registered Qwen agent: Qwen 2.5 Coder 7B (native Metal)")
 
-            mlx_general = create_mlx_general()
-            if mlx_general:
-                self.register_agent(mlx_general)
-                logger.info("Registered MLX agent: Llama 3.2 3B (native Metal)")
+            qwen_general = create_qwen_general()
+            if qwen_general:
+                self.register_agent(qwen_general)
+                logger.info("Registered Qwen agent: Qwen 2.5 3B (native Metal)")
         except Exception as e:
-            logger.debug(f"MLX agents not available: {e}")
+            logger.debug(f"Qwen/MLX agents not available: {e}")
 
     def register_agent(self, agent: AIAgent):
         """Register an AI agent with the team"""
@@ -420,7 +440,7 @@ class AIDevTeam:
                 continue
 
             # Check if agent is local
-            is_local = "local" in name.lower() or "ollama" in name.lower()
+            is_local = any(k in name.lower() for k in ("local", "ollama", "mlx", "qwen"))
 
             # Estimate cost (0 for local)
             estimated_cost = 0.0 if is_local else 0.01  # Basic estimation
@@ -452,7 +472,7 @@ class AIDevTeam:
 
         agent_scores = []
         for name in candidates:
-            is_local = "local" in name.lower() or "ollama" in name.lower()
+            is_local = any(k in name.lower() for k in ("local", "ollama", "mlx", "qwen"))
             allowed, reason = self._constraints.should_use_agent(name, is_local, 0)
             score, details = ranked_scores.get(name, (0.5, {}))
             agent_scores.append(AgentScore(
@@ -464,7 +484,7 @@ class AIDevTeam:
             ))
 
         # Determine primary reason
-        if self._constraints.prefer_local and "local" in selected.lower():
+        if self._constraints.prefer_local and any(k in selected.lower() for k in ("local", "ollama", "mlx", "qwen")):
             reason = "Local agent preferred (privacy/cost)"
         elif selected in self._constraints.preferred_agents.values():
             reason = "User-preferred agent for task type"
@@ -535,6 +555,37 @@ class AIDevTeam:
                 context = f"{session_context}\n{context}" if context else session_context
                 collaboration_log.append(f"Session {session_id}: injected {session.turn_count} turns of history")
 
+        # Smart cache: check if we've answered a similar prompt before
+        try:
+            from .intelligence.smart_cache import get_smart_cache
+            cache = get_smart_cache()
+            cache_hit = cache.get(prompt, task_type="")
+            if cache_hit:
+                collaboration_log.append(
+                    f"CACHE HIT ({cache_hit['match_type']}, "
+                    f"similarity={cache_hit.get('similarity', 1.0):.0%}, "
+                    f"saved ${cache_hit['cost_saved']:.4f})"
+                )
+                return CollaborationResult(
+                    task_id=task_id,
+                    success=True,
+                    final_answer=cache_hit["response"],
+                    agent_responses=[],
+                    collaboration_log=collaboration_log,
+                    total_time=time.time() - start_time,
+                    confidence_score=0.95,
+                    participating_agents=[f"cache:{cache_hit.get('original_agent', 'unknown')}"],
+                    metadata={
+                        "mode": "cached",
+                        "cache_match_type": cache_hit["match_type"],
+                        "cache_similarity": cache_hit.get("similarity", 1.0),
+                        "cost_saved": cache_hit["cost_saved"],
+                    },
+                    intelligence={"cache": cache_hit},
+                )
+        except Exception as e:
+            logger.debug(f"Smart cache lookup skipped: {e}")
+
         # Intelligence visibility dict — captures everything happening behind the scenes
         intel = {
             "routing": {},
@@ -586,7 +637,7 @@ class AIDevTeam:
             # For medium+ tasks, let cloud agents participate for better quality
             prefer_local_models = (
                 routing_decision.tier.value == "local_fast"
-                and classification.complexity == "low"
+                and classification.complexity in ("low", "medium")
             )
             collaboration_log.append(
                 f"Apple router: {routing_decision.tier.value} ({routing_decision.reason}), "
@@ -600,6 +651,18 @@ class AIDevTeam:
 
             # v2: Apply developer constraints to filter agents
             available = self._filter_agents_by_constraints(available)
+
+            # Quality watchdog: exclude demoted agents
+            try:
+                from .intelligence.quality_watchdog import get_watchdog
+                watchdog = get_watchdog()
+                pre_filter = len(available)
+                available = watchdog.get_active_agents(available)
+                if len(available) < pre_filter:
+                    demoted = watchdog.get_demoted_agents()
+                    collaboration_log.append(f"Watchdog filtered out {pre_filter - len(available)} demoted agents: {demoted}")
+            except Exception:
+                pass
             if not available:
                 # Allow cloud fallback if all filtered
                 if self._constraints.allow_cloud_fallback:
@@ -608,16 +671,16 @@ class AIDevTeam:
 
             # Apple Silicon optimization: only use local agents for simple tasks
             if prefer_local_models and available:
-                local_agents = [a for a in available if 'ollama' in a.lower() or 'local' in a.lower()]
+                local_agents = [a for a in available if any(k in a.lower() for k in ('ollama', 'local', 'mlx', 'qwen'))]
                 if local_agents:
-                    available = local_agents
-                    collaboration_log.append(f"Simple task: using local agents only {local_agents}")
+                    # Prefer Qwen/MLX agents over Ollama (faster on Apple Silicon)
+                    qwen_agents = [a for a in local_agents if 'qwen' in a.lower() or 'mlx' in a.lower()]
+                    available = qwen_agents if qwen_agents else local_agents
+                    collaboration_log.append(f"Simple task: using local agents only {available}")
             else:
-                # For non-trivial tasks, prefer cloud agents for quality
-                cloud_agents = [a for a in available if 'local' not in a.lower() and 'ollama' not in a.lower()]
-                if cloud_agents:
-                    available = cloud_agents
-                    collaboration_log.append(f"Using cloud agents for quality: {cloud_agents}")
+                # Non-trivial tasks: use ALL agents (local + cloud) for best coverage
+                # Local models participate alongside cloud for diversity + cost savings
+                collaboration_log.append(f"Using full team (local + cloud): {available}")
 
             # Check for user-preferred agent for this task type
             task_type_str = classification.primary_type.value
@@ -1069,6 +1132,21 @@ class AIDevTeam:
                     mem_stats = self._memory_system.get_statistics() if self._memory_system else {}
                     intel["learning"]["total_patterns"] = mem_stats.get("total_solutions", 0)
 
+                    # Auto-index to cross-project nexus
+                    if learn_result and isinstance(learn_result, dict):
+                        try:
+                            from .intelligence.cross_project import get_nexus
+                            nexus = get_nexus()
+                            nexus.index_solution(
+                                project=self.project_name,
+                                problem=prompt[:200],
+                                solution=final_answer[:500],
+                                tags=learn_result.get("tags", []),
+                                confidence=avg_confidence,
+                            )
+                        except Exception as e:
+                            logger.debug(f"Cross-project indexing skipped: {e}")
+
             # Store in neural memory
             if self._neural_memory and result.success:
                 try:
@@ -1197,6 +1275,65 @@ class AIDevTeam:
                 if total_cost > 0:
                     collaboration_log.append(f"Cost: ${total_cost:.4f} for {len(successful_responses)} agents")
 
+            # Record to cost arbitrage engine for cross-provider optimization
+            try:
+                from .intelligence.cost_arbitrage import get_optimizer
+                optimizer = get_optimizer()
+                for response in successful_responses:
+                    tokens = (response.input_tokens or 0) + (response.output_tokens or 0)
+                    cost_entry = next(
+                        (c for c in intel["cost"]["breakdown"] if c["agent"] == response.agent_name),
+                        None,
+                    )
+                    cost = cost_entry["cost"] if cost_entry else 0.0
+                    optimizer.record_usage(
+                        provider=response.agent_name,
+                        task_type=task_type,
+                        cost=cost,
+                        quality_score=response.confidence * 10,  # 0-1 → 0-10
+                        tokens=tokens,
+                    )
+                collaboration_log.append(f"Cost arbitrage: recorded {len(successful_responses)} usage entries")
+            except Exception as e:
+                logger.debug(f"Cost arbitrage recording skipped: {e}")
+
+            # Record to quality watchdog for anomaly detection
+            try:
+                from .intelligence.quality_watchdog import get_watchdog
+                watchdog = get_watchdog()
+                for response in successful_responses:
+                    watchdog.record(
+                        agent_name=response.agent_name,
+                        quality_score=response.confidence * 10,
+                        response_time=response.response_time,
+                        success=response.success,
+                        task_type=task_type,
+                        tokens=(response.input_tokens or 0) + (response.output_tokens or 0),
+                    )
+                demoted = watchdog.get_demoted_agents()
+                if demoted:
+                    collaboration_log.append(f"Watchdog: agents demoted: {demoted}")
+                    intel["watchdog"] = {"demoted": demoted}
+            except Exception as e:
+                logger.debug(f"Quality watchdog recording skipped: {e}")
+
+            # Cache the response for future similar prompts
+            try:
+                from .intelligence.smart_cache import get_smart_cache
+                cache = get_smart_cache()
+                cache.put(
+                    prompt=prompt,
+                    response=final_answer,
+                    cost=intel["cost"]["total"],
+                    tokens=sum((r.input_tokens or 0) + (r.output_tokens or 0) for r in successful_responses),
+                    agent=agents[0] if agents else "",
+                    mode=mode,
+                    task_type=task_type,
+                    confidence=avg_confidence,
+                )
+            except Exception as e:
+                logger.debug(f"Smart cache store skipped: {e}")
+
             # Record session learning outcomes and persist
             if self.enable_session_learning and self._session_learner:
                 for response in successful_responses:
@@ -1214,6 +1351,85 @@ class AIDevTeam:
                 # Auto-save learning data
                 self._session_learner.save()
                 collaboration_log.append("Session learning updated and saved")
+
+            # ── Intelligence v2: Quality, Transparency, Failure Detection, ROI ──
+
+            # 1. Quality scoring
+            try:
+                expertise_weights = {
+                    r.agent_name: self._weighted_consensus.get_expertise_weight(r.agent_name, task_type)
+                    for r in successful_responses
+                }
+                quality_report = self._quality_scorer.score(
+                    responses=agent_responses,
+                    prompt=prompt,
+                    final_answer=final_answer,
+                    task_type=task_type,
+                    expertise_weights=expertise_weights,
+                )
+                intel["quality"] = quality_report.to_dict()
+                collaboration_log.append(f"Quality: {quality_report.grade} ({quality_report.overall_score:.0%})")
+            except Exception as e:
+                logger.debug(f"Quality scoring skipped: {e}")
+
+            # 2. Reasoning transparency
+            try:
+                transparency_report = self._reasoning_transparency.analyze(
+                    responses=agent_responses,
+                    prompt=prompt,
+                    final_answer=final_answer,
+                    task_type=task_type,
+                    task_id=task_id,
+                    expertise_weights=expertise_weights if 'expertise_weights' in dir() else None,
+                )
+                intel["transparency"] = transparency_report.to_dict()
+            except Exception as e:
+                logger.debug(f"Transparency analysis skipped: {e}")
+
+            # 3. Auto-failure detection
+            try:
+                detection = self._failure_detector.check(
+                    content=final_answer,
+                    task_id=task_id,
+                    task_type=task_type,
+                )
+                if not detection.passed:
+                    intel["failure_detection"] = detection.to_dict()
+                    collaboration_log.append(
+                        f"Auto-detected {len(detection.failures)} issue(s) in response"
+                    )
+                    # Auto-report to feedback loop
+                    critical = [f for f in detection.failures if f.severity == "critical"]
+                    if critical:
+                        asyncio.ensure_future(
+                            self._feedback_loop.auto_detect_failure(
+                                task_id=task_id,
+                                error="; ".join(f.description for f in critical[:3]),
+                                agents=[a.name for a in active_agents],
+                                task_type=task_type,
+                            )
+                        )
+                else:
+                    intel["failure_detection"] = {"passed": True, "code_blocks_checked": detection.code_blocks_checked}
+            except Exception as e:
+                logger.debug(f"Failure detection skipped: {e}")
+
+            # 4. ROI recording
+            try:
+                api_cost = intel.get("cost", {}).get("total", 0.0)
+                self._roi_dashboard.record_task(
+                    task_id=task_id,
+                    task_type=task_type,
+                    complexity=classification.complexity,
+                    agents_used=[a.name for a in active_agents],
+                    mode=mode,
+                    duration_seconds=total_time,
+                    api_cost=api_cost,
+                    success=result.success,
+                    confidence=avg_confidence,
+                )
+            except Exception as e:
+                logger.debug(f"ROI recording skipped: {e}")
 
             return result
 
@@ -1611,6 +1827,35 @@ Provide a unified, synthesized response that follows all project conventions lis
             # Fallback to best single response
             best = max(successful_responses, key=lambda r: r.confidence)
             return best.content
+
+    # ── Intelligence v2 public methods ─────────────────────────────────
+
+    async def run_workflow(self, task: str, context: str = "", **kwargs):
+        """Run a full agentic workflow: plan → execute → validate → fix → verify"""
+        return await self._agentic_workflow.run(task, context, **kwargs)
+
+    async def process_feedback(self, task_id: str, rating: float, agents: List[str],
+                                task_type: str, **kwargs):
+        """Process user feedback to improve future responses"""
+        outcome = await self._feedback_loop.process_feedback(
+            task_id=task_id, rating=rating, agents=agents,
+            task_type=task_type, **kwargs,
+        )
+        # Also update ROI dashboard rating
+        self._roi_dashboard.update_rating(task_id, rating)
+        return outcome
+
+    def get_roi_report(self, period: str = "all_time"):
+        """Get ROI dashboard report"""
+        return self._roi_dashboard.get_report(period)
+
+    def get_agent_leaderboard(self):
+        """Get agent performance leaderboard"""
+        return self._roi_dashboard.get_agent_leaderboard()
+
+    def get_feedback_profiles(self):
+        """Get all agent feedback profiles"""
+        return self._feedback_loop.get_all_profiles()
 
     async def ask(
         self,

@@ -60,4 +60,24 @@ __all__ = [
     "identify_vendor",
     "get_vendor_fields",
     "get_all_known_fields",
+    # Intelligence v2 — Quality, Transparency, Workflows, Feedback, ROI
+    "QualityScorer",
+    "get_quality_scorer",
+    "ReasoningTransparency",
+    "get_reasoning_transparency",
+    "AgenticWorkflow",
+    "AutoFailureDetector",
+    "get_failure_detector",
+    "FeedbackLearningLoop",
+    "get_feedback_loop",
+    "ROIDashboard",
+    "get_roi_dashboard",
 ]
+
+# Intelligence v2 modules
+from .quality_scorer import QualityScorer, get_quality_scorer
+from .reasoning_transparency import ReasoningTransparency, get_reasoning_transparency
+from .agentic_workflow import AgenticWorkflow
+from .auto_failure_detector import AutoFailureDetector, get_failure_detector
+from .feedback_loop import FeedbackLearningLoop, get_feedback_loop
+from .roi_dashboard import ROIDashboard, get_roi_dashboard

@@ -39,6 +39,11 @@ MODEL_TIER_MAPPING: Dict[str, ModelTier] = {
     # Grok models
     "grok-3-fast": ModelTier.STANDARD,
     "grok-3": ModelTier.PREMIUM,
+    # MLX Native (free - always cheapest tier)
+    "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit": ModelTier.BUDGET,
+    "mlx-community/Qwen2.5-3B-Instruct-4bit": ModelTier.BUDGET,
+    "mlx-community/Phi-3.5-mini-instruct-4bit": ModelTier.BUDGET,
+    "mlx-community/Mistral-7B-Instruct-v0.3-4bit": ModelTier.BUDGET,
 }
 
 # Cost per 1M tokens (input/output) - approximate
@@ -66,6 +71,11 @@ MODEL_COSTS: Dict[str, Tuple[float, float]] = {
     "llama3.2:3b": (0.0, 0.0),
     "qwen-coder-custom:latest": (0.0, 0.0),
     "qwen2.5-coder:7b": (0.0, 0.0),
+    # MLX Native (free - Apple Silicon local)
+    "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit": (0.0, 0.0),
+    "mlx-community/Qwen2.5-3B-Instruct-4bit": (0.0, 0.0),
+    "mlx-community/Phi-3.5-mini-instruct-4bit": (0.0, 0.0),
+    "mlx-community/Mistral-7B-Instruct-v0.3-4bit": (0.0, 0.0),
     # Llama Cloud (Groq/Together)
     "llama-3.3-70b-versatile": (0.59, 0.79),
     "llama-3.1-8b-instant": (0.05, 0.08),
@@ -148,6 +158,19 @@ class CostOptimizer:
         """
         target_tier = self.get_tier_for_complexity(complexity)
 
+        # For low/medium-complexity tasks, prefer free local models (Qwen/MLX/Ollama)
+        if complexity in ("low", "medium"):
+            free_agents = [
+                a for a in available_agents
+                if MODEL_COSTS.get(agent_models.get(a, ""), (1, 1)) == (0.0, 0.0)
+            ]
+            if free_agents:
+                # Among free agents, prefer Qwen/MLX over Ollama (faster on Apple Silicon)
+                preferred_local = [a for a in free_agents if any(k in a.lower() for k in ("qwen", "mlx"))]
+                if preferred_local:
+                    return preferred_local[0]
+                return free_agents[0]
+
         # Score each agent
         scored_agents = []
         for agent_name in available_agents:
@@ -161,8 +184,12 @@ class CostOptimizer:
             # Add task type score if available
             task_score = task_type_scores.get(agent_name, 0.5) if task_type_scores else 0.5
 
+            # Free models get a strong cost bonus to prefer local-first
+            model_cost = MODEL_COSTS.get(model, (1.0, 5.0))
+            cost_bonus = 0.25 if model_cost == (0.0, 0.0) else 0.0
+
             # Combined score (weighted)
-            combined_score = (tier_score * 0.4) + (task_score * 0.6)
+            combined_score = (tier_score * 0.4) + (task_score * 0.6) + cost_bonus
 
             scored_agents.append((agent_name, combined_score, agent_tier))
 

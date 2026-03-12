@@ -35,4 +35,5 @@ if ! "$VENV_PYTHON" -c "import mcp" 2>/dev/null; then
     exit 1
 fi
 
-exec "$VENV_PYTHON" "$SCRIPT_DIR/elgringo/server/mcp_server.py"
+export PYTHONPATH="$SCRIPT_DIR:${PYTHONPATH:-}"
+exec "$VENV_PYTHON" -m elgringo.server

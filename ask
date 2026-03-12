@@ -1,0 +1,251 @@
+#!/usr/bin/env bash
+# ask — Quick CLI for El Gringo AI team
+#
+# Usage:
+#   ask "Write a fibonacci function"              # standard (Qwen + cloud)
+#   ask -b "What is a closure?"                    # budget (Qwen only, $0)
+#   ask -p "Design a microservice architecture"    # premium (full team)
+#   ask -q "Quick python question"                 # qwen-only via MLX (fastest)
+#   ask -d "Should we use SQL or NoSQL?"           # debate mode
+#   ask -r path/to/file.py                         # review a file
+#   ask -s "some AI output to check"               # scan for issues
+#   ask -c "fix the login bug" ./myproject          # agentic coding task
+#   ask -c "add rate limiting" . --dry-run          # plan only, no changes
+
+set -euo pipefail
+
+API="http://127.0.0.1:8090"
+BUDGET="standard"
+MODE=""
+SCAN=false
+REVIEW=false
+QWEN_ONLY=false
+CODE_TASK=false
+DRY_RUN=false
+
+usage() {
+    cat <<'EOF'
+ask — El Gringo AI Team CLI
+
+Modes:
+  ask "prompt"                         Standard (Qwen + Gemini + ChatGPT)
+  ask -b "prompt"                      Budget (Qwen only, $0.00)
+  ask -p "prompt"                      Premium (full team)
+  ask -q "prompt"                      Quick Qwen direct (fastest, no synthesis)
+  ask -d "prompt"                      Debate (agents argue, then consensus)
+  ask -r <file>                        Review a file
+  ask -s "code"                        Scan for security / hallucinations
+
+Agentic:
+  ask -c "task" [project_path]         Coding agent: reads, edits, tests, fixes
+  ask -c "task" . --dry-run            Plan only, no changes
+  ask -c "task" . --no-test            Skip tests
+  ask -c "task" . --commit             Auto-commit if tests pass
+
+Options:
+  -b    Budget tier ($0, local only)
+  -p    Premium tier (all agents)
+  -q    Quick Qwen (MLX direct)
+  -d    Debate mode
+  -r    Code review
+  -s    Scan mode
+  -c    Coding agent (agentic)
+  -h    Show this help
+EOF
+    exit 0
+}
+
+while getopts "bpdqrsch" opt; do
+    case $opt in
+        b) BUDGET="budget" ;;
+        p) BUDGET="premium" ;;
+        d) MODE="debate" ;;
+        q) QWEN_ONLY=true ;;
+        r) REVIEW=true ;;
+        s) SCAN=true ;;
+        c) CODE_TASK=true ;;
+        h) usage ;;
+        *) usage ;;
+    esac
+done
+shift $((OPTIND - 1))
+
+if [ $# -eq 0 ]; then
+    usage
+fi
+
+# Check API is running
+if ! curl -sf "$API/v1/health" > /dev/null 2>&1; then
+    echo "Error: El Gringo API not running on $API" >&2
+    echo "Start it: cd $(dirname "$0") && PYTHONPATH=. python3 -m uvicorn products.fred_api.server:app --port 8090" >&2
+    exit 1
+fi
+
+# ── Coding Agent Mode ──────────────────────────────────────────────
+if $CODE_TASK; then
+    TASK="$1"
+    shift
+    PROJECT_PATH="${1:-.}"
+    # Resolve to absolute path
+    PROJECT_PATH="$(cd "$PROJECT_PATH" 2>/dev/null && pwd)" || { echo "Error: Invalid project path" >&2; exit 1; }
+    shift 2>/dev/null || true
+
+    # Parse remaining flags
+    RUN_TESTS=true
+    AUTO_COMMIT=false
+    for arg in "$@"; do
+        case "$arg" in
+            --dry-run) DRY_RUN=true ;;
+            --no-test) RUN_TESTS=false ;;
+            --commit)  AUTO_COMMIT=true ;;
+        esac
+    done
+
+    echo "El Gringo Coding Agent"
+    echo "Task: $TASK"
+    echo "Project: $PROJECT_PATH"
+    if $DRY_RUN; then echo "Mode: DRY RUN (plan only)"; fi
+    echo "---"
+    echo ""
+
+    python3 -c "
+import json, sys, urllib.request
+
+payload = {
+    'task': sys.argv[1],
+    'project_path': sys.argv[2],
+    'dry_run': sys.argv[3] == 'true',
+    'run_tests': sys.argv[4] == 'true',
+    'auto_commit': sys.argv[5] == 'true',
+    'max_iterations': 3,
+}
+
+data = json.dumps(payload).encode()
+req = urllib.request.Request('$API/v1/code/task', data=data, headers={'Content-Type': 'application/json'})
+try:
+    r = json.loads(urllib.request.urlopen(req, timeout=600).read())
+except Exception as e:
+    print(f'Error: {e}')
+    sys.exit(1)
+
+status = r.get('status', '?')
+colors = {'success': '\033[32m', 'partial': '\033[33m', 'failed': '\033[31m', 'dry_run': '\033[36m'}
+color = colors.get(status, '')
+print(f'{color}Status: {status.upper()}\033[0m')
+print(f'Summary: {r.get(\"summary\", \"\")}')
+print(f'Agents: {r.get(\"agents_used\", [])}')
+print(f'Iterations: {r.get(\"iterations\", 0)} | Time: {r.get(\"total_time\", 0):.1f}s')
+
+# Plan (dry run)
+plan = r.get('plan', [])
+if plan:
+    print(f'\nPlan ({len(plan)} steps):')
+    for step in plan[:20]:
+        print(f'  {step}')
+
+# Files changed
+files = r.get('files_changed', [])
+if files:
+    print(f'\nFiles changed ({len(files)}):')
+    for f in files:
+        print(f'  [{f[\"action\"]}] {f[\"path\"]} (+{f.get(\"lines_changed\", 0)} lines)')
+        if f.get('diff'):
+            for line in f['diff'].splitlines()[:5]:
+                print(f'    {line}')
+
+# Test results
+test = r.get('test_results')
+if test:
+    test_color = '\033[32m' if test['passed'] else '\033[31m'
+    print(f'\n{test_color}Tests: {\"PASSED\" if test[\"passed\"] else \"FAILED\"}\033[0m')
+    print(f'Command: {test[\"command\"]}')
+    if not test['passed']:
+        print(test['output'][-500:])
+
+# Git commit
+if r.get('git_commit'):
+    print(f'\nCommitted: {r[\"git_commit\"]}')
+
+# Errors
+errors = r.get('errors', [])
+if errors:
+    print(f'\nErrors:')
+    for e in errors[:5]:
+        print(f'  {e[:200]}')
+" "$TASK" "$PROJECT_PATH" "$DRY_RUN" "$RUN_TESTS" "$AUTO_COMMIT"
+    exit 0
+fi
+
+INPUT="$*"
+
+# ── Quick Qwen mode ───────────────────────────────────────────────
+if $QWEN_ONLY; then
+    python3 -c "
+import json, sys, urllib.request
+payload = json.dumps({'prompt': sys.argv[1], 'model': 'coder', 'max_tokens': 2048}).encode()
+req = urllib.request.Request('$API/v1/mlx', data=payload, headers={'Content-Type': 'application/json'})
+r = json.loads(urllib.request.urlopen(req, timeout=120).read())
+print(f'\033[90m[{r[\"model\"]} | {r[\"tokens_per_second\"]:.0f} tok/s | {r[\"inference_time\"]:.1f}s | \$0.00]\033[0m')
+print()
+print(r['content'])
+" "$INPUT"
+    exit 0
+fi
+
+# ── Scan mode ─────────────────────────────────────────────────────
+if $SCAN; then
+    python3 -c "
+import json, sys, urllib.request
+payload = json.dumps({'content': sys.argv[1], 'task_type': 'coding'}).encode()
+req = urllib.request.Request('$API/v1/scan', data=payload, headers={'Content-Type': 'application/json'})
+r = json.loads(urllib.request.urlopen(req, timeout=30).read())
+status = '\033[32mPASSED\033[0m' if r['passed'] else '\033[31mFAILED\033[0m'
+print(f'Scan: {status} | {r[\"failures_found\"]} issues | {r[\"code_blocks_checked\"]} code blocks checked')
+for f in r.get('failures', []):
+    color = '\033[31m' if f['severity'] == 'critical' else '\033[33m'
+    print(f'{color}  [{f[\"severity\"]}]\033[0m {f[\"description\"]}')
+    if f.get('fix_suggestion'):
+        print(f'    Fix: {f[\"fix_suggestion\"]}')
+if not r.get('failures'):
+    print('  No issues found.')
+" "$INPUT"
+    exit 0
+fi
+
+# ── Review mode ───────────────────────────────────────────────────
+if $REVIEW; then
+    if [ ! -f "$INPUT" ]; then
+        echo "Error: File not found: $INPUT" >&2
+        exit 1
+    fi
+    FILE_CONTENT=$(cat "$INPUT")
+    INPUT="Review this code for bugs, security issues, and improvements. File: $INPUT
+
+$FILE_CONTENT"
+    MODE="parallel"
+    BUDGET="standard"
+fi
+
+# ── Collaborate (default) ─────────────────────────────────────────
+python3 -c "
+import json, sys, urllib.request
+
+payload = {'prompt': sys.argv[1], 'budget': sys.argv[2]}
+if sys.argv[3]:
+    payload['mode'] = sys.argv[3]
+
+data = json.dumps(payload).encode()
+req = urllib.request.Request('$API/v1/collaborate', data=data, headers={'Content-Type': 'application/json'})
+r = json.loads(urllib.request.urlopen(req, timeout=300).read())
+
+agents = r.get('agents_used', [])
+cost = r.get('total_cost', 0)
+t = r.get('total_time', 0)
+mode = r.get('mode', '?')
+conf = r.get('confidence', 0)
+
+agent_str = ', '.join(agents)
+print(f'\033[90m[{mode} | {agent_str} | {t:.1f}s | \${cost:.4f} | conf:{conf:.0%}]\033[0m')
+print()
+print(r.get('final_answer', r.get('answer', 'No answer')))
+" "$INPUT" "$BUDGET" "$MODE"

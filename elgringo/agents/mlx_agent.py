@@ -1,6 +1,6 @@
 """
-MLX Agent - Native Apple Silicon AI Agent
-==========================================
+MLX Agent - Qwen Local Specialist (Apple Silicon)
+===================================================
 
 First-class AIAgent implementation using MLX for native Metal-accelerated
 inference on Apple Silicon. Faster than Ollama for small/medium tasks due
@@ -8,7 +8,7 @@ to zero-copy unified memory access.
 
 Supports:
 - Qwen2.5-Coder-7B-Instruct-4bit (coding tasks)
-- Llama-3.2-3B-Instruct-4bit (general chat, ultra-fast)
+- Qwen2.5-3B-Instruct-4bit (general chat, ultra-fast)
 
 Usage:
     agent = MLXAgent()  # auto-selects best model
@@ -25,18 +25,18 @@ logger = logging.getLogger(__name__)
 
 # MLX model presets optimized for M3 Pro 18GB
 MLX_MODELS = {
-    "mlx-coder": {
+    "qwen-coder": {
         "hf_id": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
-        "display": "Qwen 2.5 Coder 7B (MLX)",
-        "role": "Local Code Specialist (MLX Native)",
+        "display": "Qwen 2.5 Coder 7B",
+        "role": "Qwen — Local Code Specialist",
         "capabilities": ["coding", "debugging", "refactoring", "architecture"],
         "temperature": 0.3,
         "max_tokens": 4096,
     },
-    "mlx-general": {
-        "hf_id": "mlx-community/Llama-3.2-3B-Instruct-4bit",
-        "display": "Llama 3.2 3B (MLX)",
-        "role": "Local General Assistant (MLX Native)",
+    "qwen-general": {
+        "hf_id": "mlx-community/Qwen2.5-3B-Instruct-4bit",
+        "display": "Qwen 2.5 3B",
+        "role": "Qwen — Local General Assistant",
         "capabilities": ["general", "reasoning", "writing", "analysis"],
         "temperature": 0.7,
         "max_tokens": 2048,
@@ -55,9 +55,9 @@ class MLXAgent(AIAgent):
     - Faster first-token latency
     """
 
-    def __init__(self, config: Optional[AgentConfig] = None, preset: str = "mlx-coder"):
+    def __init__(self, config: Optional[AgentConfig] = None, preset: str = "qwen-coder"):
         if config is None:
-            model_info = MLX_MODELS.get(preset, MLX_MODELS["mlx-coder"])
+            model_info = MLX_MODELS.get(preset, MLX_MODELS["qwen-coder"])
             config = AgentConfig(
                 name=preset,
                 model_type=ModelType.LOCAL,
@@ -84,6 +84,11 @@ class MLXAgent(AIAgent):
             logger.debug(f"MLX not available: {e}")
             return None
 
+    @property
+    def _model_id(self) -> str:
+        """HuggingFace model ID for this agent."""
+        return self.config.model_name
+
     async def _ensure_model_loaded(self) -> bool:
         """Load the model if not already loaded."""
         if self._model_loaded:
@@ -94,13 +99,13 @@ class MLXAgent(AIAgent):
             return False
 
         try:
-            success = await mlx.load_model(self.config.model_name)
+            success = await mlx.load_model(self._model_id)
             if success:
                 self._model_loaded = True
-                logger.info(f"MLX model loaded: {self.config.model_name}")
+                logger.info(f"MLX model loaded: {self._model_id}")
             return success
         except Exception as e:
-            logger.warning(f"Could not load MLX model {self.config.model_name}: {e}")
+            logger.warning(f"Could not load MLX model {self._model_id}: {e}")
             return False
 
     async def is_available(self) -> bool:
@@ -141,9 +146,10 @@ class MLXAgent(AIAgent):
                 default_prompt=f"You are {self.name}, a {self.role}. Provide clean, concise responses.",
             )
 
-            # Generate with MLX
+            # Generate with MLX (pass model_name so multi-model cache works)
             response = await mlx.generate(
                 prompt=full_prompt,
+                model_name=self._model_id,
                 system_prompt=system_prompt,
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature,
@@ -211,9 +217,10 @@ class MLXAgent(AIAgent):
                 default_prompt=f"You are {self.name}, a {self.role}.",
             )
 
-            # Stream with MLX
+            # Stream with MLX (pass model_name so multi-model cache works)
             stream = await mlx.generate(
                 prompt=full_prompt,
+                model_name=self._model_id,
                 system_prompt=system_prompt,
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature,
@@ -227,9 +234,9 @@ class MLXAgent(AIAgent):
             logger.error(f"MLX streaming error: {e}")
 
 
-def create_mlx_coder() -> Optional[MLXAgent]:
-    """Create an MLX-based coding agent. Returns None if MLX unavailable."""
-    agent = MLXAgent(preset="mlx-coder")
+def create_qwen_coder() -> Optional[MLXAgent]:
+    """Create a Qwen coding agent via MLX. Returns None if MLX unavailable."""
+    agent = MLXAgent(preset="qwen-coder")
     try:
         from ..apple.mlx_inference import get_mlx_inference
         if get_mlx_inference().is_available:
@@ -239,9 +246,9 @@ def create_mlx_coder() -> Optional[MLXAgent]:
     return None
 
 
-def create_mlx_general() -> Optional[MLXAgent]:
-    """Create an MLX-based general agent. Returns None if MLX unavailable."""
-    agent = MLXAgent(preset="mlx-general")
+def create_qwen_general() -> Optional[MLXAgent]:
+    """Create a Qwen general agent via MLX. Returns None if MLX unavailable."""
+    agent = MLXAgent(preset="qwen-general")
     try:
         from ..apple.mlx_inference import get_mlx_inference
         if get_mlx_inference().is_available:
@@ -249,3 +256,8 @@ def create_mlx_general() -> Optional[MLXAgent]:
     except Exception:
         pass
     return None
+
+
+# Backward-compatible aliases
+create_mlx_coder = create_qwen_coder
+create_mlx_general = create_qwen_general

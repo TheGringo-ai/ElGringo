@@ -11,7 +11,7 @@ Deep integration with Apple's AI ecosystem:
 """
 
 from .coreml_agent import CoreMLAgent, convert_to_coreml, get_coreml_agent
-from .mlx_inference import MLXInference, get_mlx_inference
+from .mlx_inference import MLXInference, get_mlx_inference, AVAILABLE_MODELS as MLX_AVAILABLE_MODELS
 from .apple_shortcuts import ShortcutsIntegration, create_shortcut
 from .system_integration import (
     AppleIntelligenceHub,

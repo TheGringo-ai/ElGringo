@@ -231,6 +231,19 @@ class TaskRouter:
                 "capabilities": ["offline", "coding", "debugging"],
                 "performance_weight": 0.9,
             },
+            # Qwen Local Agents (Apple Silicon MLX - zero cost, fast)
+            "qwen-coder": {
+                "model_type": ModelType.LOCAL,
+                "strengths": [TaskType.CODING, TaskType.DEBUGGING, TaskType.OPTIMIZATION, TaskType.TESTING],
+                "capabilities": ["coding", "debugging", "refactoring", "architecture", "zero-cost", "offline"],
+                "performance_weight": 1.3,
+            },
+            "qwen-general": {
+                "model_type": ModelType.LOCAL,
+                "strengths": [TaskType.ANALYSIS, TaskType.DOCUMENTATION, TaskType.RESEARCH, TaskType.CREATIVE],
+                "capabilities": ["general", "reasoning", "writing", "analysis", "zero-cost", "offline"],
+                "performance_weight": 1.1,
+            },
         }
 
     def classify(

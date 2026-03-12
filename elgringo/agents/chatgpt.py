@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class ChatGPTAgent(AIAgent):
     """ChatGPT AI Agent using OpenAI API"""
 
-    DEFAULT_MODEL = "gpt-4o"
+    DEFAULT_MODEL = "gpt-4o-mini"
     API_KEY_ENV = "OPENAI_API_KEY"
 
     def __init__(self, config: Optional[AgentConfig] = None):

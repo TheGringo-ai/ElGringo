@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class GrokAgent(AIAgent):
     """Grok AI Agent using xAI API"""
 
-    DEFAULT_MODEL = "grok-3"
+    DEFAULT_MODEL = "grok-3-fast"
     CODER_MODEL = "grok-3-fast"
     API_KEY_ENV = "XAI_API_KEY"
     API_URL = "https://api.x.ai/v1/chat/completions"

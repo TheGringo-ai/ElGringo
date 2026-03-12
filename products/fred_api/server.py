@@ -29,7 +29,7 @@ import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -179,6 +179,10 @@ class CollaborateResponse(BaseModel):
     agent_positions: Optional[List[AgentPosition]] = None
     disagreements: Optional[List[str]] = None
     consensus_level: Optional[float] = None
+    # Intelligence v2
+    quality: Optional[Dict[str, Any]] = None
+    transparency: Optional[Dict[str, Any]] = None
+    failure_detection: Optional[Dict[str, Any]] = None
 
 class HealthResponse(BaseModel):
     status: str
@@ -237,13 +241,12 @@ async def collaborate(req: CollaborateRequest):
     request_id = str(uuid.uuid4())[:8]
 
     try:
-        # Apply budget-aware agent selection
+        # Apply budget-aware agent selection — local-first, escalate if needed
         agents_to_use = req.agents
         if not agents_to_use and req.budget != "premium":
-            # Budget tiers: prefer cheaper models
             budget_agents = {
-                "budget": ["gemini-creative"],  # $0.0008/request
-                "standard": ["gemini-creative", "chatgpt-coder"],  # Mix cheap + mid
+                "budget": ["qwen-coder", "qwen-general"],  # $0.00 — local first
+                "standard": ["qwen-coder", "gemini-creative", "chatgpt-coder"],  # Local + cheap cloud
             }
             preferred = budget_agents.get(req.budget)
             if preferred:
@@ -317,6 +320,9 @@ async def collaborate(req: CollaborateRequest):
             agent_positions=agent_positions_data,
             disagreements=disagreements_data if disagreements_data else None,
             consensus_level=consensus_data,
+            quality=result.intelligence.get("quality"),
+            transparency=result.intelligence.get("transparency"),
+            failure_detection=result.intelligence.get("failure_detection"),
         )
     except Exception as e:
         logger.error(f"Collaboration error: {e}")
@@ -2105,6 +2111,283 @@ Provide these sections:
     except Exception as e:
         logger.error(f"Onboard error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Intelligence v2 Endpoints ────────────────────────────────────────
+
+class SmartFeedbackRequest(BaseModel):
+    task_id: str = Field(..., description="Task ID to rate")
+    rating: float = Field(..., description="Rating from -1.0 (terrible) to 1.0 (excellent)")
+    agents: List[str] = Field(default_factory=list, description="Agents that participated")
+    task_type: str = Field("general", description="Task type")
+    comment: Optional[str] = Field(None, description="Optional feedback comment")
+    correction: Optional[str] = Field(None, description="Optional correct answer")
+
+
+@app.post("/v1/rate", dependencies=[Depends(verify_api_key)])
+async def rate_response(req: SmartFeedbackRequest):
+    """Rate a response to improve future results. This feeds the learning loop."""
+    team = get_team()
+    try:
+        outcome = await team.process_feedback(
+            task_id=req.task_id, rating=req.rating,
+            agents=req.agents, task_type=req.task_type,
+            comment=req.comment, correction=req.correction,
+        )
+        return {"status": "processed", **outcome.to_dict()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/v1/roi", dependencies=[Depends(verify_api_key)])
+async def roi_dashboard(period: str = "all_time"):
+    """ROI dashboard — time saved, money saved, agent rankings."""
+    team = get_team()
+    report = team.get_roi_report(period)
+    return report.to_dict()
+
+
+@app.get("/v1/leaderboard", dependencies=[Depends(verify_api_key)])
+async def agent_leaderboard():
+    """Agent performance leaderboard."""
+    team = get_team()
+    return {"leaderboard": team.get_agent_leaderboard()}
+
+
+@app.get("/v1/agent-profiles", dependencies=[Depends(verify_api_key)])
+async def agent_profiles():
+    """Agent feedback profiles — satisfaction rates, task scores."""
+    team = get_team()
+    return {"profiles": team.get_feedback_profiles()}
+
+
+class WorkflowRequest(BaseModel):
+    task: str = Field(..., description="Task for the agentic workflow")
+    context: str = Field("", description="Additional context")
+    max_fix_cycles: int = Field(3, description="Max fix attempts")
+
+
+@app.post("/v1/workflow", dependencies=[Depends(verify_api_key), Depends(rate_limit)])
+async def run_workflow(req: WorkflowRequest):
+    """Run a full agentic workflow: plan -> execute -> validate -> fix -> verify."""
+    team = get_team()
+    try:
+        result = await team.run_workflow(task=req.task, context=req.context)
+        return result.to_dict()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Intelligence Endpoints ────────────────────────────────────────────
+
+
+class ScanRequest(BaseModel):
+    content: str = Field(..., description="AI response or code to scan")
+    task_type: str = Field("general", description="Task type — coding, debugging, analysis, general")
+    language: str = Field("", description="Language hint (auto-detected if empty)")
+
+
+class TransparencyRequest(BaseModel):
+    prompt: str = Field(..., description="Original prompt")
+    answer: str = Field(..., description="Final synthesized answer")
+    agent_responses: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of agent responses (agent_name, content, confidence)",
+    )
+
+
+class NexusSearchRequest(BaseModel):
+    query: str = Field(..., description="Search query")
+    limit: int = Field(10, description="Max results")
+
+
+@app.get("/v1/arbitrage", dependencies=[Depends(verify_api_key)])
+async def arbitrage_report(task_type: str = ""):
+    """Cost arbitrage — savings report and optional provider comparison."""
+    from elgringo.intelligence.cost_arbitrage import get_optimizer
+
+    opt = get_optimizer()
+    result = {"savings": opt.get_savings_report()}
+    if task_type:
+        result["comparison"] = opt.get_provider_comparison(task_type)
+    return result
+
+
+@app.post("/v1/scan", dependencies=[Depends(verify_api_key)])
+async def scan_response(req: ScanRequest):
+    """Scan AI output for syntax errors, security issues, hallucinations."""
+    from elgringo.intelligence.auto_failure_detector import get_failure_detector
+
+    detector = get_failure_detector()
+    result = detector.check(req.content, task_type=req.task_type, language=req.language or None)
+    return result.to_dict()
+
+
+@app.post("/v1/transparency", dependencies=[Depends(verify_api_key)])
+async def transparency_report(req: TransparencyRequest):
+    """Show how a multi-agent answer was built."""
+    from elgringo.intelligence.reasoning_transparency import get_reasoning_transparency
+    from elgringo.agents.base import AgentResponse, ModelType
+
+    rt = get_reasoning_transparency()
+    responses = []
+    for r in req.agent_responses:
+        responses.append(AgentResponse(
+            agent_name=r.get("agent_name", "unknown"),
+            model_type=ModelType.LOCAL,
+            content=r.get("content", ""),
+            confidence=r.get("confidence", 0.5),
+            response_time=r.get("response_time", 0.0),
+        ))
+
+    if not responses:
+        return {"error": "No agent responses provided"}
+
+    report = rt.analyze(responses, req.prompt, req.answer)
+    return report.to_dict()
+
+
+@app.get("/v1/agent-insights", dependencies=[Depends(verify_api_key)])
+async def agent_insights():
+    """Deep agent profiles — satisfaction, task scores, expertise adjustments."""
+    from elgringo.intelligence.feedback_loop import get_feedback_loop
+
+    floop = get_feedback_loop()
+    return {
+        "profiles": floop.get_all_profiles(),
+        "roi_summary": floop.get_roi_summary(),
+    }
+
+
+@app.get("/v1/nexus", dependencies=[Depends(verify_api_key)])
+async def nexus_stats():
+    """Cross-project intelligence stats and patterns."""
+    from elgringo.intelligence.cross_project import get_nexus
+
+    nexus = get_nexus()
+    patterns = nexus.get_cross_project_patterns()
+    return {
+        "stats": nexus.get_stats(),
+        "patterns": [
+            {
+                "pattern": p.pattern,
+                "occurrences": p.occurrences,
+                "projects": p.projects_affected,
+                "solution": p.solution,
+            }
+            for p in patterns[:20]
+        ],
+    }
+
+
+@app.post("/v1/nexus/search", dependencies=[Depends(verify_api_key)])
+async def nexus_search(req: NexusSearchRequest):
+    """Search solutions/mistakes across all registered projects."""
+    from elgringo.intelligence.cross_project import get_nexus
+
+    nexus = get_nexus()
+    results = nexus.search_across_projects(req.query, limit=req.limit)
+    return {"query": req.query, "results": results, "total": len(results)}
+
+
+# ── MLX Local Inference Endpoints ─────────────────────────────────────
+
+class MLXRequest(BaseModel):
+    prompt: str = Field(..., description="Your question or coding task")
+    model: str = Field("auto", description="'coder' (Qwen 7B), 'general' (Qwen 3B), or 'auto'")
+    system_prompt: str = Field("", description="Optional system prompt")
+    max_tokens: int = Field(2048, description="Max response length")
+    temperature: float = Field(0.7, description="Sampling temperature")
+    stream: bool = Field(False, description="Stream tokens via SSE")
+
+
+_mlx_engine = None
+
+
+def _get_mlx_engine():
+    global _mlx_engine
+    if _mlx_engine is None:
+        from elgringo.apple.mlx_inference import get_mlx_inference
+        _mlx_engine = get_mlx_inference()
+    return _mlx_engine
+
+
+MLX_MODEL_MAP = {
+    "coder": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+    "general": "mlx-community/Qwen2.5-3B-Instruct-4bit",
+}
+
+
+def _resolve_mlx_model(model: str, prompt: str) -> str:
+    if model != "auto":
+        return MLX_MODEL_MAP.get(model, MLX_MODEL_MAP["coder"])
+    code_kw = ["code", "function", "class", "bug", "error", "fix", "refactor",
+               "python", "javascript", "typescript", "rust", "go", "sql",
+               "implement", "write", "debug", "test", "api", "endpoint"]
+    return MLX_MODEL_MAP["coder"] if any(k in prompt.lower() for k in code_kw) else MLX_MODEL_MAP["general"]
+
+
+@app.post("/v1/mlx", dependencies=[Depends(verify_api_key)])
+async def mlx_generate(req: MLXRequest):
+    """Local MLX inference on Apple Silicon. Zero cost, private, fast."""
+    mlx = _get_mlx_engine()
+    if not mlx.is_available:
+        raise HTTPException(status_code=503, detail="MLX not available (requires Apple Silicon)")
+
+    model_name = _resolve_mlx_model(req.model, req.prompt)
+    await mlx.load_model(model_name)
+
+    if req.stream:
+        async def stream_tokens():
+            stream = await mlx.generate(
+                prompt=req.prompt, model_name=model_name,
+                system_prompt=req.system_prompt or None,
+                max_tokens=req.max_tokens, temperature=req.temperature,
+                stream=True,
+            )
+            async for token in stream:
+                yield f"data: {json.dumps({'token': token})}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(stream_tokens(), media_type="text/event-stream")
+
+    response = await mlx.generate(
+        prompt=req.prompt, model_name=model_name,
+        system_prompt=req.system_prompt or None,
+        max_tokens=req.max_tokens, temperature=req.temperature,
+    )
+
+    short_name = "Qwen Coder 7B" if "Coder" in model_name else "Qwen 3B"
+    return {
+        "content": response.content,
+        "model": short_name,
+        "model_id": model_name,
+        "tokens_generated": response.tokens_generated,
+        "tokens_per_second": response.tokens_per_second,
+        "inference_time": response.inference_time,
+        "memory_mb": response.memory_used_mb,
+        "cost": 0.0,
+    }
+
+
+@app.get("/v1/mlx/status")
+async def mlx_status():
+    """MLX local inference status — loaded models, memory, availability."""
+    mlx = _get_mlx_engine()
+    if not mlx.is_available:
+        return {"available": False, "reason": "MLX not available (requires Apple Silicon)"}
+
+    from elgringo.apple.mlx_inference import AVAILABLE_MODELS
+    mem = mlx.get_memory_info()
+    return {
+        "available": True,
+        "loaded_models": mlx.loaded_models,
+        "memory": mem,
+        "available_models": {
+            info.get("alias", name): {"id": name, "size": info["size"], "quantization": info["quantization"]}
+            for name, info in AVAILABLE_MODELS.items()
+        },
+    }
 
 
 # ── Coding Agent Endpoints ───────────────────────────────────────────

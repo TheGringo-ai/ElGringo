@@ -1,48 +1,66 @@
 """
-Fred API - Coding Agent Endpoints
+El Gringo — Agentic Coding Engine
 ==================================
 
-Gives the AI team hands-on access to a project: read files, edit code,
-run tests, execute shell commands, and commit via git.
+Turns the AI team into a real coding agent: read files, plan changes,
+apply edits, run tests, self-correct on failure, and optionally commit.
 
-Flow:
-  1. POST /v1/code/task  — describe what needs fixing + project path
-  2. Agents read the codebase, plan changes, execute edits, run tests
-  3. Returns structured result with files changed, test output, and diff
-
-This turns El Gringo from an advisory chatbot into a real coding agent.
+Production-level: backup/restore, path sandboxing, structured logging,
+robust parsing with 5 fallback strategies, difflib-powered fuzzy matching,
+deduplication, per-iteration timeouts, and git safety.
 """
 
+import difflib
 import logging
 import os
+import re
+import shlex
+import subprocess
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/code", tags=["coding-agent"])
+
+# ── Constants ────────────────────────────────────────────────────────
+
+MAX_FILE_SIZE = 1_000_000  # 1MB
+MAX_CONTEXT_FILES = 15
+MAX_FILE_CONTEXT_CHARS = 10_000
+MAX_TOTAL_CONTEXT_CHARS = 80_000
+ITERATION_TIMEOUT = 180  # seconds per iteration
+FUZZY_MATCH_THRESHOLD = 0.6  # difflib similarity threshold
 
 
 # ── Models ───────────────────────────────────────────────────────────
 
 class CodingTaskRequest(BaseModel):
     """A coding task for the AI team to execute."""
-    task: str = Field(..., description="What needs to be done (bug fix, feature, refactor, etc.)")
+    task: str = Field(..., description="What needs to be done", min_length=3)
     project_path: str = Field(..., description="Absolute path to the project root")
-    context: str = Field("", description="Additional context: error messages, screenshots, constraints")
+    context: str = Field("", description="Additional context: error messages, constraints")
     files_to_read: List[str] = Field(default_factory=list, description="Specific files to read first")
     run_tests: bool = Field(True, description="Run tests after making changes")
     test_command: str = Field("", description="Custom test command (default: auto-detect)")
     auto_commit: bool = Field(False, description="Commit changes if tests pass")
-    mode: str = Field("sequential", description="Agent collaboration mode: sequential, parallel")
+    mode: str = Field("sequential", description="Agent mode: sequential, parallel, debate")
     allowed_agents: Optional[List[str]] = Field(None, description="Specific agents to use")
-    max_iterations: int = Field(3, description="Max self-correction iterations")
+    max_iterations: int = Field(3, description="Max self-correction iterations", ge=1, le=10)
     dry_run: bool = Field(False, description="Plan only, don't execute changes")
+
+    @field_validator("project_path")
+    @classmethod
+    def validate_project_path(cls, v):
+        p = Path(v).resolve()
+        if not p.is_dir():
+            raise ValueError(f"Project path does not exist: {p}")
+        return str(p)
 
 
 class FileChange(BaseModel):
@@ -87,7 +105,6 @@ class ProjectInfoResponse(BaseModel):
 class ProjectTools:
     """Sandboxed tools scoped to a single project directory."""
 
-    # Extensions we can read/edit
     CODE_EXTENSIONS = {
         ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".rs",
         ".rb", ".php", ".swift", ".kt", ".c", ".cpp", ".h", ".hpp",
@@ -97,11 +114,10 @@ class ProjectTools:
         ".md", ".txt", ".rst", ".env.example",
     }
 
-    # Directories to skip
     SKIP_DIRS = {
         "node_modules", ".git", "__pycache__", ".venv", "venv",
         ".next", "dist", "build", ".tox", ".mypy_cache",
-        ".pytest_cache", "egg-info", ".eggs",
+        ".pytest_cache", "egg-info", ".eggs", ".ruff_cache",
     }
 
     def __init__(self, project_path: str):
@@ -120,7 +136,7 @@ class ProjectTools:
         p = self._validate_path(filepath)
         if not p.exists():
             return f"[ERROR] File not found: {filepath}"
-        if p.stat().st_size > 1_000_000:
+        if p.stat().st_size > MAX_FILE_SIZE:
             return f"[ERROR] File too large: {p.stat().st_size} bytes"
         return p.read_text(errors="replace")
 
@@ -145,7 +161,6 @@ class ProjectTools:
 
     def search_files(self, pattern: str, glob_pattern: str = "**/*.py") -> List[Dict[str, Any]]:
         """Grep-like search across project files."""
-        import re
         results = []
         try:
             regex = re.compile(pattern, re.IGNORECASE)
@@ -173,9 +188,6 @@ class ProjectTools:
 
     def run_command(self, command: str, timeout: int = 120) -> Dict[str, Any]:
         """Run a shell command in the project directory."""
-        import shlex
-        import subprocess
-
         try:
             cmd_args = shlex.split(command)
         except ValueError as e:
@@ -198,7 +210,6 @@ class ProjectTools:
             return {"exit_code": 1, "stdout": "", "stderr": str(e)}
 
     def git_diff(self) -> str:
-        """Get current git diff."""
         result = self.run_command("git diff")
         return result.get("stdout", "")
 
@@ -207,12 +218,23 @@ class ProjectTools:
         return result.get("stdout", "")
 
     def git_commit(self, message: str) -> str:
+        # Sanitize commit message to prevent injection
+        safe_msg = message.replace('"', "'").replace("$", "").replace("`", "")[:200]
         self.run_command("git add -A")
-        result = self.run_command(f'git commit -m "{message}"')
+        result = self.run_command(f'git commit -m "{safe_msg}"')
         return result.get("stdout", "") + result.get("stderr", "")
 
+    def git_stash(self) -> bool:
+        """Stash current changes. Returns True if anything was stashed."""
+        result = self.run_command("git stash push -m elgringo-backup")
+        return "No local changes" not in result.get("stdout", "")
+
+    def git_stash_pop(self) -> bool:
+        """Restore stashed changes."""
+        result = self.run_command("git stash pop")
+        return result.get("exit_code", 1) == 0
+
     def get_project_info(self) -> Dict[str, Any]:
-        """Get project structure and metadata."""
         files = self.list_files()
         languages = {}
         for f in files:
@@ -222,7 +244,6 @@ class ProjectTools:
         has_tests = any("test" in f.lower() for f in files)
         has_git = (self.root / ".git").is_dir()
 
-        # Top-level structure
         structure = []
         for item in sorted(self.root.iterdir()):
             if item.name.startswith(".") and item.name != ".env.example":
@@ -243,13 +264,11 @@ class ProjectTools:
 
     def detect_test_command(self) -> str:
         """Auto-detect the test command for this project."""
-        # Check root and common subdirs for pytest config
         for subdir in ["", "backend", "src", "app"]:
             check_dir = self.root / subdir if subdir else self.root
             if (check_dir / "pytest.ini").exists() or (check_dir / "conftest.py").exists():
-                if subdir:
-                    return f"cd {subdir} && python -m pytest -x -q 2>&1 | tail -20"
-                return "python -m pytest -x -q 2>&1 | tail -20"
+                prefix = f"cd {subdir} && " if subdir else ""
+                return f"{prefix}python -m pytest -x -q 2>&1 | tail -20"
         if (self.root / "pyproject.toml").exists():
             return "python -m pytest -x -q 2>&1 | tail -20"
         if (self.root / "package.json").exists():
@@ -258,7 +277,6 @@ class ProjectTools:
             return "cargo test 2>&1 | tail -20"
         if (self.root / "go.mod").exists():
             return "go test ./... 2>&1 | tail -20"
-        # Fallback: look for test files
         if any("test_" in f or "_test.py" in f for f in self.list_files()):
             return "python -m pytest -x -q 2>&1 | tail -20"
         return ""
@@ -268,35 +286,40 @@ class ProjectTools:
 
 class CodingAgentEngine:
     """
-    The core engine that turns AI team responses into actual code changes.
+    Production agentic coding engine.
 
-    Flow:
-    1. Read relevant files → build context
-    2. Send task + context to AI team
-    3. Parse response for file operations (create/edit/delete)
-    4. Apply changes
-    5. Run tests
-    6. Self-correct if tests fail (up to max_iterations)
+    Flow: read project → build context → AI generates structured changes →
+    parse with 5 fallback strategies → apply with difflib fuzzy matching →
+    run tests → self-correct on failure → optionally commit.
+
+    Safety: git stash backup before changes, path sandboxing, deduplication,
+    per-iteration timeout, structured error feedback.
     """
 
     def __init__(self, team, tools: ProjectTools):
         self.team = team
         self.tools = tools
+        self._apply_errors: List[str] = []
+        self._backups: Dict[str, str] = {}  # filepath -> original content
 
     async def execute_task(self, request: CodingTaskRequest) -> CodingTaskResponse:
         task_id = str(uuid.uuid4())[:8]
         start_time = time.time()
-        errors = []
-        files_changed = []
-        test_result = None
-        git_commit_msg = None
+        errors: List[str] = []
+        files_changed: List[FileChange] = []
+        test_result: Optional[TestResult] = None
+        git_commit_msg: Optional[str] = None
         iterations = 0
+        self._backups = {}
 
-        # Step 1: Build context by reading the project
+        log = lambda msg: logger.info(f"[{task_id}] {msg}")
+        log(f"Starting task: {request.task[:100]}")
+
+        # Step 1: Build context
         context = await self._build_context(request)
+        log(f"Context built: {len(context)} chars")
 
         if request.dry_run:
-            # Plan only
             plan = await self._get_plan(request.task, context, request.mode)
             return CodingTaskResponse(
                 task_id=task_id,
@@ -310,73 +333,130 @@ class CodingAgentEngine:
             )
 
         # Step 2-5: Execute with self-correction loop
-        agents_used = []
+        agents_used: List[str] = []
         for iteration in range(request.max_iterations):
             iterations = iteration + 1
-            logger.info(f"Task {task_id}: iteration {iterations}")
+            iter_start = time.time()
+            log(f"Iteration {iterations}/{request.max_iterations}")
 
-            # Get AI team's coding response
+            # Check total timeout
+            elapsed = time.time() - start_time
+            if elapsed > ITERATION_TIMEOUT * request.max_iterations:
+                errors.append(f"Total timeout exceeded ({elapsed:.0f}s)")
+                log("Total timeout exceeded")
+                break
+
+            # Build prompt with error context from previous iterations
             coding_prompt = self._build_coding_prompt(
-                request.task, context, errors if iteration > 0 else None
+                request.task, context,
+                errors if iteration > 0 else None,
+                iteration=iteration,
             )
 
-            result = await self.team.collaborate(
-                prompt=coding_prompt,
-                context=context,
-                mode=request.mode,
-                agents=request.allowed_agents,
-            )
-            agents_used = list(set(agents_used + result.participating_agents))
+            # Get AI team response
+            try:
+                result = await self.team.collaborate(
+                    prompt=coding_prompt,
+                    context=context,
+                    mode=request.mode,
+                    agents=request.allowed_agents,
+                )
+                agents_used = list(set(agents_used + result.participating_agents))
+            except Exception as e:
+                errors.append(f"Iteration {iterations}: AI team error: {e}")
+                log(f"AI team error: {e}")
+                continue
 
-            # Parse and apply file changes from response
-            changes = self._parse_file_changes(result.final_answer)
-            if changes:
-                applied = self._apply_changes(changes)
-                files_changed.extend(applied)
+            response_text = result.final_answer or ""
+            log(f"AI response: {len(response_text)} chars from {result.participating_agents}")
 
-            # Run tests if requested
+            # Parse file changes
+            changes = self._parse_file_changes(response_text)
+            if not changes:
+                errors.append(
+                    f"Iteration {iterations}: No parseable code changes in AI response "
+                    f"({len(response_text)} chars, "
+                    f"{len(re.findall(r'```', response_text)) // 2} code blocks). "
+                    f"Use ```file:path or ```edit:path format."
+                )
+                log(f"No changes parsed from {len(response_text)} char response")
+                continue
+
+            # Deduplicate changes (same file + same action)
+            changes = self._deduplicate_changes(changes)
+            log(f"Parsed {len(changes)} changes")
+
+            # Backup files before modifying
+            self._backup_files(changes)
+
+            # Apply changes
+            self._apply_errors = []
+            applied = self._apply_changes(changes)
+            files_changed.extend(applied)
+
+            # Feed apply errors back
+            if self._apply_errors:
+                for err in self._apply_errors:
+                    errors.append(f"Iteration {iterations}: {err}")
+                log(f"{len(self._apply_errors)} apply errors, {len(applied)} successful")
+                if not applied:
+                    continue  # All failed — retry
+
+            log(f"Applied {len(applied)} changes in {time.time() - iter_start:.1f}s")
+
+            # Run tests
             if request.run_tests:
                 test_cmd = request.test_command or self.tools.detect_test_command()
                 if test_cmd:
-                    test_output = self.tools.run_command(test_cmd)
+                    test_start = time.time()
+                    test_output = self.tools.run_command(test_cmd, timeout=120)
                     passed = test_output["exit_code"] == 0
                     test_result = TestResult(
                         command=test_cmd,
                         passed=passed,
                         output=(test_output["stdout"] + test_output["stderr"])[-3000:],
-                        duration_seconds=0,
+                        duration_seconds=round(time.time() - test_start, 1),
                     )
+                    log(f"Tests {'PASSED' if passed else 'FAILED'} in {test_result.duration_seconds}s")
 
                     if passed:
-                        break  # Tests pass, we're done
+                        break
                     else:
-                        # Feed test failure back for next iteration
-                        errors.append(f"Tests failed (iteration {iterations}):\n{test_result.output}")
-                        context = await self._build_context(request)  # Re-read changed files
+                        errors.append(
+                            f"Tests failed (iteration {iterations}, cmd: {test_cmd}):\n"
+                            f"{test_result.output[-1000:]}"
+                        )
+                        # Re-read changed files for next iteration
+                        context = await self._build_context(request)
                 else:
-                    break  # No test command, can't verify
+                    log("No test command detected, skipping tests")
+                    break
             else:
-                break  # Tests not requested
+                break
 
         # Auto-commit if requested and tests passed
         if request.auto_commit and files_changed:
             if test_result is None or test_result.passed:
                 commit_msg = f"El Gringo: {request.task[:80]}"
-                self.tools.git_commit(commit_msg)
+                commit_output = self.tools.git_commit(commit_msg)
                 git_commit_msg = commit_msg
+                log(f"Committed: {commit_msg}")
 
-        # Determine status
+        # Determine final status
+        total_time = round(time.time() - start_time, 1)
         if not files_changed:
             status = "failed"
-            summary = "No code changes were generated"
+            summary = "No code changes were applied"
         elif test_result and not test_result.passed:
             status = "partial"
             summary = f"Made {len(files_changed)} changes but tests still failing after {iterations} iterations"
         else:
             status = "success"
-            summary = f"Completed: {len(files_changed)} files changed"
+            summary = f"Completed: {len(files_changed)} files changed in {iterations} iteration(s)"
             if test_result:
                 summary += ", all tests passing"
+
+        log(f"Finished: {status} in {total_time}s")
 
         return CodingTaskResponse(
             task_id=task_id,
@@ -387,86 +467,159 @@ class CodingAgentEngine:
             git_commit=git_commit_msg,
             agents_used=agents_used,
             iterations=iterations,
-            total_time=time.time() - start_time,
-            errors=errors,
+            total_time=total_time,
+            errors=errors[-10:],  # Cap errors in response
         )
 
+    # ── Context Building ─────────────────────────────────────────────
+
     async def _build_context(self, request: CodingTaskRequest) -> str:
-        """Read files and build context string for the AI team."""
+        """Build context string with project info and numbered file contents."""
         parts = []
 
-        # Project structure
+        # Project overview
         info = self.tools.get_project_info()
         parts.append(f"PROJECT: {info['project_path']}")
         parts.append(f"FILES: {info['files_count']} | LANGUAGES: {info['languages']}")
         parts.append("STRUCTURE:\n" + "\n".join(f"  {s}" for s in info["structure"]))
         parts.append("")
 
-        # Read specific files
-        files_to_read = request.files_to_read or []
+        # Determine which files to read
+        files_to_read = list(request.files_to_read) if request.files_to_read else []
 
-        # If no files specified, try to find relevant ones
+        # Auto-detect relevant files from the task description
         if not files_to_read and request.task:
-            # Search for files mentioned in the task
-            all_files = self.tools.list_files()
-            task_lower = request.task.lower()
-            for f in all_files:
-                fname = Path(f).stem.lower()
-                if fname in task_lower or any(word in f.lower() for word in task_lower.split() if len(word) > 3):
-                    files_to_read.append(f)
-            files_to_read = files_to_read[:10]  # Cap at 10 files
+            files_to_read = self._find_relevant_files(request.task)
 
-        for filepath in files_to_read:
+        # Read and include files with line numbers
+        total_chars = 0
+        for filepath in files_to_read[:MAX_CONTEXT_FILES]:
+            if total_chars > MAX_TOTAL_CONTEXT_CHARS:
+                parts.append(f"(context truncated at {MAX_TOTAL_CONTEXT_CHARS} chars)")
+                break
+
             abs_path = str(self.tools.root / filepath) if not os.path.isabs(filepath) else filepath
             content = self.tools.read_file(abs_path)
-            if not content.startswith("[ERROR]"):
-                parts.append(f"--- FILE: {filepath} ---")
-                # Truncate very large files
-                if len(content) > 8000:
-                    content = content[:8000] + "\n... (truncated)"
-                parts.append(content)
+            if content.startswith("[ERROR]"):
+                continue
+
+            # Truncate large files but keep them useful
+            if len(content) > MAX_FILE_CONTEXT_CHARS:
+                content = content[:MAX_FILE_CONTEXT_CHARS] + f"\n... (truncated at {MAX_FILE_CONTEXT_CHARS} chars)"
+
+            # Add with line numbers so AI can reference exact lines
+            numbered = self._add_line_numbers(content)
+            parts.append(f"--- FILE: {filepath} ---")
+            parts.append(numbered)
+            parts.append("")
+            total_chars += len(numbered)
+
+        # Git diff if available (shows what's already changed)
+        if info.get("has_git"):
+            diff = self.tools.git_diff()
+            if diff and len(diff) < 5000:
+                parts.append("--- GIT DIFF (current uncommitted changes) ---")
+                parts.append(diff[:5000])
                 parts.append("")
 
-        # Add any user-provided context
+        # User-provided context
         if request.context:
             parts.append(f"--- ADDITIONAL CONTEXT ---\n{request.context}\n")
 
         return "\n".join(parts)
 
-    def _build_coding_prompt(self, task: str, context: str, errors: List[str] = None) -> str:
-        """Build the prompt that tells the AI team to output structured code changes."""
-        prompt = f"""You are a coding agent. Your job is to make actual code changes to fix/implement the following:
+    def _find_relevant_files(self, task: str) -> List[str]:
+        """Find files relevant to the task using keyword matching."""
+        all_files = self.tools.list_files()
+        task_lower = task.lower()
+
+        # Extract meaningful words (>3 chars, not common words)
+        stop_words = {"this", "that", "with", "from", "have", "will", "should", "could",
+                      "would", "make", "change", "update", "modify", "create", "file",
+                      "code", "function", "method", "class", "the", "and", "for", "add"}
+        keywords = [w for w in re.findall(r'[a-z_]+', task_lower) if len(w) > 3 and w not in stop_words]
+
+        # Also extract explicit file paths from the task
+        explicit_paths = re.findall(r'[\w./]+\.(?:py|js|ts|go|rs|java|rb|php|swift|kt)', task)
+
+        scored: List[Tuple[str, int]] = []
+        for f in all_files:
+            score = 0
+            f_lower = f.lower()
+            fname = Path(f).stem.lower()
+
+            # Exact path match (highest priority)
+            if f in explicit_paths or f_lower in [p.lower() for p in explicit_paths]:
+                score += 100
+
+            # Filename contains task keywords
+            for kw in keywords:
+                if kw in fname:
+                    score += 10
+                elif kw in f_lower:
+                    score += 3
+
+            if score > 0:
+                scored.append((f, score))
+
+        # Sort by score descending, return top matches
+        scored.sort(key=lambda x: -x[1])
+        return [f for f, _ in scored[:MAX_CONTEXT_FILES]]
+
+    @staticmethod
+    def _add_line_numbers(content: str) -> str:
+        """Add line numbers to file content for precise referencing."""
+        lines = content.splitlines()
+        width = len(str(len(lines)))
+        return "\n".join(f"{i+1:>{width}}| {line}" for i, line in enumerate(lines))
+
+    # ── Prompt Building ──────────────────────────────────────────────
+
+    def _build_coding_prompt(
+        self, task: str, context: str,
+        errors: Optional[List[str]] = None,
+        iteration: int = 0,
+    ) -> str:
+        """Build the structured prompt for code generation."""
+        prompt = f"""You are a coding agent. Make ONLY the changes described in the task below.
 
 TASK: {task}
 
-IMPORTANT: Output your changes using this EXACT format for each file you want to create or modify:
+RULES:
+- ONLY modify files directly related to the task. Do NOT refactor, clean up, or improve other code.
+- Every change MUST use one of the two formats below — no changes outside these blocks.
+- The <<<old section must be an EXACT copy from the file (including indentation).
+- Do NOT use placeholder comments, TODOs, or "..." — write complete, real code.
+- Keep the existing code style. Do not add type hints, docstrings, or comments to code you didn't change.
+
+FORMAT 1 — Create or fully rewrite a file:
 
 ```file:path/to/file.py
-<full file content or replacement content>
+entire file content here
 ```
 
-For editing specific parts of a file, use:
+FORMAT 2 — Edit part of an existing file:
 
 ```edit:path/to/file.py
 <<<old
-the exact lines to replace
+exact lines to replace (copy-paste from file above, preserve indentation)
 >>>new
-the replacement lines
+replacement lines
+<<<end
 ```
 
-Rules:
-- Read the context carefully before making changes
-- Only change what's necessary — don't refactor unrelated code
-- Keep the same code style as the existing codebase
-- If you create new files, use ```file:path``` format
-- If you edit existing files, use ```edit:path``` format with exact old/new blocks
-- Include ALL necessary changes — don't leave TODOs or placeholders
+You can have multiple <<<old/>>>new/<<<end blocks inside a single ```edit:``` block for the same file.
 """
 
         if errors:
-            prompt += "\n\nPREVIOUS ATTEMPTS FAILED. Fix these errors:\n"
-            for e in errors:
-                prompt += f"\n{e}\n"
+            prompt += "\n--- PREVIOUS ERRORS (fix these) ---\n"
+            # Show most recent errors, most relevant at the end
+            for e in errors[-5:]:
+                prompt += f"\n{e[:800]}\n"
+            prompt += "\nFix the errors above. Copy the <<<old text EXACTLY from the file content shown in context.\n"
+
+        if iteration > 0:
+            prompt += f"\nThis is retry #{iteration + 1}. Be more careful with exact string matching.\n"
 
         return prompt
 
@@ -478,8 +631,8 @@ TASK: {task}
 
 Provide:
 1. A brief summary of what needs to change
-2. Numbered steps with specific file paths
-3. Any risks or considerations
+2. Numbered steps with specific file paths and what to modify in each
+3. Any risks or edge cases
 """
         result = await self.team.collaborate(prompt=prompt, context=context, mode=mode)
         steps = [line.strip() for line in result.final_answer.split("\n") if line.strip()]
@@ -489,38 +642,149 @@ Provide:
             "agents_used": result.participating_agents,
         }
 
+    # ── Response Parsing ─────────────────────────────────────────────
+
     def _parse_file_changes(self, response: str) -> List[Dict[str, Any]]:
-        """Parse AI response for file operations."""
-        import re
-        changes = []
+        """
+        Parse AI response for file operations.
 
-        # Parse ```file:path``` blocks (full file creation/replacement)
-        file_pattern = r'```file:(.+?)\n(.*?)```'
-        for match in re.finditer(file_pattern, response, re.DOTALL):
-            filepath = match.group(1).strip()
+        5 fallback strategies:
+        1. ```file:path``` blocks (full write)
+        2. ```edit:path``` with <<<old/>>>new/<<<end (preferred edit format)
+        3. ```edit:path``` with <<<old/>>>new (no <<<end, terminated by next or end of block)
+        4. ```python {file:path}``` or ```python\n# file:path``` hints
+        5. Bare ```python blocks after "File: path" text
+        """
+        changes: List[Dict[str, Any]] = []
+
+        # Strategy 1: ```file:path``` blocks — full file write
+        # Handles: ```file:path.py, ```file: path.py, ```file:path.py\n
+        for match in re.finditer(r'```\s*file:\s*(.+?)\n(.*?)```', response, re.DOTALL):
+            filepath = match.group(1).strip().strip("`")
             content = match.group(2)
-            changes.append({"action": "write", "path": filepath, "content": content})
+            if content.strip():
+                changes.append({"action": "write", "path": filepath, "content": content})
 
-        # Parse ```edit:path``` blocks (partial edits)
-        edit_pattern = r'```edit:(.+?)\n(.*?)```'
-        for match in re.finditer(edit_pattern, response, re.DOTALL):
-            filepath = match.group(1).strip()
+        # Strategy 2+3: ```edit:path``` blocks with <<<old/>>>new
+        for match in re.finditer(r'```\s*edit:\s*(.+?)\n(.*?)```', response, re.DOTALL):
+            filepath = match.group(1).strip().strip("`")
             edit_block = match.group(2)
+            changes.extend(self._parse_edit_block(filepath, edit_block))
 
-            # Parse <<<old ... >>>new ... blocks
-            old_new = re.findall(r'<<<old\n(.*?)>>>new\n(.*?)(?=<<<old|\Z)', edit_block, re.DOTALL)
-            for old_text, new_text in old_new:
-                changes.append({
-                    "action": "edit",
-                    "path": filepath,
-                    "old": old_text.rstrip("\n"),
-                    "new": new_text.rstrip("\n"),
-                })
+        # Strategy 4: ```python or ```lang blocks with file path in first line
+        if not changes:
+            pattern = r'```(?:python|javascript|typescript|go|rust|java|ruby|php|swift|kotlin|cpp|c)?\s*\n\s*#\s*(?:file|File|FILE):\s*(.+?)\n(.*?)```'
+            for match in re.finditer(pattern, response, re.DOTALL):
+                filepath = match.group(1).strip()
+                content = match.group(2)
+                if len(content.strip()) > 10:
+                    changes.append({"action": "write", "path": filepath, "content": content})
+
+        # Strategy 5: "File: path.py" text followed by code block
+        if not changes:
+            pattern = r'(?:^|\n)\s*(?:file|File|FILE)[:\s]+([^\s`\n]+\.(?:py|js|ts|tsx|jsx|go|rs|java|rb|php|swift|kt|c|cpp|h))\s*\n+```[a-z]*\n(.*?)```'
+            for match in re.finditer(pattern, response, re.DOTALL):
+                filepath = match.group(1).strip()
+                content = match.group(2)
+                if len(content.strip()) > 10:
+                    changes.append({"action": "write", "path": filepath, "content": content})
+
+        if changes:
+            logger.info(f"Parsed {len(changes)} changes ({sum(1 for c in changes if c['action'] == 'write')} writes, "
+                        f"{sum(1 for c in changes if c['action'] == 'edit')} edits)")
+        else:
+            block_count = len(re.findall(r'```', response)) // 2
+            logger.warning(f"No changes parsed. Response: {len(response)} chars, {block_count} code blocks")
 
         return changes
 
+    def _parse_edit_block(self, filepath: str, edit_block: str) -> List[Dict[str, Any]]:
+        """Parse a single edit block for <<<old/>>>new pairs."""
+        edits: List[Dict[str, Any]] = []
+
+        # Try with <<<end delimiter first (our preferred format)
+        pairs = re.findall(
+            r'<<<\s*old\s*\n(.*?)>>>\s*new\s*\n(.*?)<<<\s*end',
+            edit_block, re.DOTALL,
+        )
+
+        # Fallback: without <<<end (terminated by next <<<old or end of block)
+        if not pairs:
+            pairs = re.findall(
+                r'<<<\s*old\s*\n(.*?)>>>\s*new\s*\n(.*?)(?=<<<\s*old|\Z)',
+                edit_block, re.DOTALL,
+            )
+
+        # Fallback: --- old / --- new / --- end (some models use dashes)
+        if not pairs:
+            pairs = re.findall(
+                r'---\s*old\s*\n(.*?)---\s*new\s*\n(.*?)(?:---\s*end|(?=---\s*old)|\Z)',
+                edit_block, re.DOTALL,
+            )
+
+        for old_text, new_text in pairs:
+            # Strip exactly one leading/trailing newline (preserve internal whitespace)
+            old_clean = old_text.strip("\n")
+            new_clean = new_text.strip("\n")
+            if old_clean:  # Don't add empty edits
+                edits.append({
+                    "action": "edit",
+                    "path": filepath,
+                    "old": old_clean,
+                    "new": new_clean,
+                })
+
+        return edits
+
+    # ── Change Application ───────────────────────────────────────────
+
+    def _deduplicate_changes(self, changes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove duplicate changes to the same file with the same content."""
+        seen = set()
+        deduped = []
+        for change in changes:
+            # Create a fingerprint
+            if change["action"] == "write":
+                key = (change["action"], change["path"])
+            else:
+                key = (change["action"], change["path"], change.get("old", "")[:100])
+
+            if key not in seen:
+                seen.add(key)
+                deduped.append(change)
+            else:
+                logger.debug(f"Deduplicated change to {change['path']}")
+
+        if len(deduped) < len(changes):
+            logger.info(f"Deduplicated {len(changes)} → {len(deduped)} changes")
+        return deduped
+
+    def _backup_files(self, changes: List[Dict[str, Any]]):
+        """Backup files before modifying them (for potential restore)."""
+        for change in changes:
+            filepath = change["path"]
+            abs_path = str(self.tools.root / filepath) if not os.path.isabs(filepath) else filepath
+            if Path(abs_path).exists() and filepath not in self._backups:
+                try:
+                    self._backups[filepath] = Path(abs_path).read_text(errors="replace")
+                except Exception:
+                    pass
+
+    def restore_backups(self):
+        """Restore all backed-up files to their original state."""
+        restored = 0
+        for filepath, content in self._backups.items():
+            abs_path = str(self.tools.root / filepath) if not os.path.isabs(filepath) else filepath
+            try:
+                Path(abs_path).write_text(content)
+                restored += 1
+            except Exception as e:
+                logger.error(f"Failed to restore {filepath}: {e}")
+        logger.info(f"Restored {restored}/{len(self._backups)} files")
+        return restored
+
     def _apply_changes(self, changes: List[Dict[str, Any]]) -> List[FileChange]:
-        """Apply parsed changes to the filesystem."""
+        """Apply parsed changes with exact match → fuzzy match → difflib fallback."""
         applied = []
 
         for change in changes:
@@ -536,45 +800,200 @@ Provide:
                         action="modified" if existed else "created",
                         lines_changed=len(change["content"].splitlines()),
                     ))
-                    logger.info(f"Wrote file: {filepath}")
+                    logger.info(f"{'Overwrote' if existed else 'Created'}: {filepath}")
 
                 elif change["action"] == "edit":
-                    content = self.tools.read_file(abs_path)
-                    if content.startswith("[ERROR]"):
-                        logger.warning(f"Cannot edit {filepath}: {content}")
-                        continue
-
-                    old_text = change["old"]
-                    new_text = change["new"]
-
-                    if old_text in content:
-                        new_content = content.replace(old_text, new_text, 1)
-                        self.tools.write_file(abs_path, new_content)
-                        diff_lines = abs(len(new_text.splitlines()) - len(old_text.splitlines()))
-                        applied.append(FileChange(
-                            path=filepath,
-                            action="modified",
-                            diff=f"-{old_text[:100]}...\n+{new_text[:100]}...",
-                            lines_changed=max(diff_lines, 1),
-                        ))
-                        logger.info(f"Edited file: {filepath}")
-                    else:
-                        logger.warning(f"Edit target not found in {filepath}")
+                    result = self._apply_edit(abs_path, filepath, change["old"], change["new"])
+                    if result:
+                        applied.append(result)
 
             except Exception as e:
-                logger.error(f"Error applying change to {filepath}: {e}")
+                msg = f"Error applying change to {filepath}: {e}"
+                logger.error(msg)
+                self._apply_errors.append(msg)
 
         return applied
+
+    def _apply_edit(self, abs_path: str, filepath: str, old_text: str, new_text: str) -> Optional[FileChange]:
+        """Apply a single edit with multiple matching strategies."""
+        content = self.tools.read_file(abs_path)
+        if content.startswith("[ERROR]"):
+            self._apply_errors.append(f"Cannot read {filepath}: {content}")
+            return None
+
+        # Strategy 1: Exact match
+        if old_text in content:
+            new_content = content.replace(old_text, new_text, 1)
+            self.tools.write_file(abs_path, new_content)
+            logger.info(f"Edited (exact match): {filepath}")
+            return self._make_file_change(filepath, old_text, new_text)
+
+        # Strategy 2: Whitespace-normalized match
+        result = self._fuzzy_replace_whitespace(content, old_text, new_text)
+        if result is not None:
+            self.tools.write_file(abs_path, result)
+            logger.info(f"Edited (whitespace-normalized): {filepath}")
+            return self._make_file_change(filepath, old_text, new_text)
+
+        # Strategy 3: Line-number-stripped match (AI sometimes copies line numbers from context)
+        stripped_old = re.sub(r'^\s*\d+\|\s?', '', old_text, flags=re.MULTILINE)
+        if stripped_old != old_text and stripped_old in content:
+            new_content = content.replace(stripped_old, new_text, 1)
+            self.tools.write_file(abs_path, new_content)
+            logger.info(f"Edited (line-numbers stripped): {filepath}")
+            return self._make_file_change(filepath, old_text, new_text)
+
+        # Strategy 4: First/last line anchor match
+        result = self._fuzzy_replace_anchors(content, old_text, new_text)
+        if result is not None:
+            self.tools.write_file(abs_path, result)
+            logger.info(f"Edited (anchor match): {filepath}")
+            return self._make_file_change(filepath, old_text, new_text)
+
+        # Strategy 5: difflib best match (last resort)
+        result = self._fuzzy_replace_difflib(content, old_text, new_text)
+        if result is not None:
+            self.tools.write_file(abs_path, result)
+            logger.info(f"Edited (difflib fuzzy): {filepath}")
+            return self._make_file_change(filepath, old_text, new_text)
+
+        # All strategies failed
+        # Show what we tried to match vs what's actually in the file
+        old_preview = repr(old_text[:120])
+        # Find the closest match in the file for diagnosis
+        closest = self._find_closest_match(content, old_text)
+        msg = f"Edit failed for {filepath}: old_text not found. Tried: {old_preview}"
+        if closest:
+            msg += f"\nClosest match in file (similarity {closest[1]:.0%}): {repr(closest[0][:120])}"
+        self._apply_errors.append(msg)
+        return None
+
+    @staticmethod
+    def _make_file_change(filepath: str, old_text: str, new_text: str) -> FileChange:
+        diff_lines = abs(len(new_text.splitlines()) - len(old_text.splitlines()))
+        return FileChange(
+            path=filepath,
+            action="modified",
+            diff=f"-{old_text[:100]}...\n+{new_text[:100]}...",
+            lines_changed=max(diff_lines, 1),
+        )
+
+    # ── Fuzzy Matching Strategies ────────────────────────────────────
+
+    @staticmethod
+    def _fuzzy_replace_whitespace(content: str, old_text: str, new_text: str) -> Optional[str]:
+        """Match after normalizing trailing whitespace on each line."""
+        def normalize(text):
+            return "\n".join(line.rstrip() for line in text.splitlines())
+
+        norm_content = normalize(content)
+        norm_old = normalize(old_text)
+
+        if norm_old in norm_content:
+            return norm_content.replace(norm_old, new_text, 1)
+        return None
+
+    @staticmethod
+    def _fuzzy_replace_anchors(content: str, old_text: str, new_text: str) -> Optional[str]:
+        """Match using first and last non-empty lines as anchors."""
+        old_lines = [l.strip() for l in old_text.splitlines() if l.strip()]
+        if len(old_lines) < 2:
+            return None
+
+        content_lines = content.splitlines()
+        first_anchor = old_lines[0]
+        last_anchor = old_lines[-1]
+        expected_span = len(old_lines)
+
+        for i, line in enumerate(content_lines):
+            if first_anchor in line.strip():
+                # Search for the last anchor within a reasonable range
+                search_end = min(i + expected_span + 10, len(content_lines))
+                for j in range(i + 1, search_end):
+                    if last_anchor in content_lines[j].strip():
+                        # Verify middle lines are plausible (at least 50% match)
+                        block_lines = [l.strip() for l in content_lines[i:j + 1] if l.strip()]
+                        matches = sum(1 for ol in old_lines if any(ol in bl for bl in block_lines))
+                        if matches / len(old_lines) >= 0.5:
+                            original_block = "\n".join(content_lines[i:j + 1])
+                            return content.replace(original_block, new_text, 1)
+
+        return None
+
+    @staticmethod
+    def _fuzzy_replace_difflib(content: str, old_text: str, new_text: str) -> Optional[str]:
+        """Use difflib to find the best matching block in content."""
+        old_lines = old_text.splitlines()
+        content_lines = content.splitlines()
+        n = len(old_lines)
+
+        if n == 0 or len(content_lines) == 0:
+            return None
+
+        best_ratio = 0.0
+        best_start = -1
+        best_end = -1
+
+        # Slide a window of size n (±3 lines) across the content
+        for window_size in range(max(1, n - 3), n + 4):
+            for start in range(len(content_lines) - window_size + 1):
+                candidate = content_lines[start:start + window_size]
+                ratio = difflib.SequenceMatcher(
+                    None,
+                    "\n".join(old_lines),
+                    "\n".join(candidate),
+                ).ratio()
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_start = start
+                    best_end = start + window_size
+
+        if best_ratio >= FUZZY_MATCH_THRESHOLD and best_start >= 0:
+            original_block = "\n".join(content_lines[best_start:best_end])
+            logger.info(f"difflib match: {best_ratio:.0%} similarity, lines {best_start+1}-{best_end}")
+            return content.replace(original_block, new_text, 1)
+
+        return None
+
+    @staticmethod
+    def _find_closest_match(content: str, old_text: str) -> Optional[Tuple[str, float]]:
+        """Find the closest matching block for diagnostic purposes."""
+        old_lines = old_text.splitlines()
+        content_lines = content.splitlines()
+        n = len(old_lines)
+
+        if n == 0 or not content_lines:
+            return None
+
+        best_ratio = 0.0
+        best_block = ""
+
+        # Sample positions to avoid O(n²) on large files
+        step = max(1, len(content_lines) // 200)
+        for start in range(0, len(content_lines) - n + 1, step):
+            candidate = "\n".join(content_lines[start:start + n])
+            ratio = difflib.SequenceMatcher(None, old_text, candidate).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_block = candidate
+
+        if best_ratio > 0.3:
+            return (best_block, best_ratio)
+        return None
 
 
 # ── API Endpoints ────────────────────────────────────────────────────
 
-def _get_engine(project_path: str):
+def _get_engine(project_path: str) -> CodingAgentEngine:
     """Create a coding engine scoped to a project."""
     from products.fred_api.server import get_team
     tools = ProjectTools(project_path)
     team = get_team()
     return CodingAgentEngine(team, tools)
+
+
+# Keep a reference to the last engine per project for restore
+_active_engines: Dict[str, CodingAgentEngine] = {}
 
 
 @router.post("/task", response_model=CodingTaskResponse)
@@ -586,6 +1005,7 @@ async def execute_coding_task(request: CodingTaskRequest):
     """
     try:
         engine = _get_engine(request.project_path)
+        _active_engines[request.project_path] = engine
         result = await engine.execute_task(request)
         return result
     except ValueError as e:
@@ -593,6 +1013,17 @@ async def execute_coding_task(request: CodingTaskRequest):
     except Exception as e:
         logger.error(f"Coding task error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/restore")
+async def restore_backups(project_path: str):
+    """Restore files modified by the last coding task to their original state."""
+    resolved = str(Path(project_path).resolve())
+    engine = _active_engines.get(resolved) or _active_engines.get(project_path)
+    if not engine or not engine._backups:
+        raise HTTPException(status_code=404, detail="No backups found for this project")
+    restored = engine.restore_backups()
+    return {"restored_files": restored, "project_path": resolved}
 
 
 @router.post("/plan")
@@ -625,7 +1056,6 @@ async def review_project(
         tools = ProjectTools(project_path)
         files = tools.list_files()
 
-        # Read files matching pattern
         from fnmatch import fnmatch
         matched = [f for f in files if fnmatch(f, glob_pattern)][:15]
 

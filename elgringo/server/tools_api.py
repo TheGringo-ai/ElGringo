@@ -187,7 +187,7 @@ def ai_team_execute(prompt: str, context: str = "", agents: str = "", mode: str 
         prompt: The task to execute
         context: Additional context
         agents: Comma-separated agent names (empty = all agents).
-                Available: chatgpt-coder, gemini-creative, grok-reasoner, grok-coder,
+                Available: chatgpt-coder, gemini-coder, grok-reasoner, grok-coder,
                 llama-llama-3-3-70b-groq, claude-analyst (requires ANTHROPIC_API_KEY on server)
         mode: Collaboration mode:
             - turbo           Fastest (<2s). Picks the single best agent, skips synthesis.

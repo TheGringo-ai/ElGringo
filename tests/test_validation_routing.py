@@ -279,9 +279,9 @@ class TestTaskRouterScoring:
         assert result == "chatgpt-coder"  # Highest performance_weight for coding
 
     def test_get_agent_for_task_creative(self, router):
-        agents = ["chatgpt-coder", "gemini-creative", "grok-reasoner"]
+        agents = ["chatgpt-coder", "gemini-coder", "grok-reasoner"]
         result = router.get_agent_for_task(TaskType.CREATIVE, agents)
-        assert result == "gemini-creative"
+        assert result == "gemini-coder"
 
     def test_get_agent_for_task_no_match(self, router):
         result = router.get_agent_for_task(TaskType.CODING, ["nonexistent-agent"])

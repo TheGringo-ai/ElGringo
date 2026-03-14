@@ -1477,15 +1477,19 @@ async def interactive_mode(team):
     await cli.run()
 
 
-async def run_single_task(team, prompt: str, mode: str = "auto", context: str = ""):
+async def run_single_task(team, prompt: str, mode: str = "auto", context: str = "", agent: str = None):
     """Run a single task with simplified mode aliases and optional context."""
     # Resolve simplified mode names
     _MODE_ALIASES = {"auto": None, "quick": "turbo", "team": "parallel", "deep": "debate"}
     resolved = _MODE_ALIASES.get(mode, mode)
     display_mode = mode if resolved else "auto (smart routing)"
-    print(f"\n Running task with {len(team.agents)} agents ({display_mode})...\n")
+    if agent:
+        print(f"\n Running task with agent: {agent} ({display_mode})...\n")
+    else:
+        print(f"\n Running task with {len(team.agents)} agents ({display_mode})...\n")
 
-    result = await team.collaborate(prompt, context=context, mode=resolved)
+    agents_list = [agent] if agent else None
+    result = await team.collaborate(prompt, context=context, mode=resolved, agents=agents_list)
 
     if result.success:
         print(f"✅ Completed in {result.total_time:.2f}s")
@@ -1851,6 +1855,36 @@ _SMART_SUBCOMMANDS = {
     "summarize": ("Summarize the following concisely. Highlight the key points:\n\n", "quick", True),
     "convert": ("Convert the following to the requested format. Preserve all data accurately:\n\n", "quick", True),
     "deploy": ("Help with this deployment/DevOps task. Give specific commands and configs:\n\n", "quick", False),
+    # Business team — revenue-focused workflows
+    "pitch": (
+        "Create a compelling pitch for this idea. Include: problem (with data), solution, "
+        "target market (TAM/SAM/SOM), business model, competitive advantage, traction, "
+        "and go-to-market strategy. Make it investor-ready:\n\n", "deep", False
+    ),
+    "mvp": (
+        "Design a minimum viable product spec. Include: core features (prioritized by "
+        "revenue impact), tech stack, timeline, success metrics, what to cut, and "
+        "fastest path to first paying customer:\n\n", "team", False
+    ),
+    "ship": (
+        "Create a launch checklist and go-to-market plan. Include: pre-launch tasks, "
+        "launch day plan, distribution channels, messaging, pricing, and post-launch "
+        "metrics to track. Focus on revenue from day one:\n\n", "team", False
+    ),
+    "market": (
+        "Create a marketing strategy. Include: target audience segments, positioning, "
+        "channels (ranked by CAC), content plan, funnel design, budget allocation, "
+        "and KPIs with targets:\n\n", "team", False
+    ),
+    "revenue": (
+        "Analyze revenue opportunities. Include: monetization models, pricing tiers, "
+        "unit economics (CAC, LTV, payback period), growth levers, and 12-month "
+        "revenue projection with assumptions:\n\n", "deep", False
+    ),
+    "compete": (
+        "Competitive analysis. Identify top competitors, compare features/pricing/positioning, "
+        "find gaps and opportunities, and recommend differentiation strategy:\n\n", "team", False
+    ),
 }
 
 # Coding subcommands that write files (use CodingAgentEngine)
@@ -2043,8 +2077,149 @@ async def _run_coding_task(
     return result
 
 
+def _run_stats():
+    """Show team cost stats and agent insights."""
+    import urllib.request
+
+    base = os.getenv("ELGRINGO_API_URL", "http://127.0.0.1:8090")
+    print(f"\n{Colors.BOLD}{'─' * 60}{Colors.RESET}")
+    print(f"{Colors.BOLD}  El Gringo — Team Stats{Colors.RESET}")
+    print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}\n")
+
+    # Costs
+    try:
+        req = urllib.request.Request(f"{base}/v1/costs")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            costs = json.loads(resp.read())
+        total = costs.get("total_cost", 0)
+        by_agent = costs.get("by_agent", {})
+        print(f"  {Colors.CYAN}Total Spend:{Colors.RESET} ${total:.4f}")
+        if by_agent:
+            for agent, cost in sorted(by_agent.items(), key=lambda x: -x[1]):
+                bar = "█" * max(1, int(cost / max(total, 0.0001) * 20))
+                print(f"    {agent:<20} ${cost:.4f}  {Colors.GREEN}{bar}{Colors.RESET}")
+        print()
+    except Exception as e:
+        print(f"  {Colors.YELLOW}Costs: API not reachable ({e}){Colors.RESET}\n")
+
+    # Agent insights
+    try:
+        req = urllib.request.Request(f"{base}/v1/agent-insights")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            insights = json.loads(resp.read())
+        profiles = insights.get("profiles", {})
+        if profiles:
+            print(f"  {Colors.CYAN}Agent Performance:{Colors.RESET}")
+            for name, profile in profiles.items():
+                score = profile.get("avg_score", 0)
+                tasks = profile.get("total_tasks", 0)
+                sat = profile.get("satisfaction", 0)
+                color = Colors.GREEN if score >= 0.7 else Colors.YELLOW if score >= 0.4 else Colors.RED
+                print(f"    {name:<20} score={color}{score:.0%}{Colors.RESET}  tasks={tasks}  satisfaction={sat:.0%}")
+            print()
+    except Exception:
+        pass
+
+    # Request counts
+    try:
+        req = urllib.request.Request(f"{base}/v1/agents")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            agents = json.loads(resp.read())
+        agent_list = agents if isinstance(agents, list) else agents.get("agents", [])
+        if agent_list:
+            print(f"  {Colors.CYAN}Request Totals:{Colors.RESET}")
+            for a in sorted(agent_list, key=lambda x: -x.get("total_requests", 0)):
+                n = a.get("name", "?")
+                reqs = a.get("total_requests", 0)
+                rate = a.get("success_rate", 0)
+                avg_t = a.get("avg_response_time", 0)
+                if reqs > 0:
+                    print(f"    {n:<20} {reqs} reqs  {rate:.0%} success  {avg_t:.1f}s avg")
+            print()
+    except Exception:
+        pass
+
+    print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}\n")
+
+
+def _run_models():
+    """Show available models and their status."""
+    import urllib.request
+
+    base = os.getenv("ELGRINGO_API_URL", "http://127.0.0.1:8090")
+    print(f"\n{Colors.BOLD}{'─' * 60}{Colors.RESET}")
+    print(f"{Colors.BOLD}  El Gringo — Models{Colors.RESET}")
+    print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}\n")
+
+    # Cloud agents
+    try:
+        req = urllib.request.Request(f"{base}/v1/agents")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        agents = data if isinstance(data, list) else data.get("agents", [])
+        if agents:
+            print(f"  {Colors.CYAN}Cloud Agents:{Colors.RESET}")
+            for a in agents:
+                name = a.get("name", "?")
+                role = a.get("role", "")
+                enabled = a.get("enabled", True)
+                model_type = a.get("model_type", "")
+                if model_type == "local":
+                    continue
+                dot = f"{Colors.GREEN}●{Colors.RESET}" if enabled else f"{Colors.RED}●{Colors.RESET}"
+                print(f"    {dot} {name:<22} {Colors.DIM}{role}{Colors.RESET}")
+
+            local = [a for a in agents if a.get("model_type") == "local"]
+            if local:
+                print(f"\n  {Colors.CYAN}Local Agents:{Colors.RESET}")
+                for a in local:
+                    name = a.get("name", "?")
+                    role = a.get("role", "")
+                    dot = f"{Colors.GREEN}●{Colors.RESET}"
+                    print(f"    {dot} {name:<22} {Colors.DIM}{role}{Colors.RESET}")
+            print()
+    except Exception as e:
+        print(f"  {Colors.YELLOW}Agents: API not reachable ({e}){Colors.RESET}\n")
+
+    # MLX status
+    try:
+        req = urllib.request.Request(f"{base}/v1/mlx/status")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            mlx = json.loads(resp.read())
+        loaded = mlx.get("loaded_models", [])
+        mem = mlx.get("memory", {})
+        active_mb = mem.get("active_mb", 0)
+        free_mb = mem.get("system_free_mb", 0)
+        pressure = mem.get("memory_pressure", "unknown")
+
+        print(f"  {Colors.CYAN}MLX (Apple Silicon):{Colors.RESET}")
+        if loaded:
+            for m in loaded:
+                print(f"    ● {m}")
+        else:
+            print(f"    {Colors.DIM}No models loaded{Colors.RESET}")
+
+        p_color = Colors.GREEN if pressure == "low" else Colors.YELLOW if pressure == "medium" else Colors.RED
+        print(f"    Memory: {active_mb:.0f}MB active | {free_mb:.0f}MB free | pressure: {p_color}{pressure}{Colors.RESET}")
+        print()
+    except Exception:
+        print(f"  {Colors.DIM}MLX: not available{Colors.RESET}\n")
+
+    print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}\n")
+
+
 def main():
     """Main CLI entry point"""
+    # Intercept stats subcommand: elgringo stats
+    if len(sys.argv) > 1 and sys.argv[1] == "stats":
+        _run_stats()
+        sys.exit(0)
+
+    # Intercept models subcommand: elgringo models
+    if len(sys.argv) > 1 and sys.argv[1] == "models":
+        _run_models()
+        sys.exit(0)
+
     # Intercept smart subcommands: elgringo review, elgringo debug, etc.
     if len(sys.argv) > 1 and sys.argv[1] in _SMART_SUBCOMMANDS:
         subcmd = sys.argv[1]
@@ -2230,6 +2405,11 @@ Coding (writes files — asks before applying):
   elgringo fix "add logging" --yes            Skip confirmation
   elgringo undo                               Revert last change
   elgringo diff                               Show last change diff
+
+Status:
+  elgringo stats                              Cost breakdown + agent performance
+  elgringo models                             List agents + MLX memory status
+  elgringo --agent gemini-coder "prompt"      Force a specific agent
         """,
     )
 
@@ -2278,6 +2458,12 @@ Coding (writes files — asks before applying):
         "-v", "--verbose",
         action="store_true",
         help="Verbose output",
+    )
+    parser.add_argument(
+        "--agent",
+        type=str,
+        default=None,
+        help="Force a specific agent (e.g. --agent gemini-coder)",
     )
 
     args = parser.parse_args()
@@ -2336,7 +2522,7 @@ Coding (writes files — asks before applying):
         # Auto-context: gather project info unless disabled
         context = "" if args.no_context else _gather_project_context(verbose=args.verbose)
 
-        result = asyncio.run(run_single_task(team, prompt, args.mode, context=context))
+        result = asyncio.run(run_single_task(team, prompt, args.mode, context=context, agent=args.agent))
 
         if args.json:
             output = {

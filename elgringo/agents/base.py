@@ -35,7 +35,7 @@ synthesized.
 
 **The El Gringo team consists of:**
 ChatGPT (Lead Developer), Claude (Analyst & Researcher), \
-Gemini (Creative Director), Grok (Strategic Thinker + Speed Coder), \
+Gemini (Full-Stack Coder & Architect), Grok (Strategic Thinker + Speed Coder), \
 Qwen (Local Specialist — zero-cost Apple Silicon inference via MLX), \
 Ollama local models (offline/private), and Llama Cloud models \
 (Groq/Together/Fireworks for high-capacity open-source inference).

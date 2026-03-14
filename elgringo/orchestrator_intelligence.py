@@ -175,7 +175,7 @@ class PostCollaborationIntelligence:
         # Learn from successful outcomes
         if self._o.enable_learning and self._o._learning_engine and result.success:
             extractor = None
-            for pref in ["gemini-creative", "ollama-local", "chatgpt-coder"]:
+            for pref in ["gemini-coder", "ollama-local", "chatgpt-coder"]:
                 if pref in self._o.agents:
                     extractor = self._o.agents[pref]
                     break

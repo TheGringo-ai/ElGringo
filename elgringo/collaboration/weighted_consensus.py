@@ -81,7 +81,7 @@ class WeightedConsensus:
             "general": 0.75, "creative": 0.7, "documentation": 0.8,
         },
         # Gemini agents
-        "gemini-creative": {
+        "gemini-coder": {
             "creative": 1.0, "ui_ux": 0.95, "documentation": 0.9,
             "analysis": 0.6, "coding": 0.65, "research": 0.75,
             "general": 0.7, "architecture": 0.6, "brainstorming": 1.0,

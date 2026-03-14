@@ -72,7 +72,7 @@ class AgentSetupManager:
 
         if os.getenv("GEMINI_API_KEY"):
             self.register_agent(GeminiAgent())
-            logger.info("Registered Gemini agent (Creative Director)")
+            logger.info("Registered Gemini agent (Full-Stack Coder)")
 
         if os.getenv("XAI_API_KEY"):
             self.register_agent(GrokAgent(fast_mode=False))

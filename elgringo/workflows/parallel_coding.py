@@ -301,7 +301,7 @@ class ParallelCodingEngine:
                 task_type=TaskType.SECURITY_AUDIT,
                 description="Audit authentication and authorization",
                 context=f"Files: {len(files)} | Focus: Auth bypass, session management",
-                assigned_agent="gemini-creative"
+                assigned_agent="gemini-coder"
             ),
             CodeTask(
                 task_id="sec_data",
@@ -388,7 +388,7 @@ class ParallelCodingEngine:
         # Create specialized review tasks
         task_configs = [
             ("chatgpt-coder", "code_quality", "Review code quality, patterns, and potential bugs"),
-            ("gemini-creative", "architecture", "Review architecture and suggest improvements"),
+            ("gemini-coder", "architecture", "Review architecture and suggest improvements"),
             ("grok-reasoner", "security", "Review for security vulnerabilities and logic issues"),
             ("grok-coder", "performance", "Review for performance issues and optimizations"),
         ]
@@ -424,7 +424,7 @@ class ParallelCodingEngine:
         # This is simplified - in production would parse more intelligently
         task_configs = [
             ("chatgpt-coder", "core", "Implement the core business logic"),
-            ("gemini-creative", "interface", "Design and implement user-facing components"),
+            ("gemini-coder", "interface", "Design and implement user-facing components"),
             ("grok-coder", "utilities", "Implement utility functions and helpers"),
         ]
 

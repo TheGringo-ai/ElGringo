@@ -10,6 +10,7 @@ robust parsing with 5 fallback strategies, difflib-powered fuzzy matching,
 deduplication, per-iteration timeouts, and git safety.
 """
 
+import ast
 import difflib
 import json
 import logging
@@ -38,6 +39,7 @@ MAX_FILE_CONTEXT_CHARS = 10_000
 MAX_TOTAL_CONTEXT_CHARS = 80_000
 ITERATION_TIMEOUT = 180  # seconds per iteration
 FUZZY_MATCH_THRESHOLD = 0.6  # difflib similarity threshold
+WHOLE_FILE_THRESHOLD = 300  # lines — below this, use whole-file mode (no edit parsing)
 
 # Files that indicate execution context (where the app runs from)
 EXECUTION_CONTEXT_FILES = [
@@ -465,6 +467,7 @@ class CodingAgentEngine:
 
         # Step 2-5: Execute with self-correction loop
         agents_used: List[str] = []
+        edit_failure_counts: Dict[str, int] = {}  # Track edit failures per file
         for iteration in range(request.max_iterations):
             iterations = iteration + 1
             iter_start = time.time()
@@ -477,11 +480,25 @@ class CodingAgentEngine:
                 log("Total timeout exceeded")
                 break
 
+            # Re-read files after failed iterations so AI sees current state
+            if iteration > 0:
+                context = await self._build_context(request)
+                log("Re-read files for retry with current state")
+
+            # Detect which files should use whole-file mode
+            whole_file_paths = []
+            check_files = list(request.files_to_read) if request.files_to_read else self._find_relevant_files(request.task)
+            for fp in check_files:
+                failures = edit_failure_counts.get(fp, 0)
+                if self._should_use_whole_file(fp, failures):
+                    whole_file_paths.append(fp)
+
             # Build prompt with error context from previous iterations
             coding_prompt = self._build_coding_prompt(
                 request.task, context,
                 errors if iteration > 0 else None,
                 iteration=iteration,
+                whole_file_paths=whole_file_paths if whole_file_paths else None,
             )
 
             # Get AI team response
@@ -532,6 +549,10 @@ class CodingAgentEngine:
             if self._apply_errors:
                 for err in self._apply_errors:
                     errors.append(f"Iteration {iterations}: {err}")
+                    # Track edit failures per file for whole-file mode escalation
+                    for change in changes:
+                        if change["path"] in err:
+                            edit_failure_counts[change["path"]] = edit_failure_counts.get(change["path"], 0) + 1
                 log(f"{len(self._apply_errors)} apply errors, {len(applied)} successful")
                 # If syntax errors were found, retry even if some edits applied
                 has_syntax_error = any("SYNTAX ERROR" in e for e in self._apply_errors)
@@ -574,8 +595,6 @@ class CodingAgentEngine:
                             f"Tests failed (iteration {iterations}, cmd: {test_cmd}):\n"
                             f"{test_result.output[-1000:]}"
                         )
-                        # Re-read changed files for next iteration
-                        context = await self._build_context(request)
                 else:
                     log("No test command detected, skipping tests")
                     break
@@ -978,12 +997,37 @@ Example:
         width = len(str(len(lines)))
         return "\n".join(f"{i+1:>{width}}| {line}" for i, line in enumerate(lines))
 
+    def _should_use_whole_file(self, filepath: str, edit_failures: int = 0) -> bool:
+        """Decide if whole-file mode should be used instead of edit parsing."""
+        abs_path = str(self.tools.root / filepath) if not os.path.isabs(filepath) else filepath
+        if not Path(abs_path).exists():
+            return True  # New file — always whole-file
+        try:
+            content = Path(abs_path).read_text(errors="replace")
+            line_count = len(content.splitlines())
+            # Small files or repeated edit failures → whole-file mode
+            return line_count < WHOLE_FILE_THRESHOLD or edit_failures >= 3
+        except Exception:
+            return True
+
+    @staticmethod
+    def _validate_syntax_in_memory(content: str, filepath: str) -> Optional[str]:
+        """Validate Python syntax in memory before writing to disk. Returns error or None."""
+        if not filepath.endswith(".py"):
+            return None
+        try:
+            ast.parse(content, filename=filepath)
+            return None
+        except SyntaxError as e:
+            return f"SYNTAX ERROR in {filepath} line {e.lineno}: {e.msg}"
+
     # ── Prompt Building ──────────────────────────────────────────────
 
     def _build_coding_prompt(
         self, task: str, context: str,
         errors: Optional[List[str]] = None,
         iteration: int = 0,
+        whole_file_paths: Optional[List[str]] = None,
     ) -> str:
         """Build the structured prompt for code generation."""
         prompt = f"""You are a coding agent. Make ONLY the changes described in the task below.
@@ -1020,6 +1064,13 @@ replacement lines
 
 You can have multiple <<<old/>>>new/<<<end blocks inside a single ```edit:``` block for the same file.
 """
+
+        # Whole-file mode override for small files or after edit failures
+        if whole_file_paths:
+            prompt += "\nWHOLE-FILE MODE — For these files, return the COMPLETE updated file using ```file:path``` format:\n"
+            for p in whole_file_paths:
+                prompt += f"  - {p}\n"
+            prompt += "Do NOT use ```edit:``` for these files. Return the entire file content.\n"
 
         if errors:
             prompt += "\n--- PREVIOUS ERRORS (fix these) ---\n"
@@ -1060,17 +1111,24 @@ Provide:
 
         Removes:
         - Line number prefixes: '  1|', '  2| ', '10|', '1→', etc.
+        - Edit markers: <<<old, >>>new, <<<end, >>>end leaked into content
         - Leading/trailing blank lines
         - Trailing whitespace per line
         """
         lines = content.splitlines()
         cleaned = []
-        # Detect if ALL or most lines have a number prefix pattern
+        # Detect if lines have a number prefix pattern (lower threshold: 30%)
         prefix_pattern = re.compile(r'^\s*\d+[|→]\s?')
         num_prefixed = sum(1 for line in lines if prefix_pattern.match(line))
-        strip_prefixes = num_prefixed > len(lines) * 0.5  # More than half have prefixes
+        strip_prefixes = num_prefixed > max(len(lines) * 0.3, 3)
+
+        # Edit markers that should never appear in actual code
+        marker_pattern = re.compile(r'^\s*(?:<<<\s*(?:old|end)|>>>\s*(?:new|end))\s*$')
 
         for line in lines:
+            # Skip leaked edit markers
+            if marker_pattern.match(line):
+                continue
             if strip_prefixes:
                 line = prefix_pattern.sub('', line)
             cleaned.append(line.rstrip())
@@ -1133,6 +1191,26 @@ Provide:
                 if len(content.strip()) > 10:
                     changes.append({"action": "write", "path": filepath, "content": content})
 
+        # Strategy 6: Single-file inference — if only 1 file in context and 1 unnamed code block,
+        # assume the code block is for that file (common when agents skip the file: prefix)
+        if not changes:
+            unnamed_blocks = re.findall(
+                r'```(?:python|javascript|typescript|go|rust|java|ruby|php|swift|kotlin|cpp|c)?\s*\n(.*?)```',
+                response, re.DOTALL,
+            )
+            # Only use this if there's exactly 1 substantial block
+            substantial = [b for b in unnamed_blocks if len(b.strip()) > 20]
+            if len(substantial) == 1:
+                # Try to find the target file from context references in the response
+                file_refs = re.findall(
+                    r'(?:modify|update|change|edit|in|for)\s+[`"\']?([^\s`"\']+\.(?:py|js|ts|tsx|go|rs|java|rb))[`"\']?',
+                    response, re.IGNORECASE,
+                )
+                if file_refs:
+                    target = file_refs[0]
+                    logger.info(f"Strategy 6: inferred single-file write to {target}")
+                    changes.append({"action": "write", "path": target, "content": substantial[0]})
+
         # Clean all parsed content (strip line number prefixes, trailing whitespace)
         for change in changes:
             if change.get("content"):
@@ -1178,17 +1256,22 @@ Provide:
                 edit_block, re.DOTALL,
             )
 
+        # Clean up leaked markers from content
+        marker_re = re.compile(r'^\s*(?:<<<\s*(?:old|end|NEW)|>>>\s*(?:new|end|OLD))\s*$', re.MULTILINE)
+
         for old_text, new_text in pairs:
-            # Strip exactly one leading/trailing newline (preserve internal whitespace)
-            old_clean = old_text.strip("\n")
-            new_clean = new_text.strip("\n")
-            if old_clean:  # Don't add empty edits
-                edits.append({
-                    "action": "edit",
-                    "path": filepath,
-                    "old": old_clean,
-                    "new": new_clean,
-                })
+            # Strip leading/trailing newlines and leaked markers
+            old_clean = marker_re.sub('', old_text).strip("\n")
+            new_clean = marker_re.sub('', new_text).strip("\n")
+            # Skip if old_text is empty or is just a marker itself
+            if not old_clean or old_clean.strip() in ('<<<end', '>>>end', '<<<old', '>>>new'):
+                continue
+            edits.append({
+                "action": "edit",
+                "path": filepath,
+                "old": old_clean,
+                "new": new_clean,
+            })
 
         return edits
 
@@ -1252,8 +1335,14 @@ Provide:
                 if change["action"] == "write":
                     existed = Path(abs_path).exists()
                     clean_content = self._clean_code_content(change["content"])
+                    # In-memory syntax check BEFORE writing to disk
+                    mem_err = self._validate_syntax_in_memory(clean_content, filepath)
+                    if mem_err:
+                        self._apply_errors.append(f"{mem_err} (file NOT written — fix syntax first)")
+                        logger.warning(f"Blocked write to {filepath}: {mem_err}")
+                        continue
                     self.tools.write_file(abs_path, clean_content)
-                    # Post-write validation for Python files
+                    # Post-write validation as backup
                     compile_err = self._validate_python_syntax(abs_path, filepath)
                     if compile_err:
                         self._apply_errors.append(compile_err)
@@ -1268,9 +1357,16 @@ Provide:
                     result = self._apply_edit(abs_path, filepath, change["old"], change["new"])
                     if result:
                         # Post-edit validation for Python files
-                        compile_err = self._validate_python_syntax(abs_path, filepath)
-                        if compile_err:
-                            self._apply_errors.append(compile_err)
+                        if filepath.endswith(".py") and Path(abs_path).exists():
+                            edited_content = Path(abs_path).read_text(errors="replace")
+                            mem_err = self._validate_syntax_in_memory(edited_content, filepath)
+                            if mem_err:
+                                # Restore from backup and report error
+                                if filepath in self._backups:
+                                    Path(abs_path).write_text(self._backups[filepath])
+                                    logger.warning(f"Rolled back edit to {filepath}: {mem_err}")
+                                self._apply_errors.append(f"{mem_err} (edit rolled back — fix syntax)")
+                                continue
                         applied.append(result)
 
             except Exception as e:
@@ -1309,7 +1405,8 @@ Provide:
             return self._make_file_change(filepath, old_text, new_text)
 
         # Strategy 3: Line-number-stripped match (AI sometimes copies line numbers from context)
-        stripped_old = re.sub(r'^\s*\d+\|\s?', '', old_text, flags=re.MULTILINE)
+        # Handles: "  1| code", "108| code", "1→ code", " 42|  code"
+        stripped_old = re.sub(r'^\s*\d+[|→]\s?', '', old_text, flags=re.MULTILINE)
         if stripped_old != old_text and stripped_old in content:
             new_content = content.replace(stripped_old, new_text, 1)
             self.tools.write_file(abs_path, new_content)
@@ -1338,6 +1435,7 @@ Provide:
         msg = f"Edit failed for {filepath}: old_text not found. Tried: {old_preview}"
         if closest:
             msg += f"\nClosest match in file (similarity {closest[1]:.0%}): {repr(closest[0][:120])}"
+        msg += f"\nTIP: Use ```file:{filepath}``` with the COMPLETE updated file content instead of edit blocks."
         self._apply_errors.append(msg)
         return None
 

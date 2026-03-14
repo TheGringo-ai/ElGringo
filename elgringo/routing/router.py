@@ -104,6 +104,59 @@ PERSONA_PROMPTS: Dict[str, Dict[str, str]] = {
     },
 }
 
+# Business task persona prompts
+PERSONA_PROMPTS.update({
+    "strategy": {
+        "low": "Give a clear, actionable business recommendation.",
+        "medium": (
+            "Analyze the market opportunity. Consider competitors, timing, differentiation, "
+            "and unit economics. Be specific about revenue model and growth levers."
+        ),
+        "high": (
+            "You are a seasoned business strategist. Evaluate market size (TAM/SAM/SOM), "
+            "competitive moats, unit economics, go-to-market strategy, and risks. "
+            "Include specific numbers, timelines, and scenario analysis."
+        ),
+    },
+    "marketing": {
+        "low": "Suggest a focused marketing approach with clear next steps.",
+        "medium": (
+            "Design a marketing strategy with target audience, channels, messaging, "
+            "content plan, and KPIs. Consider CAC and conversion funnels."
+        ),
+        "high": (
+            "You are a growth marketing expert. Build a comprehensive go-to-market plan: "
+            "audience segmentation, channel strategy with budget allocation, content calendar, "
+            "funnel optimization, A/B test plan, and metrics dashboard. Be data-driven."
+        ),
+    },
+    "product": {
+        "low": "Define the core feature set and success metrics.",
+        "medium": (
+            "Write a product spec with prioritized features, user stories, acceptance criteria, "
+            "tech stack recommendation, and MVP timeline."
+        ),
+        "high": (
+            "You are a senior Product Manager. Create a comprehensive PRD: problem statement, "
+            "user personas, prioritized feature matrix (impact vs effort), detailed user stories, "
+            "success metrics, risk assessment, and phased delivery plan."
+        ),
+    },
+    "pitch": {
+        "low": "Create a clear, compelling one-paragraph pitch.",
+        "medium": (
+            "Build a structured pitch: problem, solution, market size, business model, "
+            "competitive advantage, traction, and ask. Make it investor-ready."
+        ),
+        "high": (
+            "You are a startup pitch expert who has helped raise $100M+. Craft a compelling "
+            "narrative: hook, problem (with data), solution, market size (TAM/SAM/SOM), "
+            "business model, competitive moat, traction/milestones, team, financial projections, "
+            "and specific ask. Tailor for the audience."
+        ),
+    },
+})
+
 # Agents that cost $0 to run (local inference)
 FREE_AGENTS = {"qwen-coder", "qwen-general", "ollama-local", "local-llama3", "local-qwen-coder-7b"}
 
@@ -121,6 +174,10 @@ class TaskType(Enum):
     TESTING = "testing"
     SECURITY = "security"
     UI_UX = "ui_ux"
+    STRATEGY = "strategy"
+    MARKETING = "marketing"
+    PRODUCT = "product"
+    PITCH = "pitch"
 
 
 @dataclass
@@ -254,6 +311,52 @@ class TaskRouter:
                 ],
                 "weight": 0.9,
             },
+            TaskType.STRATEGY: {
+                "keywords": ["strategy", "roadmap", "business model", "revenue", "pricing",
+                            "monetize", "competitive", "market analysis", "go-to-market",
+                            "unit economics", "moat", "swot", "growth strategy"],
+                "patterns": [
+                    r"\b(business\s+)?(strategy|model|plan)\b",
+                    r"\b(revenue|monetiz|pricing)\b",
+                    r"\bgo.to.market\b",
+                    r"\bcompetitive\s+(analysis|advantage|landscape)\b",
+                ],
+                "weight": 1.1,
+            },
+            TaskType.MARKETING: {
+                "keywords": ["marketing", "campaign", "content strategy", "social media", "seo",
+                            "growth", "audience", "brand", "launch plan", "funnel", "acquisition",
+                            "retention", "cac", "ltv", "conversion"],
+                "patterns": [
+                    r"\b(marketing|campaign|content\s+strategy)\b",
+                    r"\b(social\s+media|seo|growth\s+hack)\b",
+                    r"\b(acquisition|retention|funnel|conversion)\b",
+                ],
+                "weight": 1.0,
+            },
+            TaskType.PRODUCT: {
+                "keywords": ["product", "feature", "user story", "requirements", "spec", "mvp",
+                            "prototype", "backlog", "prd", "acceptance criteria", "sprint",
+                            "prioritize", "product-market fit"],
+                "patterns": [
+                    r"\b(mvp|prd|product\s+spec)\b",
+                    r"\b(user\s+stor|acceptance\s+criteria)\b",
+                    r"\bproduct.market\s+fit\b",
+                    r"\b(feature|backlog)\s+(priorit|list)\b",
+                ],
+                "weight": 1.1,
+            },
+            TaskType.PITCH: {
+                "keywords": ["pitch", "investor", "deck", "elevator pitch", "value proposition",
+                            "fundraise", "demo day", "startup", "traction", "tam", "sam", "som"],
+                "patterns": [
+                    r"\b(pitch|investor|fundrais)\b",
+                    r"\b(elevator\s+pitch|pitch\s+deck)\b",
+                    r"\bvalue\s+prop\b",
+                    r"\b(tam|sam|som)\b",
+                ],
+                "weight": 1.2,
+            },
         }
 
     def _build_agent_strengths(self) -> Dict[str, Dict]:
@@ -271,11 +374,11 @@ class TaskRouter:
                 "capabilities": ["analysis", "reasoning", "planning", "architecture"],
                 "performance_weight": 1.0,
             },
-            "gemini-creative": {
+            "gemini-coder": {
                 "model_type": ModelType.GEMINI,
-                "strengths": [TaskType.CREATIVE, TaskType.UI_UX, TaskType.DOCUMENTATION],
-                "capabilities": ["creativity", "design", "innovation", "ui-ux"],
-                "performance_weight": 1.0,
+                "strengths": [TaskType.CODING, TaskType.DEBUGGING, TaskType.ANALYSIS, TaskType.CREATIVE, TaskType.ARCHITECTURE, TaskType.TESTING],
+                "capabilities": ["coding", "debugging", "analysis", "creativity", "design", "architecture", "testing"],
+                "performance_weight": 1.35,
             },
             "grok-reasoner": {
                 "model_type": ModelType.GROK,
@@ -330,14 +433,15 @@ class TaskRouter:
             # Qwen Local Agents (Apple Silicon MLX - zero cost, fast)
             "qwen-coder": {
                 "model_type": ModelType.LOCAL,
-                "strengths": [TaskType.CODING, TaskType.DEBUGGING, TaskType.OPTIMIZATION, TaskType.TESTING],
+                "strengths": [TaskType.CODING, TaskType.DEBUGGING, TaskType.OPTIMIZATION, TaskType.TESTING, TaskType.PRODUCT],
                 "capabilities": ["coding", "debugging", "refactoring", "architecture", "zero-cost", "offline"],
                 "performance_weight": 1.3,
             },
             "qwen-general": {
                 "model_type": ModelType.LOCAL,
-                "strengths": [TaskType.ANALYSIS, TaskType.DOCUMENTATION, TaskType.RESEARCH, TaskType.CREATIVE],
-                "capabilities": ["general", "reasoning", "writing", "analysis", "zero-cost", "offline"],
+                "strengths": [TaskType.ANALYSIS, TaskType.DOCUMENTATION, TaskType.RESEARCH, TaskType.CREATIVE,
+                              TaskType.STRATEGY, TaskType.MARKETING, TaskType.PRODUCT, TaskType.PITCH],
+                "capabilities": ["general", "reasoning", "writing", "analysis", "strategy", "business", "zero-cost", "offline"],
                 "performance_weight": 1.1,
             },
         }
@@ -382,8 +486,8 @@ class TaskRouter:
         # Determine complexity
         complexity = self._assess_complexity(text)
 
-        # Cost-aware agent selection
-        use_free = prefer_free if prefer_free is not None else (complexity == "low")
+        # Cost-aware agent selection — local-first: use free for low+medium, cloud only for high
+        use_free = prefer_free if prefer_free is not None else (complexity in ("low", "medium"))
         recommended_agents = self._recommend_agents(
             primary_type, secondary_types, prefer_free=use_free,
         )
@@ -536,6 +640,15 @@ class TaskRouter:
 
     def _recommend_mode(self, primary_type: TaskType, complexity: str) -> str:
         """Recommend collaboration mode based on task type and complexity."""
+        # Business tasks: use swarm (same local model, multiple personas)
+        business_types = {TaskType.STRATEGY, TaskType.MARKETING, TaskType.PRODUCT, TaskType.PITCH}
+        if primary_type in business_types:
+            if complexity == "high":
+                return "swarm"  # Full team of personas on local model
+            if complexity == "medium":
+                return "swarm"  # Multiple perspectives even for medium
+            return "turbo"  # Low complexity: single agent is enough
+
         # High complexity: real multi-agent collaboration
         if complexity == "high":
             if primary_type == TaskType.ARCHITECTURE:

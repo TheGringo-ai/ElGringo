@@ -693,6 +693,11 @@ class AIDevTeam:
                     f"{mode} mode: {len(engine.rounds)} rounds, "
                     f"final consensus: {engine.rounds[-1].consensus_level:.2f}" if engine.rounds else f"{mode} mode completed"
                 )
+            elif mode == "swarm":
+                agent_responses = await self._swarm_collaboration(
+                    active_agents, enhanced_prompt, context, collaboration_log,
+                    task_type=classification.primary_type.value if classification else "strategy"
+                )
             else:
                 # Default to parallel
                 agent_responses = await self._parallel_collaboration(
@@ -780,6 +785,86 @@ class AIDevTeam:
                 confidence_score=0.0,
                 participating_agents=[a.name for a in active_agents],
             )
+
+    # ── Swarm role mappings ─────────────────────────────────────────
+    _SWARM_ROLES = {
+        "strategy": ["growth_strategist", "product_manager", "qa_analyst"],
+        "marketing": ["growth_strategist", "content_creator", "email_marketer", "qa_analyst"],
+        "product": ["product_manager", "dev_lead", "qa_analyst"],
+        "pitch": ["pitch_writer", "growth_strategist", "product_manager", "qa_analyst"],
+        "coding": ["dev_lead", "safety_reviewer"],
+        "analysis": ["product_manager", "qa_analyst"],
+    }
+
+    async def _swarm_collaboration(
+        self,
+        agents: List[AIAgent],
+        prompt: str,
+        context: str,
+        log: List[str],
+        task_type: str = "strategy",
+    ) -> List[AgentResponse]:
+        """
+        Swarm mode: one local model plays multiple business roles simultaneously.
+
+        Runs N parallel calls to the same model, each with a different persona
+        system prompt. This gives multiple expert perspectives at zero cost.
+        """
+        from .workflow.personas import PersonaLibrary
+
+        # Pick the best local agent (prefer qwen-general for business, qwen-coder for product)
+        local_agents = [a for a in agents if "qwen" in a.name.lower() or "local" in a.name.lower() or "mlx" in a.name.lower()]
+        swarm_agent = local_agents[0] if local_agents else agents[0]
+
+        # Get role names for this task type
+        role_names = self._SWARM_ROLES.get(task_type, ["product_manager", "growth_strategist", "qa_analyst"])
+
+        # Load persona prompts
+        persona_lib = PersonaLibrary()
+        roles = []
+        for role_name in role_names:
+            persona = persona_lib.get_persona(role_name)
+            if persona:
+                roles.append((role_name, persona.system_prompt))
+            else:
+                roles.append((role_name, f"You are a {role_name.replace('_', ' ')}. Provide expert analysis."))
+
+        log.append(f"Swarm mode: {len(roles)} roles ({', '.join(r[0] for r in roles)}) on {swarm_agent.name}")
+
+        # Run all roles in parallel on the same model
+        async def _swarm_call(role_name: str, role_prompt: str):
+            persona_enhanced = (
+                f"[ROLE: {role_name.replace('_', ' ').title()}]\n"
+                f"{role_prompt}\n\n"
+                f"Respond from your role's perspective. Be specific and actionable.\n\n"
+                f"{prompt}"
+            )
+            try:
+                resp = await swarm_agent.generate_response(persona_enhanced, context)
+                # Tag the response with the role name
+                resp.agent_name = f"{swarm_agent.name}:{role_name}"
+                resp.metadata = resp.metadata or {}
+                resp.metadata["swarm_role"] = role_name
+                resp.metadata["swarm_agent"] = swarm_agent.name
+                return resp
+            except Exception as e:
+                from .agents.base import AgentResponse, ModelType
+                return AgentResponse(
+                    agent_name=f"{swarm_agent.name}:{role_name}",
+                    model_type=swarm_agent.config.model_type,
+                    content="",
+                    confidence=0.0,
+                    response_time=0.0,
+                    error=str(e),
+                )
+
+        tasks = [_swarm_call(name, prompt_text) for name, prompt_text in roles]
+        responses = await asyncio.gather(*tasks)
+
+        successful = [r for r in responses if r.success]
+        log.append(f"Swarm complete: {len(successful)}/{len(roles)} roles succeeded")
+
+        return list(responses)
 
     async def _parallel_collaboration(
         self,

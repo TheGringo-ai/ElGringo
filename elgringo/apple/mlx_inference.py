@@ -15,6 +15,7 @@ Features:
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,6 +32,9 @@ class MLXConfig:
     top_p: float = 0.95
     repetition_penalty: float = 1.1
     max_cached_models: int = 2  # Keep up to 2 models in memory (18GB M3 Pro)
+    memory_limit_mb: int = 10_000  # Max Metal memory before refusing new loads (10GB)
+    memory_warning_mb: int = 8_000  # Warn and clear cache at this threshold
+    min_free_system_mb: int = 2_000  # Keep at least 2GB free for system/Python
 
 
 @dataclass
@@ -123,17 +127,126 @@ class MLXInference:
             active = mx.get_active_memory() / (1024 ** 2)
             peak = mx.get_peak_memory() / (1024 ** 2)
             cache = mx.get_cache_memory() / (1024 ** 2)
+            system_free = self._get_system_free_memory_mb()
 
             return {
                 "active_mb": round(active, 2),
                 "peak_mb": round(peak, 2),
                 "cache_mb": round(cache, 2),
+                "system_free_mb": system_free,
                 "loaded_models": self.loaded_models,
+                "memory_pressure": self._get_memory_pressure(active),
                 "available": True,
             }
         except Exception as e:
             logger.debug(f"Could not get memory info: {e}")
             return {"available": False, "error": str(e)}
+
+    def _get_system_free_memory_mb(self) -> int:
+        """Get free system memory in MB using vm_stat on macOS."""
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["vm_stat"], capture_output=True, text=True, timeout=2,
+            )
+            page_size = 16384  # Default Apple Silicon page size
+            free_pages = 0
+            for line in result.stdout.splitlines():
+                if "page size" in line.lower():
+                    page_size = int(''.join(c for c in line if c.isdigit()))
+                elif "Pages free" in line:
+                    free_pages += int(line.split(":")[1].strip().rstrip("."))
+                elif "Pages inactive" in line:
+                    free_pages += int(line.split(":")[1].strip().rstrip("."))
+            return int(free_pages * page_size / (1024 * 1024))
+        except Exception:
+            return 99999  # Assume plenty if we can't check
+
+    def _get_memory_pressure(self, active_mb: float) -> str:
+        """Classify memory pressure: low/medium/high/critical."""
+        if active_mb > self.config.memory_limit_mb:
+            return "critical"
+        elif active_mb > self.config.memory_warning_mb:
+            return "high"
+        elif active_mb > self.config.memory_warning_mb * 0.6:
+            return "medium"
+        return "low"
+
+    def _check_memory_safe(self, model_name: str) -> Tuple[bool, str]:
+        """Check if it's safe to load a model. Returns (safe, reason)."""
+        if not self._mlx_available:
+            return False, "MLX not available"
+
+        try:
+            import mlx.core as mx
+            active_mb = mx.get_active_memory() / (1024 ** 2)
+            cache_mb = mx.get_cache_memory() / (1024 ** 2)
+
+            # Check Metal memory
+            if active_mb > self.config.memory_limit_mb:
+                return False, (
+                    f"Metal memory too high ({active_mb:.0f}MB/{self.config.memory_limit_mb}MB). "
+                    f"Loaded: {self.loaded_models}"
+                )
+
+            # Check system memory
+            sys_free = self._get_system_free_memory_mb()
+            if sys_free < self.config.min_free_system_mb:
+                return False, (
+                    f"System memory too low ({sys_free}MB free, need {self.config.min_free_system_mb}MB). "
+                    f"Loaded: {self.loaded_models}"
+                )
+
+            # Estimate model size from AVAILABLE_MODELS
+            model_size_mb = 0
+            if model_name in AVAILABLE_MODELS:
+                size_str = AVAILABLE_MODELS[model_name]["size"]
+                model_size_mb = float(size_str.replace("GB", "")) * 1024
+
+            # Check if loading this model would exceed the limit
+            projected = active_mb + model_size_mb
+            if projected > self.config.memory_limit_mb:
+                # Try clearing cache first
+                if cache_mb > 200:
+                    mx.metal.clear_cache()
+                    active_mb = mx.get_active_memory() / (1024 ** 2)
+                    projected = active_mb + model_size_mb
+                    logger.info(f"Cleared {cache_mb:.0f}MB cache, active now {active_mb:.0f}MB")
+
+                if projected > self.config.memory_limit_mb:
+                    return False, (
+                        f"Loading {model_name} (~{model_size_mb:.0f}MB) would exceed limit "
+                        f"({active_mb:.0f}MB + {model_size_mb:.0f}MB > {self.config.memory_limit_mb}MB)"
+                    )
+
+            return True, "ok"
+
+        except Exception as e:
+            logger.warning(f"Memory check failed: {e} — allowing load")
+            return True, "check_failed"
+
+    def _auto_free_memory(self):
+        """Proactively free memory when pressure is high."""
+        if not self._mlx_available:
+            return
+
+        try:
+            import mlx.core as mx
+            active_mb = mx.get_active_memory() / (1024 ** 2)
+
+            if active_mb > self.config.memory_warning_mb:
+                logger.warning(f"Memory pressure high ({active_mb:.0f}MB) — clearing cache")
+                mx.metal.clear_cache()
+
+                # If still high after cache clear, evict least-used model
+                active_mb = mx.get_active_memory() / (1024 ** 2)
+                if active_mb > self.config.memory_warning_mb and self._load_order:
+                    oldest = self._load_order[0]
+                    logger.warning(f"Still high ({active_mb:.0f}MB) — evicting {oldest}")
+                    self.unload_model(oldest)
+
+        except Exception as e:
+            logger.debug(f"Auto-free failed: {e}")
 
     def _evict_if_needed(self):
         """Evict the least recently used model if we're at capacity."""
@@ -146,8 +259,9 @@ class MLXInference:
 
     async def load_model(self, model_name: str) -> bool:
         """
-        Load an MLX model. Keeps it cached for reuse.
-        Evicts LRU model if at capacity.
+        Load an MLX model with memory safety checks.
+        Checks system + Metal memory before loading.
+        Evicts LRU model if at capacity. Auto-clears cache under pressure.
         """
         if not self._mlx_available:
             logger.error("MLX not available on this system")
@@ -160,21 +274,68 @@ class MLXInference:
             self._load_order.append(model_name)
             return True
 
+        # Memory safety check BEFORE loading
+        safe, reason = self._check_memory_safe(model_name)
+        if not safe:
+            logger.error(f"Cannot load {model_name}: {reason}")
+            # Try evicting a model and check again
+            if self._load_order:
+                oldest = self._load_order[0]
+                logger.warning(f"Evicting {oldest} to make room for {model_name}")
+                self.unload_model(oldest)
+                safe, reason = self._check_memory_safe(model_name)
+                if not safe:
+                    logger.error(f"Still cannot load after eviction: {reason}")
+                    return False
+
         try:
             from mlx_lm import load
 
             self._evict_if_needed()
 
-            logger.info(f"Loading MLX model: {model_name}")
+            mem_before = self.get_memory_info()
+            logger.info(f"Loading MLX model: {model_name} (Metal: {mem_before.get('active_mb', '?')}MB)")
             model, tokenizer = load(model_name)
             self._models[model_name] = (model, tokenizer)
             self._load_order.append(model_name)
-            logger.info(f"Loaded {model_name} ({len(self._models)} models cached)")
+
+            mem_after = self.get_memory_info()
+            delta = mem_after.get("active_mb", 0) - mem_before.get("active_mb", 0)
+            logger.info(
+                f"Loaded {model_name} (+{delta:.0f}MB, total {mem_after.get('active_mb', '?')}MB, "
+                f"{len(self._models)} models cached, pressure: {mem_after.get('memory_pressure', '?')})"
+            )
             return True
 
+        except RuntimeError as e:
+            if "Insufficient Memory" in str(e) or "kIOGPU" in str(e):
+                logger.error(f"Metal OOM loading {model_name} — clearing all and retrying")
+                self._emergency_cleanup()
+                return False
+            logger.error(f"Failed to load model {model_name}: {e}")
+            return False
         except Exception as e:
             logger.error(f"Failed to load model {model_name}: {e}")
             return False
+
+    def _emergency_cleanup(self):
+        """Last-resort cleanup: unload all models, clear all caches."""
+        logger.warning("Emergency cleanup — unloading all models")
+        model_names = list(self._models.keys())
+        for name in model_names:
+            try:
+                del self._models[name]
+            except Exception:
+                pass
+        self._models.clear()
+        self._load_order.clear()
+        self.clear_cache()
+        try:
+            import gc
+            gc.collect()
+        except Exception:
+            pass
+        logger.info("Emergency cleanup complete")
 
     def _get_model(self, model_name: str) -> Tuple[Any, Any]:
         """Get a loaded model and tokenizer by name."""
@@ -209,6 +370,9 @@ class MLXInference:
             model_name = self._load_order[-1]
 
         model, tokenizer = self._get_model(model_name)
+
+        # Pre-generation memory check — free cache if pressure is high
+        self._auto_free_memory()
 
         start_time = time.time()
         max_tokens = max_tokens or self.config.max_tokens
@@ -264,6 +428,16 @@ class MLXInference:
                 memory_used_mb=memory_info.get("active_mb", 0),
             )
 
+        except RuntimeError as e:
+            if "Insufficient Memory" in str(e) or "kIOGPU" in str(e):
+                logger.error(f"Metal OOM during generation ({model_name}): {e}")
+                self._emergency_cleanup()
+                raise RuntimeError(
+                    f"Metal out of memory during generation. Models unloaded. "
+                    f"Retry with a smaller max_tokens or fewer loaded models."
+                ) from e
+            logger.error(f"Generation error ({model_name}): {e}")
+            raise
         except Exception as e:
             logger.error(f"Generation error ({model_name}): {e}")
             raise

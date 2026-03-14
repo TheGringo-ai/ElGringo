@@ -23,10 +23,10 @@ class GeminiAgent(AIAgent):
     def __init__(self, config: Optional[AgentConfig] = None):
         if config is None:
             config = AgentConfig(
-                name="gemini-creative",
+                name="gemini-coder",
                 model_type=ModelType.GEMINI,
-                role="Creative Director & Innovator",
-                capabilities=["creativity", "design", "innovation", "ui-ux", "brainstorming"],
+                role="Full-Stack Developer & Architect",
+                capabilities=["coding", "debugging", "analysis", "creativity", "design", "architecture"],
                 model_name=self.DEFAULT_MODEL,
             )
         super().__init__(config)

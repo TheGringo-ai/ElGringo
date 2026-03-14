@@ -64,9 +64,11 @@ app.add_middleware(
 # ── Usage Analytics ──────────────────────────────────────────────────
 from elgringo.server.analytics import UsageAnalyticsMiddleware, get_analytics_store
 from elgringo.server.analytics_api import analytics_router
+from products.fred_api.benchmark_endpoints import router as benchmark_router
 
 app.add_middleware(UsageAnalyticsMiddleware, store=get_analytics_store())
 app.include_router(analytics_router)
+app.include_router(benchmark_router)
 
 # ── Auth ─────────────────────────────────────────────────────────────
 
@@ -206,7 +208,6 @@ class FeedbackResponse(BaseModel):
     new_confidence: float
 
 
-# ── Endpoints ────────────────────────────────────────────────────────
 
 @app.get("/v1/health", response_model=HealthResponse)
 async def health():

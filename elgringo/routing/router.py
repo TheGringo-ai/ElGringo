@@ -1,10 +1,21 @@
 """
 Task Router - Intelligent task classification and agent selection
+================================================================
+
+Smart routing engine that replaces manual team selection.
+Automatically picks the right agents, mode, and persona for every task.
+
+Signals used:
+  1. Keyword + regex pattern matching → task type
+  2. Multi-signal complexity assessment → low/medium/high
+  3. Cost-aware agent ranking → prefer free agents for simple tasks
+  4. Feedback-informed weights → learn from past outcomes
+  5. Dynamic persona injection → shape agent behavior per-request
 """
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -12,6 +23,89 @@ from ..agents import ModelType
 from .performance_tracker import get_performance_tracker
 
 logger = logging.getLogger(__name__)
+
+
+# ── Dynamic Persona Prompts ─────────────────────────────────────────
+# Injected into agent system prompts based on task type + complexity.
+# Replaces the old "teams" feature — router shapes behavior automatically.
+
+PERSONA_PROMPTS: Dict[str, Dict[str, str]] = {
+    "security": {
+        "low": "Check for common security issues. Flag anything obvious.",
+        "medium": (
+            "Think like a penetration tester. Check for OWASP Top 10 vulnerabilities, "
+            "injection attacks, auth bypasses, and data exposure. Be thorough."
+        ),
+        "high": (
+            "You are a senior security auditor. Systematically evaluate: authentication, "
+            "authorization, input validation, cryptography, session management, error handling, "
+            "and compliance. Challenge every assumption. Assume the attacker is sophisticated."
+        ),
+    },
+    "architecture": {
+        "low": "Suggest a clean, simple design. Don't over-engineer.",
+        "medium": (
+            "Evaluate trade-offs between approaches. Consider scalability, maintainability, "
+            "and operational complexity. Justify your recommendations."
+        ),
+        "high": (
+            "You are a principal architect. Challenge assumptions. Consider failure modes, "
+            "scaling bottlenecks, data consistency, deployment complexity, and migration paths. "
+            "Present multiple options with explicit trade-offs. Think 2 years ahead."
+        ),
+    },
+    "debugging": {
+        "low": "Find the bug and suggest a fix. Keep it simple.",
+        "medium": (
+            "Systematically analyze the issue. Consider: race conditions, state corruption, "
+            "edge cases, environment differences. Trace the root cause, don't just fix symptoms."
+        ),
+        "high": (
+            "Deep investigation mode. Consider: concurrency issues, memory leaks, cascading "
+            "failures, environment-specific behavior, and interaction effects between components. "
+            "Provide a root cause analysis with evidence."
+        ),
+    },
+    "coding": {
+        "low": "Write clean, working code. Keep it simple.",
+        "medium": (
+            "Write production-quality code. Handle edge cases, add input validation where needed, "
+            "and follow the project's existing patterns. No over-engineering."
+        ),
+        "high": (
+            "Write battle-tested code. Consider: error handling, performance implications, "
+            "backward compatibility, testability, and operational concerns. "
+            "The code should be ready for production traffic."
+        ),
+    },
+    "creative": {
+        "low": "Be creative but practical. One good idea is better than ten mediocre ones.",
+        "medium": (
+            "Explore multiple creative directions. Consider user experience, visual hierarchy, "
+            "accessibility, and modern design patterns. Be bold but grounded."
+        ),
+        "high": (
+            "Push creative boundaries. Think about brand differentiation, emotional impact, "
+            "micro-interactions, and delight. Reference best-in-class examples. "
+            "Balance innovation with usability."
+        ),
+    },
+    "testing": {
+        "low": "Write clear, focused tests for the happy path and one edge case.",
+        "medium": (
+            "Write comprehensive tests. Cover: happy path, edge cases, error conditions, "
+            "boundary values. Use descriptive test names that document behavior."
+        ),
+        "high": (
+            "Design a thorough test strategy. Cover: unit, integration, and contract tests. "
+            "Consider: race conditions, resource cleanup, flaky test prevention, "
+            "and test isolation. Tests should catch regressions, not just verify current behavior."
+        ),
+    },
+}
+
+# Agents that cost $0 to run (local inference)
+FREE_AGENTS = {"qwen-coder", "qwen-general", "ollama-local", "local-llama3", "local-qwen-coder-7b"}
 
 
 class TaskType(Enum):
@@ -38,6 +132,8 @@ class TaskClassification:
     complexity: str  # "low", "medium", "high"
     recommended_agents: List[str]
     recommended_mode: str  # "parallel", "sequential", "consensus"
+    persona_prompt: str = ""  # Injected into agent system prompts
+    cost_tier: str = "standard"  # "free", "standard", "premium"
 
 
 class TaskRouter:
@@ -250,16 +346,18 @@ class TaskRouter:
         self,
         prompt: str,
         context: str = "",
+        prefer_free: Optional[bool] = None,
     ) -> TaskClassification:
         """
-        Classify a task and recommend agents.
+        Classify a task and recommend agents, mode, and persona.
 
         Args:
             prompt: The task prompt
             context: Additional context
+            prefer_free: Force free agent preference (None = auto based on complexity)
 
         Returns:
-            TaskClassification with recommendations
+            TaskClassification with full routing decision
         """
         text = f"{prompt} {context}".lower()
 
@@ -284,11 +382,20 @@ class TaskRouter:
         # Determine complexity
         complexity = self._assess_complexity(text)
 
-        # Recommend agents
-        recommended_agents = self._recommend_agents(primary_type, secondary_types)
+        # Cost-aware agent selection
+        use_free = prefer_free if prefer_free is not None else (complexity == "low")
+        recommended_agents = self._recommend_agents(
+            primary_type, secondary_types, prefer_free=use_free,
+        )
 
         # Recommend collaboration mode
         recommended_mode = self._recommend_mode(primary_type, complexity)
+
+        # Dynamic persona injection
+        persona_prompt = self._get_persona_prompt(primary_type, complexity)
+
+        # Cost tier
+        cost_tier = "free" if use_free else ("premium" if complexity == "high" else "standard")
 
         return TaskClassification(
             primary_type=primary_type,
@@ -297,6 +404,8 @@ class TaskRouter:
             complexity=complexity,
             recommended_agents=recommended_agents,
             recommended_mode=recommended_mode,
+            persona_prompt=persona_prompt,
+            cost_tier=cost_tier,
         )
 
     def _calculate_score(self, text: str, config: Dict) -> float:
@@ -321,18 +430,37 @@ class TaskRouter:
         return max(score, 0.0)
 
     def _assess_complexity(self, text: str) -> str:
-        """Assess task complexity"""
-        high_indicators = ["complex", "advanced", "comprehensive", "full system", "entire", "sophisticated"]
+        """Assess task complexity using multiple signals."""
+        high_indicators = [
+            "complex", "advanced", "comprehensive", "full system", "entire",
+            "sophisticated", "trade-off", "trade off", "scaling", "concurrent",
+            "distributed", "microservice", "failure mode", "high availability",
+            "fault toleran", "load balanc", "delivery guarantee", "consistency",
+            "architecture design", "system design", "real-time", "realtime",
+        ]
         low_indicators = ["simple", "basic", "quick", "small", "minor", "easy"]
 
-        if any(ind in text for ind in high_indicators):
+        # Count high-complexity signals (multiple signals = definitely high)
+        high_count = sum(1 for ind in high_indicators if ind in text)
+        if high_count >= 2:
             return "high"
+
         if any(ind in text for ind in low_indicators):
             return "low"
+
+        if high_count == 1:
+            return "high"
+
+        # Multiple requirements (commas, "and", bullet points) suggest complexity
+        comma_count = text.count(",")
+        and_count = len(re.findall(r"\band\b", text))
+        requirement_signals = comma_count + and_count
 
         # Word count as secondary indicator
         word_count = len(text.split())
         if word_count > 50:
+            return "high"
+        if word_count > 30 and requirement_signals >= 4:
             return "high"
         if word_count < 15:
             return "low"
@@ -343,9 +471,11 @@ class TaskRouter:
         self,
         primary_type: TaskType,
         secondary_types: List[TaskType],
+        prefer_free: bool = False,
     ) -> List[str]:
-        """Recommend agents for the task"""
+        """Recommend agents for the task with cost-aware + feedback-informed ranking."""
         scored_agents = []
+        feedback_adjustments = self._get_feedback_adjustments()
 
         for agent_name, config in self.agent_strengths.items():
             score = 0.0
@@ -362,6 +492,17 @@ class TaskRouter:
             # Apply performance weight
             score *= config["performance_weight"]
 
+            # Feedback-informed adjustment: boost/penalize based on learned outcomes
+            task_type_str = primary_type.value
+            adjustment = feedback_adjustments.get(agent_name, {}).get(task_type_str, 0.0)
+            score += adjustment
+
+            # Cost-aware: boost free agents when prefer_free is set
+            if prefer_free and agent_name in FREE_AGENTS:
+                score += 0.3  # Significant boost for free agents on simple tasks
+            elif not prefer_free and agent_name in FREE_AGENTS:
+                score -= 0.1  # Slight penalty for complex tasks (prefer cloud quality)
+
             if score > 0:
                 scored_agents.append((agent_name, score))
 
@@ -371,22 +512,48 @@ class TaskRouter:
         # Return top agents
         return [name for name, _ in scored_agents[:4]]
 
+    def _get_feedback_adjustments(self) -> Dict[str, Dict[str, float]]:
+        """Load expertise adjustments from the feedback loop if available."""
+        try:
+            from ..intelligence.feedback_loop import get_feedback_loop
+            loop = get_feedback_loop()
+            return dict(loop._expertise_adjustments)
+        except Exception:
+            return {}
+
+    def _get_persona_prompt(self, primary_type: TaskType, complexity: str) -> str:
+        """Get dynamic persona prompt based on task type and complexity."""
+        type_prompts = PERSONA_PROMPTS.get(primary_type.value, {})
+        if type_prompts:
+            return type_prompts.get(complexity, type_prompts.get("medium", ""))
+        # Fallback: generic complexity-based prompt
+        fallback = {
+            "low": "Keep it simple and direct.",
+            "medium": "Be thorough but practical.",
+            "high": "Be rigorous. Challenge assumptions. Consider edge cases and failure modes.",
+        }
+        return fallback.get(complexity, "")
+
     def _recommend_mode(self, primary_type: TaskType, complexity: str) -> str:
-        """Recommend collaboration mode"""
-        # High complexity = consensus
+        """Recommend collaboration mode based on task type and complexity."""
+        # High complexity: real multi-agent collaboration
         if complexity == "high":
-            return "consensus"
+            if primary_type == TaskType.ARCHITECTURE:
+                return "debate"  # Architecture benefits from opposing viewpoints
+            if primary_type == TaskType.SECURITY:
+                return "devils_advocate"  # Security needs adversarial thinking
+            return "peer_review"  # Default high-complexity: agents review each other
 
-        # Debugging and security = sequential (build on findings)
-        if primary_type in [TaskType.DEBUGGING, TaskType.SECURITY]:
-            return "sequential"
+        # Medium complexity: agents interact, not just answer independently
+        if complexity == "medium":
+            if primary_type in [TaskType.DEBUGGING, TaskType.SECURITY]:
+                return "sequential"  # Build on findings
+            if primary_type in [TaskType.CREATIVE, TaskType.RESEARCH]:
+                return "brainstorming"  # Diverse ideas with cross-pollination
+            return "parallel"  # Standard parallel with critique round
 
-        # Creative = parallel (diverse ideas)
+        # Low complexity: fast single-agent or simple parallel
         if primary_type in [TaskType.CREATIVE, TaskType.RESEARCH]:
-            return "parallel"
-
-        # Default based on complexity
-        if complexity == "low":
             return "parallel"
 
         return "parallel"

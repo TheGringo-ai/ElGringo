@@ -259,7 +259,7 @@ class TestTaskRouterScoring:
         assert router._assess_complexity(text) == "low"
 
     def test_recommend_mode_high_complexity(self, router):
-        assert router._recommend_mode(TaskType.CODING, "high") == "consensus"
+        assert router._recommend_mode(TaskType.CODING, "high") == "peer_review"
 
     def test_recommend_mode_debugging(self, router):
         assert router._recommend_mode(TaskType.DEBUGGING, "medium") == "sequential"
@@ -268,7 +268,7 @@ class TestTaskRouterScoring:
         assert router._recommend_mode(TaskType.SECURITY, "medium") == "sequential"
 
     def test_recommend_mode_creative(self, router):
-        assert router._recommend_mode(TaskType.CREATIVE, "medium") == "parallel"
+        assert router._recommend_mode(TaskType.CREATIVE, "medium") == "brainstorming"
 
     def test_recommend_mode_low_complexity(self, router):
         assert router._recommend_mode(TaskType.CODING, "low") == "parallel"

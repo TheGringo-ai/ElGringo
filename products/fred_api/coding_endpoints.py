@@ -39,6 +39,14 @@ MAX_TOTAL_CONTEXT_CHARS = 80_000
 ITERATION_TIMEOUT = 180  # seconds per iteration
 FUZZY_MATCH_THRESHOLD = 0.6  # difflib similarity threshold
 
+# Files that indicate execution context (where the app runs from)
+EXECUTION_CONTEXT_FILES = [
+    "*.service", "systemd/*.service",  # systemd unit files
+    "Dockerfile", "docker-compose.yml", "docker-compose.yaml",
+    "Makefile", "Procfile", "supervisord.conf",
+    ".github/workflows/*.yml", ".github/workflows/*.yaml",
+]
+
 
 # ── Models ───────────────────────────────────────────────────────────
 
@@ -108,12 +116,26 @@ class ProjectTools:
     """Sandboxed tools scoped to a single project directory."""
 
     CODE_EXTENSIONS = {
+        # Code
         ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".rs",
         ".rb", ".php", ".swift", ".kt", ".c", ".cpp", ".h", ".hpp",
-        ".css", ".scss", ".html", ".vue", ".svelte",
-        ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini",
-        ".sql", ".sh", ".bash", ".zsh", ".fish",
-        ".md", ".txt", ".rst", ".env.example",
+        ".cs", ".scala", ".r", ".R", ".lua", ".pl", ".pm", ".ex", ".exs",
+        ".dart", ".zig", ".nim", ".v", ".jl",
+        # Web / Markup
+        ".css", ".scss", ".sass", ".less", ".html", ".htm", ".vue", ".svelte",
+        ".xml", ".xsl", ".xslt", ".svg",
+        # Config / Data
+        ".json", ".yaml", ".yml", ".toml", ".cfg", ".ini", ".conf",
+        ".env", ".env.example", ".env.local",
+        ".properties", ".plist", ".hcl", ".tf", ".tfvars",
+        # Docs
+        ".md", ".mdx", ".txt", ".rst", ".adoc", ".tex", ".csv", ".tsv",
+        # Scripts / DevOps
+        ".sql", ".sh", ".bash", ".zsh", ".fish", ".ps1", ".bat", ".cmd",
+        ".dockerfile", ".containerfile",
+        # Other
+        ".graphql", ".gql", ".proto", ".prisma", ".editorconfig",
+        ".gitignore", ".dockerignore", ".eslintrc", ".prettierrc",
     }
 
     SKIP_DIRS = {
@@ -148,13 +170,21 @@ class ProjectTools:
         p.write_text(content)
         return f"Wrote {len(content)} bytes to {filepath}"
 
+    # Extensionless files that are still useful
+    KNOWN_FILES = {
+        "Dockerfile", "Makefile", "Rakefile", "Gemfile", "Procfile",
+        "Vagrantfile", "Justfile", "Brewfile", "Taskfile",
+        "docker-compose.yml", "docker-compose.yaml",
+        "LICENSE", "CHANGELOG", "CONTRIBUTING", "AUTHORS",
+    }
+
     def list_files(self, max_files: int = 500) -> List[str]:
-        """List all code files in the project."""
+        """List all project files (code, config, docs, scripts)."""
         files = []
         for root, dirs, filenames in os.walk(self.root):
             dirs[:] = [d for d in dirs if d not in self.SKIP_DIRS]
             for f in filenames:
-                if Path(f).suffix in self.CODE_EXTENSIONS:
+                if Path(f).suffix in self.CODE_EXTENSIONS or f in self.KNOWN_FILES:
                     rel = os.path.relpath(os.path.join(root, f), self.root)
                     files.append(rel)
                     if len(files) >= max_files:
@@ -493,6 +523,9 @@ class CodingAgentEngine:
             # Apply changes
             self._apply_errors = []
             applied = self._apply_changes(changes)
+            # Replace (not append) file entries for files that were re-applied in this iteration
+            applied_paths = {fc.path for fc in applied}
+            files_changed = [fc for fc in files_changed if fc.path not in applied_paths]
             files_changed.extend(applied)
 
             # Feed apply errors back
@@ -500,8 +533,22 @@ class CodingAgentEngine:
                 for err in self._apply_errors:
                     errors.append(f"Iteration {iterations}: {err}")
                 log(f"{len(self._apply_errors)} apply errors, {len(applied)} successful")
-                if not applied:
-                    continue  # All failed — retry
+                # If syntax errors were found, retry even if some edits applied
+                has_syntax_error = any("SYNTAX ERROR" in e for e in self._apply_errors)
+                if not applied or has_syntax_error:
+                    if has_syntax_error:
+                        log("Syntax error detected post-apply — retrying")
+                    continue  # Retry
+
+            # Detect silent exception patterns in changed files
+            for fc in applied:
+                abs_p = str(self.tools.root / fc.path) if not os.path.isabs(fc.path) else fc.path
+                if fc.path.endswith(".py") and Path(abs_p).exists():
+                    content = self.tools.read_file(abs_p)
+                    warnings = self._detect_silent_exceptions(content, fc.path)
+                    for w in warnings[:3]:
+                        errors.append(f"Iteration {iterations}: WARNING: {w}")
+                        log(f"Silent exception warning: {w}")
 
             log(f"Applied {len(applied)} changes in {time.time() - iter_start:.1f}s")
 
@@ -820,6 +867,20 @@ Example:
         except Exception:
             pass
 
+        # Execution context (systemd, Docker, etc.) — prevents import path bugs
+        exec_ctx = self._detect_execution_context()
+        if exec_ctx.get("warnings") or exec_ctx.get("working_dir"):
+            parts.append("--- EXECUTION CONTEXT ---")
+            if exec_ctx.get("working_dir"):
+                parts.append(f"  Working directory: {exec_ctx['working_dir']}")
+            if exec_ctx.get("entry_point"):
+                parts.append(f"  Entry point: {exec_ctx['entry_point']}")
+            if exec_ctx.get("import_style"):
+                parts.append(f"  Import style: {exec_ctx['import_style']}")
+            for w in exec_ctx.get("warnings", []):
+                parts.append(f"  WARNING: {w}")
+            parts.append("")
+
         # User-provided context
         if request.context:
             parts.append(f"--- ADDITIONAL CONTEXT ---\n{request.context}\n")
@@ -935,6 +996,11 @@ RULES:
 - The <<<old section must be an EXACT copy from the file (including indentation).
 - Do NOT use placeholder comments, TODOs, or "..." — write complete, real code.
 - Keep the existing code style. Do not add type hints, docstrings, or comments to code you didn't change.
+- NEVER write `except Exception: pass` or `except Exception: continue` — always log errors.
+- NEVER include line numbers (like "1|" or "  10→") in your code output — write PURE code only.
+- When using ```file:path```, write the COMPLETE file content. Do NOT write partial snippets.
+- When using ```edit:path```, make the SMALLEST possible edit. Prefer edit over file when the change is < 50% of the file.
+- If the project runs from a subdirectory (check EXECUTION CONTEXT), use fallback imports.
 
 FORMAT 1 — Create or fully rewrite a file:
 
@@ -986,6 +1052,40 @@ Provide:
             "agents_used": result.participating_agents,
         }
 
+    # ── Content Cleaning ────────────────────────────────────────────
+
+    @staticmethod
+    def _clean_code_content(content: str) -> str:
+        """Strip AI artifacts from generated code content.
+
+        Removes:
+        - Line number prefixes: '  1|', '  2| ', '10|', '1→', etc.
+        - Leading/trailing blank lines
+        - Trailing whitespace per line
+        """
+        lines = content.splitlines()
+        cleaned = []
+        # Detect if ALL or most lines have a number prefix pattern
+        prefix_pattern = re.compile(r'^\s*\d+[|→]\s?')
+        num_prefixed = sum(1 for line in lines if prefix_pattern.match(line))
+        strip_prefixes = num_prefixed > len(lines) * 0.5  # More than half have prefixes
+
+        for line in lines:
+            if strip_prefixes:
+                line = prefix_pattern.sub('', line)
+            cleaned.append(line.rstrip())
+
+        # Strip leading/trailing empty lines
+        while cleaned and not cleaned[0].strip():
+            cleaned.pop(0)
+        while cleaned and not cleaned[-1].strip():
+            cleaned.pop()
+
+        result = "\n".join(cleaned)
+        if result and not result.endswith("\n"):
+            result += "\n"
+        return result
+
     # ── Response Parsing ─────────────────────────────────────────────
 
     def _parse_file_changes(self, response: str) -> List[Dict[str, Any]]:
@@ -1032,6 +1132,18 @@ Provide:
                 content = match.group(2)
                 if len(content.strip()) > 10:
                     changes.append({"action": "write", "path": filepath, "content": content})
+
+        # Clean all parsed content (strip line number prefixes, trailing whitespace)
+        for change in changes:
+            if change.get("content"):
+                change["content"] = self._clean_code_content(change["content"])
+            if change.get("new"):
+                change["new"] = self._clean_code_content(change["new"]).rstrip("\n")
+            if change.get("old"):
+                # Strip line numbers from old text too (AI copies from numbered context)
+                prefix_pat = re.compile(r'^\s*\d+[|→]\s?', re.MULTILINE)
+                if prefix_pat.search(change["old"]):
+                    change["old"] = prefix_pat.sub('', change["old"])
 
         if changes:
             logger.info(f"Parsed {len(changes)} changes ({sum(1 for c in changes if c['action'] == 'write')} writes, "
@@ -1083,22 +1195,23 @@ Provide:
     # ── Change Application ───────────────────────────────────────────
 
     def _deduplicate_changes(self, changes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Remove duplicate changes to the same file with the same content."""
-        seen = set()
-        deduped = []
+        """Remove duplicate changes. For writes to same file, keep the LAST (most corrected)."""
+        # For write actions: keep last occurrence per file (AI often self-corrects)
+        write_map: Dict[str, Dict[str, Any]] = {}
+        edits: List[Dict[str, Any]] = []
+        edit_keys: set = set()
+
         for change in changes:
-            # Create a fingerprint
             if change["action"] == "write":
-                key = (change["action"], change["path"])
+                # Last write wins (most corrected version)
+                write_map[change["path"]] = change
             else:
-                key = (change["action"], change["path"], change.get("old", "")[:100])
+                key = (change["path"], change.get("old", "")[:100])
+                if key not in edit_keys:
+                    edit_keys.add(key)
+                    edits.append(change)
 
-            if key not in seen:
-                seen.add(key)
-                deduped.append(change)
-            else:
-                logger.debug(f"Deduplicated change to {change['path']}")
-
+        deduped = list(write_map.values()) + edits
         if len(deduped) < len(changes):
             logger.info(f"Deduplicated {len(changes)} → {len(deduped)} changes")
         return deduped
@@ -1138,7 +1251,12 @@ Provide:
             try:
                 if change["action"] == "write":
                     existed = Path(abs_path).exists()
-                    self.tools.write_file(abs_path, change["content"])
+                    clean_content = self._clean_code_content(change["content"])
+                    self.tools.write_file(abs_path, clean_content)
+                    # Post-write validation for Python files
+                    compile_err = self._validate_python_syntax(abs_path, filepath)
+                    if compile_err:
+                        self._apply_errors.append(compile_err)
                     applied.append(FileChange(
                         path=filepath,
                         action="modified" if existed else "created",
@@ -1149,6 +1267,10 @@ Provide:
                 elif change["action"] == "edit":
                     result = self._apply_edit(abs_path, filepath, change["old"], change["new"])
                     if result:
+                        # Post-edit validation for Python files
+                        compile_err = self._validate_python_syntax(abs_path, filepath)
+                        if compile_err:
+                            self._apply_errors.append(compile_err)
                         applied.append(result)
 
             except Exception as e:
@@ -1164,6 +1286,13 @@ Provide:
         if content.startswith("[ERROR]"):
             self._apply_errors.append(f"Cannot read {filepath}: {content}")
             return None
+
+        # Clean line number prefixes from both old and new text
+        prefix_pattern = re.compile(r'^\s*\d+[|→]\s?', re.MULTILINE)
+        if prefix_pattern.search(old_text):
+            old_text = prefix_pattern.sub('', old_text)
+        if prefix_pattern.search(new_text):
+            new_text = prefix_pattern.sub('', new_text)
 
         # Strategy 1: Exact match
         if old_text in content:
@@ -1325,6 +1454,145 @@ Provide:
             return (best_block, best_ratio)
         return None
 
+    # ── Post-Apply Validation ─────────────────────────────────────────
+
+    @staticmethod
+    def _validate_python_syntax(abs_path: str, filepath: str) -> Optional[str]:
+        """
+        Compile-check Python files immediately after writing/editing.
+        Catches SyntaxError and other compile-time issues before tests run.
+        Learned from: silent ModuleNotFoundError on managers-dashboard VM.
+        """
+        if not filepath.endswith(".py"):
+            return None
+        try:
+            import py_compile
+            py_compile.compile(abs_path, doraise=True)
+            return None
+        except py_compile.PyCompileError as e:
+            msg = f"SYNTAX ERROR in {filepath}: {e}"
+            logger.error(msg)
+            return msg
+        except Exception:
+            return None  # Non-Python file or unreadable — skip
+
+    def _detect_execution_context(self) -> Dict[str, Any]:
+        """
+        Detect how this project is actually run (systemd, Docker, etc.)
+        to understand import paths and working directories.
+
+        Learned from: managers-dashboard had `from backend.ml_engine import MLEngine`
+        but systemd ran uvicorn from backend/ dir, so it needed `from ml_engine import MLEngine`.
+        """
+        context: Dict[str, Any] = {
+            "working_dir": None,    # Where the app actually runs from
+            "entry_point": None,    # The main module/command
+            "import_style": None,   # "relative" or "absolute" or "package"
+            "warnings": [],
+        }
+
+        root = self.tools.root
+
+        # Check systemd service files
+        for pattern in ["*.service", "**/*.service"]:
+            for svc in root.glob(pattern):
+                try:
+                    content = svc.read_text(errors="replace")
+                    # Extract WorkingDirectory
+                    wd_match = re.search(r'WorkingDirectory\s*=\s*(.+)', content)
+                    if wd_match:
+                        context["working_dir"] = wd_match.group(1).strip()
+
+                    # Extract ExecStart to find the entry point
+                    exec_match = re.search(r'ExecStart\s*=\s*(.+)', content)
+                    if exec_match:
+                        context["entry_point"] = exec_match.group(1).strip()
+                        # Detect if uvicorn/gunicorn runs from a subdirectory
+                        if "uvicorn" in context["entry_point"] or "gunicorn" in context["entry_point"]:
+                            parts = context["entry_point"].split()
+                            for p in parts:
+                                if ":" in p and not p.startswith("-"):
+                                    module = p.split(":")[0]
+                                    context["import_style"] = "relative" if "." not in module else "package"
+                except Exception:
+                    continue
+
+        # Check Dockerfile for WORKDIR and CMD
+        dockerfile = root / "Dockerfile"
+        if dockerfile.exists():
+            try:
+                content = dockerfile.read_text(errors="replace")
+                workdir = re.findall(r'WORKDIR\s+(.+)', content)
+                if workdir:
+                    context["working_dir"] = context["working_dir"] or workdir[-1].strip()
+                cmd = re.findall(r'(?:CMD|ENTRYPOINT)\s+(.+)', content)
+                if cmd:
+                    context["entry_point"] = context["entry_point"] or cmd[-1].strip()
+            except Exception:
+                pass
+
+        # Detect import path mismatches
+        if context["working_dir"]:
+            wd = context["working_dir"]
+            # If working dir is a subdirectory, imports from sibling dirs won't work
+            if "/" in wd and not wd.endswith(str(root)):
+                subdir = wd.rstrip("/").split("/")[-1]
+                context["warnings"].append(
+                    f"App runs from subdirectory '{subdir}/' — imports like "
+                    f"'from {subdir}.module import X' will fail. "
+                    f"Use 'from module import X' or add fallback imports."
+                )
+
+        return context
+
+    # ── Silent Exception Detection ────────────────────────────────────
+
+    @staticmethod
+    def _detect_silent_exceptions(code: str, filepath: str) -> List[str]:
+        """
+        Scan code for dangerous silent exception swallowing patterns.
+        Learned from: `except Exception` caught ModuleNotFoundError silently,
+        causing on-time metric to always return 0% with no error logged.
+        """
+        warnings = []
+        lines = code.splitlines()
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+
+            # Pattern 1: except Exception followed by pass or bare continue
+            if re.match(r'except\s+Exception\s*(?:as\s+\w+)?:', stripped):
+                # Check what follows the except
+                next_lines = []
+                for j in range(i + 1, min(i + 5, len(lines))):
+                    next_stripped = lines[j].strip()
+                    if next_stripped and not next_stripped.startswith("#"):
+                        next_lines.append(next_stripped)
+                        break
+
+                if next_lines:
+                    body = next_lines[0]
+                    if body in ("pass", "continue", "..."):
+                        warnings.append(
+                            f"{filepath}:{i+1}: Silent 'except Exception: {body}' — "
+                            f"will hide ImportError, TypeError, KeyError etc. "
+                            f"Log the error or catch a specific exception type."
+                        )
+                    elif not any(kw in body for kw in ("log", "print", "raise", "warn", "logger")):
+                        warnings.append(
+                            f"{filepath}:{i+1}: Broad 'except Exception' without logging — "
+                            f"consider logging the error or narrowing the exception type."
+                        )
+
+            # Pattern 2: bare except (catches everything including SystemExit)
+            elif re.match(r'except\s*:', stripped):
+                warnings.append(
+                    f"{filepath}:{i+1}: Bare 'except:' catches SystemExit and KeyboardInterrupt. "
+                    f"Use 'except Exception:' at minimum."
+                )
+
+        return warnings
+
 
 # ── API Endpoints ────────────────────────────────────────────────────
 
@@ -1411,6 +1679,14 @@ async def review_project(
 
         context = "\n".join(context_parts)
 
+        # Static analysis: detect silent exception swallowing
+        static_warnings = []
+        for filepath in matched:
+            content = tools.read_file(str(tools.root / filepath))
+            if not content.startswith("[ERROR]"):
+                warnings = CodingAgentEngine._detect_silent_exceptions(content, filepath)
+                static_warnings.extend(warnings)
+
         from products.fred_api.server import get_team
         team = get_team()
         result = await team.collaborate(
@@ -1419,12 +1695,18 @@ async def review_project(
             mode="parallel",
         )
 
+        findings = result.final_answer
+        if static_warnings:
+            findings += "\n\n--- STATIC ANALYSIS: Silent Exception Patterns ---\n"
+            findings += "\n".join(f"  {w}" for w in static_warnings[:20])
+
         return {
             "focus": focus,
             "files_reviewed": len(matched),
-            "findings": result.final_answer,
+            "findings": findings,
             "agents_used": result.participating_agents,
             "confidence": result.confidence_score,
+            "static_warnings": static_warnings[:20],
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

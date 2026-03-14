@@ -267,6 +267,24 @@ class NeuralMemory:
             tags=tags,
         )
 
+    def add_edge(self, source_id: str, target_id: str, relation: str, weight: float = 1.0):
+        """Add a relationship edge between two existing nodes."""
+        if source_id not in self._nodes or target_id not in self._nodes:
+            return
+        # Avoid duplicate edges
+        for edge in self._edges:
+            if edge.source_id == source_id and edge.target_id == target_id and edge.relation == relation:
+                edge.weight = max(edge.weight, weight)  # Strengthen existing
+                self._save_graph()
+                return
+        self._edges.append(MemoryEdge(
+            source_id=source_id,
+            target_id=target_id,
+            relation=relation,
+            weight=weight,
+        ))
+        self._save_graph()
+
     # ── Search / Recall ──
 
     def search(

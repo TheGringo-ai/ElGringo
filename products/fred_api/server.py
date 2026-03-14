@@ -29,6 +29,7 @@ import time
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request, Depends
@@ -131,7 +132,7 @@ def get_team():
 class CollaborateRequest(BaseModel):
     prompt: str = Field(..., description="Task or question for the AI team")
     context: str = Field("", description="Additional context (code, docs)")
-    mode: str = Field("parallel", description="Collaboration mode: parallel, sequential, consensus, debate, devils_advocate, peer_review, brainstorming, expert_panel")
+    mode: str = Field("auto", description="Collaboration mode: auto (smart routing), quick (single agent), team (full collaboration), deep (structured debate). Also accepts: parallel, sequential, consensus, debate, devils_advocate, peer_review, brainstorming, expert_panel")
     agents: Optional[List[str]] = Field(None, description="Specific agents to use (None = auto-route)")
     budget: str = Field("standard", description="Budget tier: budget (cheapest agents), standard (mixed), premium (best models)")
 
@@ -179,6 +180,7 @@ class CollaborateResponse(BaseModel):
     agent_positions: Optional[List[AgentPosition]] = None
     disagreements: Optional[List[str]] = None
     consensus_level: Optional[float] = None
+    collaboration_log: Optional[List[str]] = None
     # Intelligence v2
     quality: Optional[Dict[str, Any]] = None
     transparency: Optional[Dict[str, Any]] = None
@@ -363,6 +365,19 @@ async def collaborate(req: CollaborateRequest):
     request_id = str(uuid.uuid4())[:8]
 
     try:
+        # Resolve simplified mode aliases → internal modes
+        _MODE_ALIASES = {
+            "auto": None,    # Let router decide
+            "quick": "turbo",  # Single best agent, zero overhead
+            "team": "parallel",  # Full team, parallel with critique
+            "deep": "debate",  # Structured 4-phase debate
+        }
+        resolved_mode = _MODE_ALIASES.get(req.mode, req.mode)
+        if resolved_mode is None:
+            req.mode = None  # auto-route
+        else:
+            req.mode = resolved_mode
+
         # Auto-enrich context if prompt references a project path
         context = _auto_enrich_context(req.prompt, req.context)
 
@@ -445,17 +460,21 @@ async def collaborate(req: CollaborateRequest):
                 for resp in result.agent_responses if resp.success
             ]
 
+        # Use actual mode from routing, not the requested mode
+        actual_mode = result.intelligence.get("routing", {}).get("mode") or req.mode or "auto"
+
         return CollaborateResponse(
             request_id=request_id,
             answer=result.final_answer,
             agents_used=result.participating_agents,
             confidence=result.confidence_score,
-            mode=req.mode,
+            mode=actual_mode,
             total_time=result.total_time,
             rounds=rounds_data,
             agent_positions=agent_positions_data,
             disagreements=disagreements_data if disagreements_data else None,
             consensus_level=consensus_data,
+            collaboration_log=result.collaboration_log if result.collaboration_log else None,
             quality=result.intelligence.get("quality"),
             transparency=result.intelligence.get("transparency"),
             failure_detection=result.intelligence.get("failure_detection"),
@@ -552,6 +571,160 @@ async def stream(req: StreamRequest):
 
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
         except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ── Streaming Collaboration Endpoint ──────────────────────────────────
+
+
+class StreamCollaborateRequest(BaseModel):
+    prompt: str = Field(..., description="Task for the team")
+    context: str = Field("", description="Additional context")
+    mode: Optional[str] = Field(None, description="Collaboration mode (auto if omitted)")
+    agents: Optional[List[str]] = Field(None, description="Specific agents to use")
+
+
+@app.post("/v1/collaborate/stream", dependencies=[Depends(verify_api_key), Depends(rate_limit)])
+async def stream_collaborate(req: StreamCollaborateRequest):
+    """
+    SSE streaming multi-agent collaboration. Sends real-time updates as agents
+    respond, critique each other, and synthesize the final answer.
+
+    Event types:
+      - phase: collaboration phase starting (e.g. "parallel", "critique", "synthesis")
+      - agent_start: agent is generating
+      - agent_done: agent response complete
+      - agent_error: agent failed
+      - critique_start: critique round beginning
+      - critique_done: agent refined their answer
+      - synthesis: final synthesized answer
+      - done: collaboration complete
+      - error: fatal error
+    """
+    team = get_team()
+
+    async def event_generator():
+        import asyncio as _asyncio
+
+        try:
+            # Classify task
+            classification = team._task_router.classify(req.prompt, req.context or "")
+            mode = req.mode
+            if not mode:
+                if classification.complexity == "low":
+                    mode = "turbo"
+                else:
+                    mode = classification.recommended_mode
+
+            yield f"data: {json.dumps({'type': 'start', 'mode': mode, 'complexity': classification.complexity, 'task_type': classification.primary_type.value})}\n\n"
+
+            # Select agents
+            agents_to_use = req.agents or classification.recommended_agents
+            active_agents = [team.agents[n] for n in agents_to_use if n in team.agents]
+            if not active_agents:
+                active_agents = list(team.agents.values())[:3]
+
+            from elgringo.agents.base import AgentResponse
+
+            agent_names = [a.name for a in active_agents]
+            yield f"data: {json.dumps({'type': 'agents', 'agents': agent_names})}\n\n"
+
+            if mode == "turbo":
+                # Single agent, stream tokens
+                best = active_agents[0]
+                yield f"data: {json.dumps({'type': 'agent_start', 'agent': best.name})}\n\n"
+                full_response = []
+                async for token in best.generate_stream(req.prompt, req.context or ""):
+                    full_response.append(token)
+                    yield f"data: {json.dumps({'type': 'token', 'agent': best.name, 'content': token})}\n\n"
+                answer = "".join(full_response)
+                yield f"data: {json.dumps({'type': 'agent_done', 'agent': best.name, 'length': len(answer)})}\n\n"
+                yield f"data: {json.dumps({'type': 'synthesis', 'answer': answer})}\n\n"
+
+            else:
+                # Phase 1: Parallel responses
+                yield f"data: {json.dumps({'type': 'phase', 'phase': 'parallel', 'description': 'Agents working independently'})}\n\n"
+
+                for a in active_agents:
+                    yield f"data: {json.dumps({'type': 'agent_start', 'agent': a.name})}\n\n"
+
+                tasks = [a.generate_response(req.prompt, req.context or "") for a in active_agents]
+                responses = await _asyncio.gather(*tasks, return_exceptions=True)
+
+                agent_responses = []
+                for i, resp in enumerate(responses):
+                    name = active_agents[i].name
+                    if isinstance(resp, Exception):
+                        yield f"data: {json.dumps({'type': 'agent_error', 'agent': name, 'error': str(resp)})}\n\n"
+                    elif resp.success:
+                        agent_responses.append(resp)
+                        yield f"data: {json.dumps({'type': 'agent_done', 'agent': name, 'confidence': resp.confidence, 'length': len(resp.content), 'preview': resp.content[:200]})}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'type': 'agent_error', 'agent': name, 'error': resp.error or 'Unknown error'})}\n\n"
+
+                # Phase 2: Critique round (if 2+ agents succeeded)
+                successful_agents = [active_agents[i] for i, r in enumerate(responses) if isinstance(r, AgentResponse) and r.success]
+                if len(agent_responses) >= 2:
+                    yield f"data: {json.dumps({'type': 'phase', 'phase': 'critique', 'description': 'Agents reviewing each others work'})}\n\n"
+
+                    response_summary = "\n\n".join(
+                        f"[{r.agent_name}] (confidence: {r.confidence:.0%}):\n{r.content[:1500]}"
+                        for r in agent_responses
+                    )
+                    critique_prompt = f"""Review your teammates' answers below and produce a REFINED answer.
+
+ORIGINAL TASK: {req.prompt}
+
+TEAM RESPONSES:
+{response_summary}
+
+Identify strongest points from each, errors in any, and produce your best refined answer."""
+
+                    for a in successful_agents:
+                        yield f"data: {json.dumps({'type': 'critique_start', 'agent': a.name})}\n\n"
+
+                    critique_tasks = [a.generate_response(critique_prompt, req.context or "") for a in successful_agents]
+                    critique_responses = await _asyncio.gather(*critique_tasks, return_exceptions=True)
+
+                    refined = []
+                    for i, resp in enumerate(critique_responses):
+                        name = successful_agents[i].name
+                        if isinstance(resp, AgentResponse) and resp.success:
+                            refined.append(resp)
+                            yield f"data: {json.dumps({'type': 'critique_done', 'agent': name, 'confidence': resp.confidence, 'length': len(resp.content)})}\n\n"
+                        else:
+                            yield f"data: {json.dumps({'type': 'agent_error', 'agent': name, 'error': str(resp) if isinstance(resp, Exception) else 'Critique failed'})}\n\n"
+
+                    if refined:
+                        agent_responses = refined
+
+                # Phase 3: Synthesis
+                yield f"data: {json.dumps({'type': 'phase', 'phase': 'synthesis', 'description': 'Combining best insights into final answer'})}\n\n"
+
+                if len(agent_responses) == 1:
+                    answer = agent_responses[0].content
+                elif agent_responses:
+                    # Use the team's synthesis
+                    from elgringo.agents.base import AgentResponse as AR
+                    answer = await team._synthesize_responses(
+                        agent_responses, req.prompt,
+                        classification.primary_type.value,
+                    )
+                else:
+                    answer = "All agents failed to respond."
+
+                yield f"data: {json.dumps({'type': 'synthesis', 'answer': answer, 'agents_contributed': len(agent_responses)})}\n\n"
+
+            yield f"data: {json.dumps({'type': 'done', 'mode': mode})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Streaming collaboration error: {e}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(
@@ -2530,6 +2703,19 @@ async def mlx_status():
 
 from products.fred_api.coding_endpoints import router as coding_router
 app.include_router(coding_router, dependencies=[Depends(verify_api_key), Depends(rate_limit)])
+
+
+# ── Dashboard ────────────────────────────────────────────────────────
+
+from fastapi.responses import HTMLResponse
+
+@app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+async def dashboard():
+    """Serve the El Gringo dashboard UI."""
+    dashboard_path = Path(__file__).parent / "dashboard.html"
+    if dashboard_path.exists():
+        return HTMLResponse(dashboard_path.read_text())
+    return HTMLResponse("<h1>Dashboard not found</h1><p>Run from the project root.</p>", status_code=404)
 
 
 # ── Entry point ──────────────────────────────────────────────────────

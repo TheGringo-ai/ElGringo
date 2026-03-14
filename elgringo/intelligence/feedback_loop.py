@@ -151,11 +151,48 @@ class FeedbackLearningLoop:
         self._save_state()
         return outcome
 
-    async def auto_detect_failure(self, task_id: str, error: str, agents: List[str], task_type: str) -> LearningOutcome:
-        return await self.process_feedback(
+    async def auto_detect_failure(
+        self, task_id: str, error: str, agents: List[str], task_type: str,
+        prompt: str = "", project: str = "",
+    ) -> LearningOutcome:
+        """Auto-detected failure → store as mistake in memory for future prevention."""
+        outcome = await self.process_feedback(
             task_id=task_id, rating=-0.8, agents=agents, task_type=task_type,
             comment=f"Auto-detected failure: {error[:200]}",
         )
+
+        # Store mistake in memory system so _inject_prevention() can use it
+        if self._memory:
+            try:
+                from elgringo.memory.system import MistakeType
+                # Map task type to mistake type
+                _type_map = {
+                    "coding": MistakeType.CODE_ERROR,
+                    "debugging": MistakeType.CODE_ERROR,
+                    "security": MistakeType.SECURITY_VULNERABILITY,
+                    "architecture": MistakeType.ARCHITECTURE_FLAW,
+                    "optimization": MistakeType.PERFORMANCE_ISSUE,
+                    "testing": MistakeType.LOGIC_ERROR,
+                }
+                mistake_type = _type_map.get(task_type, MistakeType.CODE_ERROR)
+                await self._memory.capture_mistake(
+                    mistake_type=mistake_type,
+                    description=f"Auto-detected in task {task_id}: {error[:500]}",
+                    context={"agents": agents, "task_type": task_type, "prompt": prompt[:300]},
+                    resolution=f"Detected failure patterns: {error[:200]}. Review and fix before deploying.",
+                    prevention_strategy=(
+                        f"When handling '{task_type}' tasks, watch for: {error[:200]}. "
+                        f"Agents involved: {', '.join(agents)}."
+                    ),
+                    severity="high",
+                    project=project or "default",
+                    tags=[task_type, "auto_detected", "feedback_loop"],
+                )
+                outcome.actions_taken.append("Stored mistake pattern in memory for future prevention")
+            except Exception as e:
+                logger.debug(f"Failed to store mistake from auto-detection: {e}")
+
+        return outcome
 
     def get_agent_profile(self, agent_name):
         profile = self._profiles.get(agent_name)

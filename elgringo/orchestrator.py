@@ -15,20 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from .agents import (
-    AIAgent,
-    AgentResponse,
-    ChatGPTAgent,
-    ClaudeAgent,
-    GeminiAgent,
-    GrokAgent,
-    OllamaAgent,
-    ModelType,
-    # Llama Cloud agents
-    create_llama_70b,
-    create_llama_fast,
-)
-from .agents.ollama import create_local_agent, create_local_coder
+from .agents import AIAgent, AgentResponse, ModelType
 from .apple.smart_router import ModelTier
 from .routing import TaskRouter, CostOptimizer, get_performance_tracker, RoutingDecision, get_decision_logger
 from .routing.cost_tracker import get_cost_tracker
@@ -38,10 +25,9 @@ from .failover import get_failover_manager, get_circuit_breaker
 from .memory import MemorySystem, LearningEngine, MistakePrevention
 from .memory.neural import NeuralMemory
 from .collaboration import WeightedConsensus
-from .knowledge import TeachingSystem, get_domain_context, AutoLearner, get_coding_hub, get_rag
+from .knowledge import TeachingSystem, AutoLearner, get_coding_hub, get_rag
 from .tools import FileSystemTools, BrowserTools, ShellTools, PermissionManager
 from .core.sessions import get_session_manager
-from .core.personas import get_persona_manager
 from .validation import get_validator
 from .autonomous import (
     SelfCorrector,
@@ -221,6 +207,14 @@ class AIDevTeam:
         self.autonomous_executor = AutonomousExecutor(self)
         self.framework_facade = FrameworkFacade(self)
 
+        # v3: Further extracted managers
+        from .orchestrator_agents import AgentSetupManager
+        from .orchestrator_context import ContextEnrichmentManager
+        from .orchestrator_intelligence import PostCollaborationIntelligence
+        self._agent_setup = AgentSetupManager(self)
+        self._context_enrichment = ContextEnrichmentManager(self)
+        self._post_intelligence = PostCollaborationIntelligence(self)
+
         # Auto-benchmark flag — run once per session if stale
         self._benchmark_checked = False
 
@@ -228,168 +222,8 @@ class AIDevTeam:
             self.setup_agents()
 
     def setup_agents(self):
-        """Setup default AI team based on available API keys"""
-        if self.local_only:
-            # Local-only mode: skip all cloud APIs, use only Ollama
-            logger.info("Local-only mode: using Ollama models only (no cloud APIs)")
-            self._setup_local_agents()
-            if not self.agents:
-                logger.warning(
-                    "No local Ollama models available. "
-                    "Install Ollama and run: ollama pull llama3.2:3b"
-                )
-            return
-
-        # Cloud agents (requires API keys)
-        # ChatGPT - Lead Developer & Architect
-        if os.getenv("OPENAI_API_KEY"):
-            self.register_agent(ChatGPTAgent())
-            logger.info("Registered ChatGPT agent (Lead Developer & Architect)")
-
-        # Claude - Analyst (optional, requires ANTHROPIC_API_KEY)
-        if os.getenv("ANTHROPIC_API_KEY"):
-            self.register_agent(ClaudeAgent())
-            logger.info("Registered Claude agent (Analyst)")
-
-        # Gemini - Creative Director
-        if os.getenv("GEMINI_API_KEY"):
-            self.register_agent(GeminiAgent())
-            logger.info("Registered Gemini agent (Creative Director)")
-
-        # Grok - Strategic Thinker + Speed Coder
-        if os.getenv("XAI_API_KEY"):
-            self.register_agent(GrokAgent(fast_mode=False))  # Reasoner
-            self.register_agent(GrokAgent(fast_mode=True))   # Fast coder
-            logger.info("Registered Grok agents (Reasoner + Coder)")
-
-        # Llama Cloud - via Groq, Together, or Fireworks APIs
-        self._setup_llama_cloud_agents()
-
-        # Local models via Ollama (free, private, offline)
-        self._setup_local_agents()
-
-        # Custom personas (user-defined specialist agents)
-        try:
-            pm = get_persona_manager()
-            pm.register_all(self)
-        except Exception as e:
-            logger.debug(f"Persona registration skipped: {e}")
-
-        if not self.agents:
-            logger.warning(
-                "No AI agents configured. Set API keys: "
-                "ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY "
-                "or use local_only=True with Ollama"
-            )
-
-    def _setup_llama_cloud_agents(self):
-        """Setup Llama Cloud agents via Groq, Together, or Fireworks"""
-        # Priority order: Groq (fastest) -> Together (most models) -> Fireworks
-        llama_registered = False
-
-        # Groq - Ultra-fast Llama inference
-        if os.getenv("GROQ_API_KEY"):
-            self.register_agent(create_llama_70b(provider="groq"))
-            logger.info("Registered Llama 3.3 70B agent (via Groq - ultra-fast)")
-            llama_registered = True
-
-        # Together AI - Most model variety including 405B
-        if os.getenv("TOGETHER_API_KEY"):
-            if not llama_registered:
-                self.register_agent(create_llama_70b(provider="together"))
-                logger.info("Registered Llama 3.3 70B agent (via Together AI)")
-            # Also register 8B for fast tasks
-            self.register_agent(create_llama_fast(provider="together"))
-            logger.info("Registered Llama 3.1 8B agent (via Together AI - fast)")
-
-        # Fireworks - Good for function calling
-        if os.getenv("FIREWORKS_API_KEY") and not llama_registered:
-            self.register_agent(create_llama_70b(provider="fireworks"))
-            logger.info("Registered Llama 3.3 70B agent (via Fireworks)")
-
-    def _setup_local_agents(self):
-        """Setup local Ollama agents if available"""
-        import asyncio
-        import concurrent.futures
-
-        async def check_ollama():
-            try:
-                agent = OllamaAgent()
-                if await agent.is_available():
-                    models = await agent.list_models()
-                    return models
-            except Exception:
-                pass
-            return []
-
-        def run_in_new_loop():
-            """Run async code in a new event loop (for thread pool)"""
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                return loop.run_until_complete(check_ollama())
-            finally:
-                loop.close()
-
-        # Check if Ollama is running using various strategies
-        models = []
-        try:
-            # Try to get existing loop
-            try:
-                loop = asyncio.get_running_loop()
-                # Loop is running, use thread pool to avoid blocking
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(run_in_new_loop)
-                    models = future.result(timeout=5)
-            except RuntimeError:
-                # No running loop, safe to create one
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_closed():
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                    models = loop.run_until_complete(check_ollama())
-                except RuntimeError:
-                    # Fall back to asyncio.run()
-                    models = asyncio.run(check_ollama())
-        except Exception as e:
-            logger.debug(f"Could not check Ollama availability: {e}")
-            return
-
-        if models:
-            # Register Llama 3.2 as general purpose
-            if any("llama3" in m.lower() for m in models):
-                self.register_agent(create_local_agent("llama3"))
-                logger.info("Registered local agent: Llama 3.2 (General)")
-
-            # Register Qwen Coder (prefer custom fine-tuned version)
-            if any("qwen-coder-custom" in m.lower() for m in models):
-                self.register_agent(create_local_coder())
-                logger.info("Registered local agent: Qwen Coder Custom (Fine-tuned)")
-            elif any("qwen" in m.lower() and "coder" in m.lower() for m in models):
-                self.register_agent(create_local_agent("qwen-coder-7b"))
-                logger.info("Registered local agent: Qwen Coder (Code Specialist)")
-
-            # Register Llama Coder if available
-            if any("llama-coder-custom" in m.lower() for m in models):
-                self.register_agent(create_local_agent("llama-coder-custom"))
-                logger.info("Registered local agent: Llama Coder Custom (Fine-tuned)")
-
-        # Register Qwen agents via MLX (faster than Ollama on Apple Silicon)
-        try:
-            from .agents.mlx_agent import create_qwen_coder, create_qwen_general
-
-            qwen_coder = create_qwen_coder()
-            if qwen_coder:
-                self.register_agent(qwen_coder)
-                logger.info("Registered Qwen agent: Qwen 2.5 Coder 7B (native Metal)")
-
-            qwen_general = create_qwen_general()
-            if qwen_general:
-                self.register_agent(qwen_general)
-                logger.info("Registered Qwen agent: Qwen 2.5 3B (native Metal)")
-        except Exception as e:
-            logger.debug(f"Qwen/MLX agents not available: {e}")
+        """Setup default AI team based on available API keys."""
+        self._agent_setup.setup_agents()
 
     def register_agent(self, agent: AIAgent):
         """Register an AI agent with the team"""
@@ -544,17 +378,6 @@ class AIDevTeam:
         collaboration_log = []
         agent_responses = []
 
-        # Session support — inject conversation history
-        session = None
-        if session_id:
-            sm = get_session_manager()
-            session = sm.get_or_create(session_id, project=self.project_name)
-            session.add_user_turn(prompt)
-            session_context = session.get_context_block()
-            if session_context:
-                context = f"{session_context}\n{context}" if context else session_context
-                collaboration_log.append(f"Session {session_id}: injected {session.turn_count} turns of history")
-
         # Smart cache: check if we've answered a similar prompt before
         # Skip cache if context is provided — context means the caller wants a fresh,
         # context-aware answer, not a cached generic one
@@ -616,6 +439,7 @@ class AIDevTeam:
         intel["routing"]["task_type"] = classification.primary_type.value
         intel["routing"]["complexity"] = classification.complexity
         intel["routing"]["classification_confidence"] = round(classification.confidence, 2)
+        intel["routing"]["cost_tier"] = getattr(classification, 'cost_tier', 'standard')
 
         # Apple Silicon optimization: use smart router for local vs cloud decision
         prefer_local_models = False
@@ -756,184 +580,39 @@ class AIDevTeam:
 
         # Auto-select mode if not specified
         if not mode:
-            if classification.complexity == "low" and classification.confidence > 0.8:
+            if classification.complexity == "low":
                 mode = "turbo"
-                collaboration_log.append("Auto-selected turbo mode (low complexity, high confidence)")
+                collaboration_log.append("Auto-selected turbo mode (low complexity — single agent is enough)")
             else:
                 mode = classification.recommended_mode
-                collaboration_log.append(f"Auto-selected mode: {mode}")
+                collaboration_log.append(f"Auto-selected mode: {mode} (complexity={classification.complexity}, type={classification.primary_type.value})")
 
         intel["routing"]["selected_agents"] = agents
         intel["routing"]["mode"] = mode
 
-        # Get prevention context from memory system
-        enhanced_prompt = prompt
+        # Enrich prompt with memory, knowledge, RAG, and domain context
         task_type = classification.primary_type.value
+        enhanced_prompt, context, ctx_log, ctx_intel = await self._context_enrichment.enrich(
+            prompt=prompt,
+            context=context,
+            task_type=task_type,
+            complexity=classification.complexity,
+            task_id=task_id,
+            session_id=session_id,
+        )
+        collaboration_log.extend(ctx_log)
+        intel["memory"] = ctx_intel.get("memory", intel["memory"])
 
-        # Only inject context for tasks that benefit from it (not simple questions)
-        _context_tasks = {"coding", "debugging", "testing", "optimization", "architecture", "security"}
-        _needs_context = task_type in _context_tasks and classification.complexity != "low"
+        # Dynamic persona injection: shape agent behavior based on task type + complexity
+        persona_prompt = getattr(classification, 'persona_prompt', '')
+        if persona_prompt:
+            enhanced_prompt = f"[ROLE GUIDANCE: {persona_prompt}]\n\n{enhanced_prompt}"
+            collaboration_log.append(f"Persona injected: {persona_prompt[:80]}...")
+            intel["routing"]["persona"] = persona_prompt
 
-        if _needs_context and self._prevention:
-            prevention_context = await self._prevention.get_prevention_context(
-                task_type, self.project_name
-            )
-            if prevention_context:
-                enhanced_prompt = f"{prevention_context}\n\n{prompt}"
-                collaboration_log.append("Applied prevention context from past mistakes")
-                intel["memory"]["prevention_applied"] = True
-                intel["memory"]["prevention_summary"] = prevention_context[:200]
-
-        # Auto-inject relevant solution patterns from memory
-        if _needs_context and self._memory_system:
-            try:
-                # Two-pass search: (1) prompt-specific, (2) project-wide conventions
-                solutions = await self._memory_system.find_solution_patterns(prompt[:200], limit=6)
-                project_solutions = await self._memory_system.find_solution_patterns(
-                    self.project_name, limit=6
-                )
-                # Merge and deduplicate by solution_id
-                seen_ids = set()
-                all_solutions = []
-                for s in solutions + project_solutions:
-                    if s.solution_id not in seen_ids:
-                        seen_ids.add(s.solution_id)
-                        all_solutions.append(s)
-                # Prefer solutions with explicit best_practices (hand-curated patterns)
-                # over auto-captured interaction results (which have empty best_practices)
-                curated = [s for s in all_solutions if s.best_practices]
-                auto = [s for s in all_solutions if not s.best_practices]
-                # Take up to 3 curated, fill remainder with auto
-                selected = curated[:3] + auto[:max(0, 3 - len(curated))]
-                if selected:
-                    solution_lines = ["MANDATORY PROJECT CONVENTIONS — You MUST follow these rules:"]
-                    for sol in selected:
-                        solution_lines.append(f"\n## {sol.problem_pattern}")
-                        for step in sol.solution_steps:
-                            # Skip overly long auto-captured steps (full AI responses)
-                            if len(step) > 200:
-                                continue
-                            solution_lines.append(f"  - {step}")
-                        if sol.best_practices:
-                            solution_lines.append("  REQUIREMENTS (do not ignore):")
-                            for bp in sol.best_practices:
-                                solution_lines.append(f"    * {bp}")
-                    solution_context = "\n".join(solution_lines)
-                    # Cap to prevent prompt bloat
-                    if len(solution_context) > 3000:
-                        solution_context = solution_context[:3000] + "\n..."
-                    enhanced_prompt = f"{solution_context}\n\n{enhanced_prompt}"
-                    collaboration_log.append(f"Injected {len(selected)} solution patterns from memory ({len(curated)} curated)")
-                    # Track which solutions were injected for this task (for feedback loop)
-                    self._memory_system.track_injection(
-                        task_id, [s.solution_id for s in selected]
-                    )
-                    # Capture memory intelligence
-                    intel["memory"]["patterns_injected"] = len(selected)
-                    intel["memory"]["curated_count"] = len(curated)
-                    for sol in selected:
-                        intel["memory"]["patterns"].append({
-                            "name": sol.problem_pattern[:80],
-                            "quality": round(getattr(sol, 'quality_score', 0.5), 2),
-                            "times_used": getattr(sol, 'access_count', 0),
-                            "has_best_practices": bool(sol.best_practices),
-                        })
-            except Exception as e:
-                logger.debug(f"Memory solution search skipped: {e}")
-
-        # Neural memory contextual recall
-        if self._neural_memory:
-            try:
-                recalls = self._neural_memory.contextual_recall(
-                    task_description=prompt,
-                    error_message=context[:500] if "error" in context.lower() else None,
-                    limit=3,
-                )
-                if recalls:
-                    neural_context = "\n".join(
-                        f"- [{r.node.node_type}] {r.node.content[:200]} (confidence: {r.node.confidence:.0%})"
-                        for r in recalls
-                    )
-                    enhanced_prompt = f"RELEVANT PAST EXPERIENCE:\n{neural_context}\n\n{enhanced_prompt}"
-                    collaboration_log.append(f"Neural memory: injected {len(recalls)} relevant memories")
-                    intel["memory"]["neural_recalls"] = len(recalls)
-            except Exception as e:
-                logger.debug(f"Neural recall skipped: {e}")
-
-        # Live codebase awareness: auto-index project if path is available
-        if _needs_context and self._rag and self.project_name != "default":
-            try:
-                from .workflows.project_context import ProjectContextManager
-                pctx = ProjectContextManager()
-                profile = pctx.get_profile(self.project_name)
-                if profile and profile.project_path:
-                    indexed = self._rag.index_project_if_stale(
-                        project_name=self.project_name,
-                        project_path=profile.project_path,
-                    )
-                    if indexed:
-                        collaboration_log.append(f"Auto-indexed project '{self.project_name}' for RAG")
-            except Exception as e:
-                logger.debug(f"Auto-index skipped: {e}")
-
-        # Add domain knowledge context (only for complex/relevant tasks)
-        domain_mapping = {
-            "coding": ["backend", "frontend"],
-            "debugging": ["backend", "testing"],
-            "architecture": ["architecture", "backend"],
-            "security": ["security", "backend"],
-            "creative": ["frontend", "architecture"],
-            "ui_ux": ["frontend"],
-            "testing": ["testing", "backend"],
-            "optimization": ["backend", "devops"],
-            "documentation": ["backend", "frontend"],
-        }
-        relevant_domains = domain_mapping.get(task_type, [task_type])
-
-        if _needs_context:
-            # Get built-in domain knowledge
-            domain_context = get_domain_context(relevant_domains)
-
-            # Get custom teaching knowledge
-            teaching_context = self._teaching_system.generate_teaching_context(
-                domains=relevant_domains, topics=[task_type]
-            )
-
-            if domain_context or teaching_context:
-                knowledge_context = "\n".join(filter(None, [domain_context, teaching_context]))
-                # Cap context to prevent prompt bloat
-                if len(knowledge_context) > 2000:
-                    knowledge_context = knowledge_context[:2000] + "\n..."
-                enhanced_prompt = f"DOMAIN EXPERTISE:\n{knowledge_context}\n\nTASK:\n{enhanced_prompt}"
-                collaboration_log.append(f"Applied domain knowledge: {', '.join(relevant_domains)}")
-
-            # Add coding knowledge hub context (only for code-related tasks)
-            if task_type in ["coding", "debugging"]:
-                coding_context = self._coding_hub.generate_coding_context(
-                    task_description=prompt,
-                    language=None,
-                    framework=None,
-                    max_items=2,
-                )
-                if coding_context and len(coding_context) <= 1500:
-                    enhanced_prompt = f"{coding_context}\n\n{enhanced_prompt}"
-                    collaboration_log.append("Applied coding knowledge hub context")
-
-            # Add RAG context (only for complex tasks, capped)
-            if classification.complexity in ("medium", "high"):
-                try:
-                    rag_context = self._rag.get_context_for_task(
-                        task_description=prompt,
-                        max_results=3,
-                        max_tokens=800,
-                    )
-                    if rag_context.results:
-                        enhanced_prompt = f"{rag_context.context_text}\n\n{enhanced_prompt}"
-                        collaboration_log.append(f"Applied RAG context ({len(rag_context.results)} sources)")
-                except Exception as e:
-                    logger.debug(f"RAG context retrieval skipped: {e}")
-        else:
-            collaboration_log.append(f"Skipped context injection (task_type={task_type}, complexity={classification.complexity})")
+        # Domain mapping for post-collaboration use
+        from .orchestrator_context import DOMAIN_MAPPING
+        relevant_domains = DOMAIN_MAPPING.get(task_type, [task_type])
 
         # Select active agents
         active_agents = [self.agents[name] for name in agents if name in self.agents]
@@ -955,21 +634,22 @@ class AIDevTeam:
         )
 
         try:
-            # Smart routing: use single agent for low complexity tasks
-            if mode == "auto" or mode == "smart":
-                if classification.complexity == "low":
-                    mode = "single"
-                    collaboration_log.append("Auto-routing: simple task → single agent")
-                else:
-                    mode = "parallel"
-                    collaboration_log.append(f"Auto-routing: {classification.complexity} task → parallel")
-
             if mode == "turbo":
                 # Turbo: single best agent, no synthesis overhead
                 best = active_agents[0]
                 collaboration_log.append(f"Turbo mode: {best.name} only")
                 response = await best.generate_response(enhanced_prompt, context)
                 agent_responses = [response]
+
+                # Confidence-based escalation: if turbo response is weak, auto-escalate
+                if response.confidence < 0.6 and len(active_agents) >= 2:
+                    collaboration_log.append(
+                        f"Low confidence ({response.confidence:.0%}) — auto-escalating to parallel"
+                    )
+                    mode = "parallel"
+                    agent_responses = await self._parallel_collaboration(
+                        active_agents[:3], enhanced_prompt, context, collaboration_log
+                    )
             elif mode == "single":
                 # Use only the best agent (first in sorted list)
                 best_agent = active_agents[0]
@@ -1036,43 +716,6 @@ class AIDevTeam:
             total_time = time.time() - start_time
             collaboration_log.append(f"Completed in {total_time:.2f}s")
 
-            # Build agent perspectives for intelligence report
-            for resp in agent_responses:
-                perspective = {
-                    "name": resp.agent_name,
-                    "model": resp.metadata.get("model", resp.model_type.value) if resp.metadata else resp.model_type.value,
-                    "success": resp.success,
-                    "confidence": round(resp.confidence, 2),
-                    "response_time": round(resp.response_time, 2),
-                    "tokens": {"input": resp.input_tokens, "output": resp.output_tokens},
-                    "summary": (resp.content or "")[:200].replace("\n", " ").strip(),
-                }
-                intel["agents"].append(perspective)
-
-            # Detect agreement/disagreement among agents
-            if len(successful_responses) >= 2:
-                confidences = [r.confidence for r in successful_responses]
-                spread = max(confidences) - min(confidences)
-                avg_len = sum(len(r.content or "") for r in successful_responses) / len(successful_responses)
-                len_spread = max(abs(len(r.content or "") - avg_len) for r in successful_responses)
-
-                if spread < 0.15 and len_spread < avg_len * 0.5:
-                    intel["consensus"]["level"] = "high"
-                    intel["consensus"]["description"] = "Agents broadly agree"
-                elif spread < 0.3:
-                    intel["consensus"]["level"] = "moderate"
-                    intel["consensus"]["description"] = "Some variation in confidence — agents may have different approaches"
-                else:
-                    intel["consensus"]["level"] = "low"
-                    intel["consensus"]["description"] = "Significant disagreement — agents have divergent perspectives"
-                    # Identify the outlier
-                    for r in successful_responses:
-                        if abs(r.confidence - avg_confidence) > 0.2:
-                            intel["consensus"].setdefault("divergent_agents", []).append(r.agent_name)
-            elif len(successful_responses) == 1:
-                intel["consensus"]["level"] = "single-agent"
-                intel["consensus"]["description"] = "Only one agent responded"
-
             result = CollaborationResult(
                 task_id=task_id,
                 success=bool(successful_responses),
@@ -1093,345 +736,22 @@ class AIDevTeam:
                 intelligence=intel,
             )
 
-            # Save team response to session
-            if session:
-                session.add_team_turn(
-                    content=final_answer[:2000],
-                    agents=result.participating_agents,
-                    task_type=task_type,
-                    confidence=avg_confidence,
-                    task_id=task_id,
-                )
-                sm = get_session_manager()
-                sm.save(session)
-                intel["session"] = {
-                    "id": session_id,
-                    "turns": session.turn_count,
-                    "has_summary": bool(session.summary),
-                }
-
-            # Store in memory and learn from outcome
-            if self.enable_memory and self._memory_system:
-                await self._memory_system.capture_interaction(result, self.project_name)
-
-                # Learn from successful outcomes — use cheapest agent to extract patterns
-                if self.enable_learning and self._learning_engine and result.success:
-                    extractor = None
-                    for pref in ["gemini-creative", "ollama-local", "chatgpt-coder"]:
-                        if pref in self.agents:
-                            extractor = self.agents[pref]
-                            break
-                    learn_result = await self._learning_engine.learn_from_success(
-                        result, prompt, self.project_name,
-                        extractor_agent=extractor,
-                    )
-                    # Capture learning outcomes for intelligence report
-                    if learn_result and isinstance(learn_result, dict):
-                        intel["learning"]["patterns_extracted"] = len(learn_result.get("solution_steps", []))
-                        intel["learning"]["tags"] = learn_result.get("tags", [])
-                    elif learn_result:
-                        intel["learning"]["stored"] = True
-                    mem_stats = self._memory_system.get_statistics() if self._memory_system else {}
-                    intel["learning"]["total_patterns"] = mem_stats.get("total_solutions", 0)
-
-                    # Auto-index to cross-project nexus
-                    if learn_result and isinstance(learn_result, dict):
-                        try:
-                            from .intelligence.cross_project import get_nexus
-                            nexus = get_nexus()
-                            nexus.index_solution(
-                                project=self.project_name,
-                                problem=prompt[:200],
-                                solution=final_answer[:500],
-                                tags=learn_result.get("tags", []),
-                                confidence=avg_confidence,
-                            )
-                        except Exception as e:
-                            logger.debug(f"Cross-project indexing skipped: {e}")
-
-            # Store in neural memory
-            if self._neural_memory and result.success:
-                try:
-                    node_id = self._neural_memory.store(
-                        content=f"Task: {prompt[:300]}\nAnswer: {final_answer[:500]}",
-                        node_type="solution" if result.success else "mistake",
-                        metadata={
-                            "task_type": classification.primary_type.value,
-                            "mode": mode,
-                            "confidence": avg_confidence,
-                            "agents": [a.name for a in active_agents],
-                        },
-                        tags=[classification.primary_type.value, mode],
-                        confidence=avg_confidence,
-                    )
-                    intel["memory"]["neural_stored"] = node_id
-                except Exception as e:
-                    logger.debug(f"Neural store skipped: {e}")
-
-            # Auto-learn from this interaction (extracts prompts, patterns, lessons)
-            if self.enable_auto_learning and self._auto_learner:
-                await self._auto_learner.capture_interaction(
-                    user_prompt=prompt,
-                    ai_responses=[
-                        {
-                            "agent_name": r.agent_name,
-                            "content": r.content,
-                            "success": r.success,
-                            "confidence": r.confidence,
-                            "model_type": r.model_type.value,
-                        }
-                        for r in agent_responses
-                    ],
-                    outcome="success" if result.success else "failure",
-                    task_type=classification.primary_type.value,
-                    domains=relevant_domains,
-                    models_used=[r.model_type.value for r in agent_responses],
-                    duration_seconds=total_time,
-                    metadata={
-                        "mode": mode,
-                        "complexity": classification.complexity,
-                        "project": self.project_name,
-                    }
-                )
-
-            # Auto-learn code to coding hub if successful coding task
-            # Only store actual code blocks, not conversational responses
-            if result.success and task_type in ["coding", "debugging"]:
-                import re
-                code_blocks = re.findall(r'```(\w+)?\n(.*?)```', final_answer, re.DOTALL)
-                for lang, code in code_blocks:
-                    code_stripped = code.strip()
-                    # Only store substantial code with actual code-like content
-                    if (code_stripped
-                            and len(code_stripped) > 100
-                            and lang  # Must have a language tag
-                            and any(kw in code_stripped for kw in ['def ', 'class ', 'import ', 'function ', 'const ', 'return ', 'async '])):
-                        self._coding_hub.learn_from_successful_code(
-                            code=code_stripped,
-                            language=lang,
-                            task_description=prompt[:100],
-                        )
-                        collaboration_log.append(f"Learned code snippet to hub ({lang})")
-
-            # Validate generated code and add warnings
-            if task_type in ["coding", "debugging", "testing"]:
-                validation_results = self._code_validator.validate_response(final_answer)
-                validation_warnings = []
-                for val_result in validation_results:
-                    if val_result.warnings:
-                        validation_warnings.extend([str(w) for w in val_result.warnings[:3]])
-                    if not val_result.valid:
-                        validation_warnings.extend([str(e) for e in val_result.errors[:3]])
-
-                if validation_warnings:
-                    result.metadata["validation_warnings"] = validation_warnings[:5]
-                    collaboration_log.append(f"Code validation: {len(validation_warnings)} issue(s) found")
-
-                    # Also index the conversation for RAG learning
-                    try:
-                        self._rag.index_conversation(
-                            prompt=prompt,
-                            response=final_answer,
-                            outcome="success" if result.success else "failure",
-                            task_type=task_type,
-                            tags=relevant_domains,
-                        )
-                    except Exception as e:
-                        logger.debug(f"RAG conversation indexing skipped: {e}")
-
-            # Record performance outcomes for each agent
-            if self._performance_tracker:
-                for response in successful_responses:
-                    self._performance_tracker.record_outcome(
-                        model_name=response.agent_name,
-                        task_type=task_type,
-                        success=response.success,
-                        confidence=response.confidence,
-                        response_time=response.response_time,
-                        domain=self.project_name,
-                        task_id=task_id,
-                    )
-                collaboration_log.append(f"Recorded performance for {len(successful_responses)} agents")
-
-            # Record costs for each agent response
-            if self._cost_tracker:
-                total_cost = 0.0
-                for response in successful_responses:
-                    if response.input_tokens or response.output_tokens:
-                        model_name = response.metadata.get("model", "") or response.agent_name
-                        estimate = self._cost_tracker.record_usage(
-                            model=model_name,
-                            agent_name=response.agent_name,
-                            task_type=task_type,
-                            input_tokens=response.input_tokens,
-                            output_tokens=response.output_tokens,
-                            task_id=task_id,
-                        )
-                        total_cost += estimate.estimated_cost
-                        intel["cost"]["breakdown"].append({
-                            "agent": response.agent_name,
-                            "model": model_name,
-                            "cost": round(estimate.estimated_cost, 6),
-                        })
-                intel["cost"]["total"] = round(total_cost, 6)
-                if total_cost > 0:
-                    collaboration_log.append(f"Cost: ${total_cost:.4f} for {len(successful_responses)} agents")
-
-            # Record to cost arbitrage engine for cross-provider optimization
-            try:
-                from .intelligence.cost_arbitrage import get_optimizer
-                optimizer = get_optimizer()
-                for response in successful_responses:
-                    tokens = (response.input_tokens or 0) + (response.output_tokens or 0)
-                    cost_entry = next(
-                        (c for c in intel["cost"]["breakdown"] if c["agent"] == response.agent_name),
-                        None,
-                    )
-                    cost = cost_entry["cost"] if cost_entry else 0.0
-                    optimizer.record_usage(
-                        provider=response.agent_name,
-                        task_type=task_type,
-                        cost=cost,
-                        quality_score=response.confidence * 10,  # 0-1 → 0-10
-                        tokens=tokens,
-                    )
-                collaboration_log.append(f"Cost arbitrage: recorded {len(successful_responses)} usage entries")
-            except Exception as e:
-                logger.debug(f"Cost arbitrage recording skipped: {e}")
-
-            # Record to quality watchdog for anomaly detection
-            try:
-                from .intelligence.quality_watchdog import get_watchdog
-                watchdog = get_watchdog()
-                for response in successful_responses:
-                    watchdog.record(
-                        agent_name=response.agent_name,
-                        quality_score=response.confidence * 10,
-                        response_time=response.response_time,
-                        success=response.success,
-                        task_type=task_type,
-                        tokens=(response.input_tokens or 0) + (response.output_tokens or 0),
-                    )
-                demoted = watchdog.get_demoted_agents()
-                if demoted:
-                    collaboration_log.append(f"Watchdog: agents demoted: {demoted}")
-                    intel["watchdog"] = {"demoted": demoted}
-            except Exception as e:
-                logger.debug(f"Quality watchdog recording skipped: {e}")
-
-            # Cache the response for future similar prompts
-            try:
-                from .intelligence.smart_cache import get_smart_cache
-                cache = get_smart_cache()
-                cache.put(
-                    prompt=prompt,
-                    response=final_answer,
-                    cost=intel["cost"]["total"],
-                    tokens=sum((r.input_tokens or 0) + (r.output_tokens or 0) for r in successful_responses),
-                    agent=agents[0] if agents else "",
-                    mode=mode,
-                    task_type=task_type,
-                    confidence=avg_confidence,
-                )
-            except Exception as e:
-                logger.debug(f"Smart cache store skipped: {e}")
-
-            # Record session learning outcomes and persist
-            if self.enable_session_learning and self._session_learner:
-                for response in successful_responses:
-                    outcome = TaskOutcome(
-                        task_id=task_id,
-                        task_type=task_type,
-                        agent_id=response.agent_name,
-                        prompt=prompt,
-                        response=response.content[:1000] if response.content else "",
-                        success=response.success,
-                        confidence=response.confidence,
-                        execution_time=response.response_time,
-                    )
-                    self._session_learner.record_outcome(outcome)
-                # Auto-save learning data
-                self._session_learner.save()
-                collaboration_log.append("Session learning updated and saved")
-
-            # ── Intelligence v2: Quality, Transparency, Failure Detection, ROI ──
-
-            # 1. Quality scoring
-            try:
-                expertise_weights = {
-                    r.agent_name: self._weighted_consensus.get_expertise_weight(r.agent_name, task_type)
-                    for r in successful_responses
-                }
-                quality_report = self._quality_scorer.score(
-                    responses=agent_responses,
-                    prompt=prompt,
-                    final_answer=final_answer,
-                    task_type=task_type,
-                    expertise_weights=expertise_weights,
-                )
-                intel["quality"] = quality_report.to_dict()
-                collaboration_log.append(f"Quality: {quality_report.grade} ({quality_report.overall_score:.0%})")
-            except Exception as e:
-                logger.debug(f"Quality scoring skipped: {e}")
-
-            # 2. Reasoning transparency
-            try:
-                transparency_report = self._reasoning_transparency.analyze(
-                    responses=agent_responses,
-                    prompt=prompt,
-                    final_answer=final_answer,
-                    task_type=task_type,
-                    task_id=task_id,
-                    expertise_weights=expertise_weights if 'expertise_weights' in dir() else None,
-                )
-                intel["transparency"] = transparency_report.to_dict()
-            except Exception as e:
-                logger.debug(f"Transparency analysis skipped: {e}")
-
-            # 3. Auto-failure detection
-            try:
-                detection = self._failure_detector.check(
-                    content=final_answer,
-                    task_id=task_id,
-                    task_type=task_type,
-                )
-                if not detection.passed:
-                    intel["failure_detection"] = detection.to_dict()
-                    collaboration_log.append(
-                        f"Auto-detected {len(detection.failures)} issue(s) in response"
-                    )
-                    # Auto-report to feedback loop
-                    critical = [f for f in detection.failures if f.severity == "critical"]
-                    if critical:
-                        asyncio.ensure_future(
-                            self._feedback_loop.auto_detect_failure(
-                                task_id=task_id,
-                                error="; ".join(f.description for f in critical[:3]),
-                                agents=[a.name for a in active_agents],
-                                task_type=task_type,
-                            )
-                        )
-                else:
-                    intel["failure_detection"] = {"passed": True, "code_blocks_checked": detection.code_blocks_checked}
-            except Exception as e:
-                logger.debug(f"Failure detection skipped: {e}")
-
-            # 4. ROI recording
-            try:
-                api_cost = intel.get("cost", {}).get("total", 0.0)
-                self._roi_dashboard.record_task(
-                    task_id=task_id,
-                    task_type=task_type,
-                    complexity=classification.complexity,
-                    agents_used=[a.name for a in active_agents],
-                    mode=mode,
-                    duration_seconds=total_time,
-                    api_cost=api_cost,
-                    success=result.success,
-                    confidence=avg_confidence,
-                )
-            except Exception as e:
-                logger.debug(f"ROI recording skipped: {e}")
+            # Post-collaboration intelligence: memory, learning, costs, quality, etc.
+            await self._post_intelligence.process(
+                result=result,
+                prompt=prompt,
+                context=context,
+                final_answer=final_answer,
+                agent_responses=agent_responses,
+                active_agents=active_agents,
+                task_type=task_type,
+                complexity=classification.complexity,
+                mode=mode,
+                relevant_domains=relevant_domains,
+                intel=intel,
+                collaboration_log=collaboration_log,
+                session_id=session_id,
+            )
 
             return result
 
@@ -1468,7 +788,13 @@ class AIDevTeam:
         context: str,
         log: List[str],
     ) -> List[AgentResponse]:
-        """All agents work simultaneously"""
+        """
+        All agents work simultaneously, then critique each other's work.
+
+        Phase 1: Independent responses (parallel)
+        Phase 2: Critique round — each agent sees others' responses and refines
+                 (only when 2+ agents succeed, adds real collaboration)
+        """
         log.append("Phase 1: Parallel response generation")
 
         # Filter agents based on circuit breaker state
@@ -1483,19 +809,17 @@ class AIDevTeam:
             log.append("WARNING: All circuits open, trying anyway")
             available_agents = agents
 
-        # Create tasks for available agents
+        # Phase 1: All agents answer independently
         tasks = [agent.generate_response(prompt, context) for agent in available_agents]
-
-        # Execute in parallel
         responses = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Process responses and record health metrics
         agent_responses = []
+        responding_agents = []
         for i, response in enumerate(responses):
             agent_name = available_agents[i].name
 
             if isinstance(response, Exception):
-                # Record failure in health monitor
                 self._health_monitor.record_request(
                     agent_name, latency=0, success=False,
                     error_type=type(response).__name__,
@@ -1505,7 +829,6 @@ class AIDevTeam:
                 log.append(f"{agent_name}: ERROR - {str(response)}")
 
             elif isinstance(response, AgentResponse):
-                # Record success/failure in health monitor
                 self._health_monitor.record_request(
                     agent_name,
                     latency=response.response_time,
@@ -1516,6 +839,7 @@ class AIDevTeam:
 
                 if response.success:
                     self._circuit_breaker.record_success(agent_name)
+                    responding_agents.append(available_agents[i])
                 else:
                     self._circuit_breaker.record_failure(agent_name, response.error)
 
@@ -1523,7 +847,74 @@ class AIDevTeam:
                 status = "OK" if response.success else f"FAILED: {response.error}"
                 log.append(f"{agent_name}: {status}")
 
+        # Phase 2: Critique round — agents review each other's answers
+        successful = [r for r in agent_responses if r.success]
+        if len(successful) >= 2 and len(responding_agents) >= 2:
+            log.append(f"Phase 2: Critique round ({len(successful)} agents reviewing each other)")
+            refined = await self._critique_round(
+                responding_agents, successful, prompt, context, log
+            )
+            if refined:
+                agent_responses = refined
+
         return agent_responses
+
+    async def _critique_round(
+        self,
+        agents: List[AIAgent],
+        initial_responses: List[AgentResponse],
+        prompt: str,
+        context: str,
+        log: List[str],
+    ) -> List[AgentResponse]:
+        """
+        Each agent sees the other agents' responses and produces a refined answer.
+        This is what makes parallel mode genuinely collaborative — agents
+        actually interact with each other's ideas instead of working in isolation.
+        """
+        # Build a summary of all responses for the critique prompt
+        response_summary = "\n\n".join(
+            f"[{r.agent_name}] (confidence: {r.confidence:.0%}):\n{r.content[:1500]}"
+            for r in initial_responses
+        )
+
+        critique_prompt = f"""You previously answered this task independently. Now review your teammates' answers below.
+
+ORIGINAL TASK: {prompt}
+
+TEAM RESPONSES:
+{response_summary}
+
+YOUR JOB:
+1. Identify the strongest points from EACH teammate's response
+2. Identify anything you missed that another agent caught
+3. Identify any errors or weak reasoning in ANY response (including your own)
+4. Produce a REFINED answer that incorporates the best insights from the whole team
+
+Be specific about what you're adopting from whom and what you disagree with.
+Do NOT just repeat your original answer — actually engage with the team's work."""
+
+        # Each agent critiques in parallel
+        tasks = [agent.generate_response(critique_prompt, context) for agent in agents]
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+        refined = []
+        for i, response in enumerate(responses):
+            if isinstance(response, AgentResponse) and response.success:
+                refined.append(response)
+                log.append(f"  {agents[i].name}: refined (engaged with {len(initial_responses) - 1} teammates)")
+            elif isinstance(response, Exception):
+                log.append(f"  {agents[i].name}: critique failed ({response})")
+                # Keep original response as fallback
+                original = next((r for r in initial_responses if r.agent_name == agents[i].name), None)
+                if original:
+                    refined.append(original)
+
+        if refined:
+            log.append(f"Phase 2 complete: {len(refined)} refined responses")
+            return refined
+
+        return initial_responses  # Fallback to originals if critique round failed
 
     async def _sequential_collaboration(
         self,
@@ -1788,11 +1179,19 @@ class AIDevTeam:
                 f"**{r.agent_name}:**\n{r.content}" for r in successful_responses
             )
 
-        # Build synthesis prompt
-        responses_text = "\n\n".join(
-            f"[{r.agent_name} - {r.model_type.value}]:\n{r.content}"
-            for r in successful_responses
-        )
+        # Build synthesis prompt with expertise weights
+        # Classify task to get proper weights
+        classification = self._task_router.classify(prompt, context)
+        task_type = classification.primary_type.value
+
+        responses_parts = []
+        for r in successful_responses:
+            weight = self._weighted_consensus.get_expertise_weight(r.agent_name, task_type)
+            weight_label = "HIGH" if weight >= 0.8 else "MEDIUM" if weight >= 0.6 else "LOW"
+            responses_parts.append(
+                f"[{r.agent_name} — expertise: {weight_label} ({weight:.0%}) — confidence: {r.confidence:.0%}]:\n{r.content}"
+            )
+        responses_text = "\n\n".join(responses_parts)
 
         # Gather project conventions for the synthesizer
         conventions_block = ""
@@ -1809,15 +1208,22 @@ class AIDevTeam:
             except Exception:
                 pass
 
-        synthesis_prompt = f"""Synthesize these AI team responses into one comprehensive answer.
-Combine the best insights from each response. Be concise but complete.
+        synthesis_prompt = f"""You are synthesizing responses from an AI team. Each response has an EXPERTISE rating for this task type ({task_type}).
 {conventions_block}
+RULES FOR SYNTHESIS:
+- When agents AGREE: state the consensus clearly
+- When agents DISAGREE: trust the agent with higher expertise for this task type
+- When an agent with HIGH expertise contradicts one with LOW expertise: go with the expert
+- Include specific insights that only one agent caught — don't average away unique contributions
+- If any agent found an error or flaw in the approach, address it
+- Be direct and complete. Don't hedge with "some agents suggest..."
+
 Original Task: {prompt}
 
 Team Responses:
 {responses_text}
 
-Provide a unified, synthesized response that follows all project conventions listed above:"""
+Synthesized answer:"""
 
         synthesis_response = await synthesis_agent.generate_response(
             synthesis_prompt, context

@@ -19,17 +19,42 @@ Commands:
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sys
+import warnings
 import readline
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, Dict, List
 
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+# ── Suppress aiohttp/asyncio cleanup noise ──────────────────────────
+warnings.filterwarnings("ignore", message=".*unclosed.*", category=ResourceWarning)
+warnings.filterwarnings("ignore", message=".*Event loop is closed.*", category=RuntimeWarning)
+logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+
+
+def _quiet_event_loop_close():
+    """Patch asyncio to suppress 'Event loop is closed' errors on exit."""
+    _original_del = getattr(asyncio.selector_events._SelectorTransport, "__del__", None)
+    if _original_del:
+        def _patched_del(self, *args, **kwargs):
+            try:
+                _original_del(self, *args, **kwargs)
+            except (OSError, RuntimeError):
+                pass
+        asyncio.selector_events._SelectorTransport.__del__ = _patched_del
+
+
+try:
+    _quiet_event_loop_close()
+except Exception:
+    pass  # Not critical — just noise suppression
 
 
 class Colors:
@@ -54,7 +79,7 @@ CLI_COMMANDS = [
     "/voice", "/listen",
 ]
 
-CLI_MODES = ["parallel", "sequential", "consensus"]
+CLI_MODES = ["auto", "quick", "team", "deep", "parallel", "sequential", "debate", "turbo"]
 CLI_GIT_SUBCMDS = ["status", "log", "diff", "branch"]
 
 
@@ -97,7 +122,7 @@ class AITeamCLI:
     ║    ██║  ██║██║       ██║   ███████╗██║  ██║██║ ╚═╝ ██║       ║
     ║    ╚═╝  ╚═╝╚═╝       ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝       ║
     ║                                                               ║
-    ║            Fred's AI Development Team Platform                ║
+    ║              El Gringo — AI Orchestration Platform              ║
     ║                                                               ║
     ╚═══════════════════════════════════════════════════════════════╝
 {Colors.RESET}
@@ -1452,11 +1477,15 @@ async def interactive_mode(team):
     await cli.run()
 
 
-async def run_single_task(team, prompt: str, mode: str = "parallel"):
-    """Run a single task"""
-    print(f"\n🔄 Running task with {len(team.agents)} agents ({mode} mode)...\n")
+async def run_single_task(team, prompt: str, mode: str = "auto", context: str = ""):
+    """Run a single task with simplified mode aliases and optional context."""
+    # Resolve simplified mode names
+    _MODE_ALIASES = {"auto": None, "quick": "turbo", "team": "parallel", "deep": "debate"}
+    resolved = _MODE_ALIASES.get(mode, mode)
+    display_mode = mode if resolved else "auto (smart routing)"
+    print(f"\n Running task with {len(team.agents)} agents ({display_mode})...\n")
 
-    result = await team.collaborate(prompt, mode=mode)
+    result = await team.collaborate(prompt, context=context, mode=resolved)
 
     if result.success:
         print(f"✅ Completed in {result.total_time:.2f}s")
@@ -1531,8 +1560,605 @@ async def _run_build(description: str):
     print()
 
 
+def _read_stdin_if_piped() -> str:
+    """Read piped stdin if available (non-blocking)."""
+    import select
+    if not sys.stdin.isatty():
+        # Data is being piped in
+        try:
+            if select.select([sys.stdin], [], [], 0.1)[0]:
+                return sys.stdin.read(50000)  # Cap at 50KB
+        except Exception:
+            pass
+    return ""
+
+
+def _gather_project_context(verbose: bool = False) -> str:
+    """Auto-detect project context from the current directory."""
+    import subprocess
+    context_parts = []
+
+    # Find git root
+    try:
+        git_root = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+    except Exception:
+        git_root = ""
+
+    cwd = git_root or os.getcwd()
+
+    # Project name from directory
+    project_name = os.path.basename(cwd)
+    context_parts.append(f"Project: {project_name}")
+    context_parts.append(f"Directory: {cwd}")
+
+    # Detect language/framework from key files
+    markers = {
+        "pyproject.toml": "Python",
+        "package.json": "Node.js/JavaScript",
+        "Cargo.toml": "Rust",
+        "go.mod": "Go",
+        "pom.xml": "Java (Maven)",
+        "build.gradle": "Java (Gradle)",
+        "Gemfile": "Ruby",
+        "requirements.txt": "Python",
+    }
+    for filename, lang in markers.items():
+        if os.path.exists(os.path.join(cwd, filename)):
+            context_parts.append(f"Language: {lang}")
+            break
+
+    # Git branch + recent changes
+    if git_root:
+        try:
+            branch = subprocess.run(
+                ["git", "branch", "--show-current"],
+                capture_output=True, text=True, timeout=5, cwd=cwd,
+            ).stdout.strip()
+            if branch:
+                context_parts.append(f"Branch: {branch}")
+
+            # Recent git status (modified files)
+            status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True, text=True, timeout=5, cwd=cwd,
+            ).stdout.strip()
+            if status:
+                changed_files = [line[3:] for line in status.split("\n")[:10]]
+                context_parts.append(f"Changed files: {', '.join(changed_files)}")
+
+            # Last 3 commit messages
+            log = subprocess.run(
+                ["git", "log", "--oneline", "-3"],
+                capture_output=True, text=True, timeout=5, cwd=cwd,
+            ).stdout.strip()
+            if log:
+                context_parts.append(f"Recent commits:\n{log}")
+        except Exception:
+            pass
+
+    # Read key config files (first 20 lines) for project understanding
+    for config_file in ["pyproject.toml", "package.json", "README.md"]:
+        filepath = os.path.join(cwd, config_file)
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r") as f:
+                    head = "".join(f.readlines()[:20])
+                context_parts.append(f"\n--- {config_file} (first 20 lines) ---\n{head}")
+                break  # Only read one config file
+            except Exception:
+                pass
+
+    if verbose:
+        print(f"{Colors.DIM}Auto-context: {'; '.join(context_parts[:5])}{Colors.RESET}")
+
+    return "\n".join(context_parts)
+
+
+# ── Per-Project Config (.elgringo.yml) ──────────────────────────────
+
+_ELGRINGO_DIR = ".elgringo"
+_BACKUP_FILE = os.path.join(_ELGRINGO_DIR, "last_change.json")
+_CONFIG_FILE = ".elgringo.yml"
+
+
+def _load_project_config() -> dict:
+    """Load .elgringo.yml from current directory if it exists."""
+    if not os.path.isfile(_CONFIG_FILE):
+        return {}
+    try:
+        import yaml
+        with open(_CONFIG_FILE, "r") as f:
+            return yaml.safe_load(f) or {}
+    except ImportError:
+        # Fallback: parse simple key: value lines
+        config = {}
+        try:
+            with open(_CONFIG_FILE, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if ":" in line and not line.startswith("#"):
+                        k, v = line.split(":", 1)
+                        config[k.strip()] = v.strip()
+        except Exception:
+            pass
+        return config
+    except Exception:
+        return {}
+
+
+# ── Backup Persistence (for undo/diff) ──────────────────────────────
+
+def _save_backup(project_path: str, backups: Dict[str, str], files_changed: list):
+    """Save backup state to .elgringo/last_change.json for undo/diff."""
+    elgringo_dir = os.path.join(project_path, _ELGRINGO_DIR)
+    os.makedirs(elgringo_dir, exist_ok=True)
+    backup_file = os.path.join(project_path, _BACKUP_FILE)
+
+    data = {
+        "project_path": project_path,
+        "timestamp": datetime.now().isoformat(),
+        "backups": backups,  # filepath -> original content
+        "files_changed": [
+            {"path": fc.path, "action": fc.action, "lines_changed": fc.lines_changed}
+            for fc in files_changed
+        ],
+    }
+    with open(backup_file, "w") as f:
+        json.dump(data, f, indent=2)
+
+    # Add .elgringo/ to .gitignore if not already there
+    gitignore = os.path.join(project_path, ".gitignore")
+    if os.path.isfile(gitignore):
+        content = open(gitignore).read()
+        if ".elgringo/" not in content:
+            with open(gitignore, "a") as f:
+                f.write("\n.elgringo/\n")
+    elif os.path.isdir(os.path.join(project_path, ".git")):
+        with open(gitignore, "w") as f:
+            f.write(".elgringo/\n")
+
+
+def _load_backup(project_path: str = None) -> dict:
+    """Load the last backup state."""
+    project_path = project_path or os.getcwd()
+    backup_file = os.path.join(project_path, _BACKUP_FILE)
+    if not os.path.isfile(backup_file):
+        return {}
+    try:
+        with open(backup_file, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _run_undo():
+    """Restore files from the last coding change."""
+    import difflib
+
+    backup = _load_backup()
+    if not backup or not backup.get("backups"):
+        print(f"{Colors.YELLOW}No backup found. Nothing to undo.{Colors.RESET}")
+        return
+
+    backups = backup["backups"]
+    project = backup.get("project_path", os.getcwd())
+    ts = backup.get("timestamp", "unknown")
+
+    print(f"\n{Colors.BOLD}Undo last change{Colors.RESET} ({ts})")
+    print(f"  Project: {project}")
+    print(f"  Files to restore: {len(backups)}\n")
+
+    for filepath in backups:
+        abs_path = os.path.join(project, filepath) if not os.path.isabs(filepath) else filepath
+        current = ""
+        if os.path.isfile(abs_path):
+            current = open(abs_path, "r", errors="replace").read()
+        original = backups[filepath]
+        if current == original:
+            print(f"  {Colors.DIM}= {filepath} (unchanged){Colors.RESET}")
+        else:
+            print(f"  {Colors.YELLOW}↩ {filepath}{Colors.RESET}")
+
+    confirm = input(f"\n  Restore these files? [y/N] ").strip().lower()
+    if confirm != "y":
+        print(f"  {Colors.DIM}Cancelled.{Colors.RESET}")
+        return
+
+    restored = 0
+    for filepath, content in backups.items():
+        abs_path = os.path.join(project, filepath) if not os.path.isabs(filepath) else filepath
+        try:
+            Path(abs_path).write_text(content)
+            restored += 1
+        except Exception as e:
+            print(f"  {Colors.RED}Failed: {filepath}: {e}{Colors.RESET}")
+
+    print(f"\n  {Colors.GREEN}Restored {restored}/{len(backups)} files.{Colors.RESET}\n")
+
+    # Remove the backup file
+    backup_file = os.path.join(project, _BACKUP_FILE)
+    if os.path.isfile(backup_file):
+        os.remove(backup_file)
+
+
+def _run_diff():
+    """Show diff of the last coding change."""
+    import difflib
+
+    backup = _load_backup()
+    if not backup or not backup.get("backups"):
+        print(f"{Colors.YELLOW}No recent changes to show.{Colors.RESET}")
+        return
+
+    backups = backup["backups"]
+    project = backup.get("project_path", os.getcwd())
+    ts = backup.get("timestamp", "unknown")
+
+    print(f"\n{Colors.BOLD}Last change{Colors.RESET} ({ts})")
+    print(f"  Project: {project}\n")
+
+    has_diff = False
+    for filepath, original in backups.items():
+        abs_path = os.path.join(project, filepath) if not os.path.isabs(filepath) else filepath
+        if os.path.isfile(abs_path):
+            current = open(abs_path, "r", errors="replace").read()
+        else:
+            current = ""
+
+        if current == original:
+            continue
+
+        has_diff = True
+        diff = difflib.unified_diff(
+            original.splitlines(keepends=True),
+            current.splitlines(keepends=True),
+            fromfile=f"a/{filepath}",
+            tofile=f"b/{filepath}",
+        )
+        print(f"{Colors.BOLD}--- {filepath} ---{Colors.RESET}")
+        for line in diff:
+            if line.startswith("+") and not line.startswith("+++"):
+                print(f"{Colors.GREEN}{line}{Colors.RESET}", end="")
+            elif line.startswith("-") and not line.startswith("---"):
+                print(f"{Colors.RED}{line}{Colors.RESET}", end="")
+            else:
+                print(line, end="")
+        print()
+
+    if not has_diff:
+        print(f"  {Colors.DIM}No differences found (files may have been restored).{Colors.RESET}\n")
+
+
+# Smart subcommand definitions: name → (prompt_prefix, default_mode, needs_input)
+_SMART_SUBCOMMANDS = {
+    # Code-focused
+    "review": ("Review this code for bugs, security issues, and improvements:\n\n", "team", True),
+    "debug": ("Debug this error. Find the root cause and suggest a fix:\n\n", "quick", True),
+    "explain": ("Explain this code clearly and concisely:\n\n", "quick", True),
+    "test": ("Write comprehensive tests for this code:\n\n", "team", True),
+    "refactor": ("Refactor this code for clarity and maintainability:\n\n", "team", True),
+    "secure": ("Security audit — find vulnerabilities in this code:\n\n", "deep", True),
+    "optimize": ("Optimize this code for performance:\n\n", "quick", True),
+    # General-purpose
+    "ask": ("", "quick", False),
+    "write": ("Write the following content. Be clear, well-structured, and professional:\n\n", "quick", False),
+    "analyze": ("Analyze the following thoroughly. Identify key insights, issues, and recommendations:\n\n", "team", True),
+    "research": ("Research this topic. Provide a thorough, well-sourced summary with key findings and recommendations:\n\n", "deep", False),
+    "plan": ("Create a detailed, actionable plan for the following. Include steps, dependencies, and risks:\n\n", "team", False),
+    "summarize": ("Summarize the following concisely. Highlight the key points:\n\n", "quick", True),
+    "convert": ("Convert the following to the requested format. Preserve all data accurately:\n\n", "quick", True),
+    "deploy": ("Help with this deployment/DevOps task. Give specific commands and configs:\n\n", "quick", False),
+}
+
+# Coding subcommands that write files (use CodingAgentEngine)
+_CODING_SUBCOMMANDS = {"fix", "code", "implement"}
+
+
+async def _run_coding_task(
+    task: str,
+    files: list = None,
+    dry_run: bool = False,
+    auto_commit: bool = False,
+    test_cmd: str = "",
+    no_tests: bool = False,
+    yes: bool = False,
+):
+    """Run a coding task that reads, edits, and writes files.
+
+    Flow: plan (dry-run) → show plan → confirm → execute → save backup.
+    """
+    import time as _time
+
+    project_path = os.getcwd()
+
+    # Load per-project config
+    config = _load_project_config()
+    if not test_cmd and config.get("test_command"):
+        test_cmd = config["test_command"]
+    if config.get("preferred_agents"):
+        # Will be passed as allowed_agents
+        pass
+
+    print(f"\n{Colors.BOLD}{'=' * 60}{Colors.RESET}")
+    print(f"{Colors.CYAN}  EL GRINGO — CODING AGENT{Colors.RESET}")
+    print(f"{Colors.BOLD}{'=' * 60}{Colors.RESET}")
+    print(f"\n  {Colors.DIM}Project: {project_path}{Colors.RESET}")
+    if config:
+        print(f"  {Colors.DIM}Config: .elgringo.yml loaded{Colors.RESET}")
+    if dry_run:
+        print(f"  {Colors.YELLOW}DRY RUN — planning only, no changes{Colors.RESET}")
+    print(f"\n  {Colors.GREEN}Task:{Colors.RESET} {task[:120]}\n")
+
+    from elgringo.orchestrator import AIDevTeam
+    from products.fred_api.coding_endpoints import (
+        CodingAgentEngine,
+        CodingTaskRequest,
+        ProjectTools,
+    )
+
+    team = AIDevTeam(enable_memory=True)
+    if not team.agents:
+        print(f"{Colors.RED}No agents available. Set API keys.{Colors.RESET}")
+        return
+
+    tools = ProjectTools(project_path)
+    engine = CodingAgentEngine(team=team, tools=tools)
+
+    allowed_agents = config.get("preferred_agents") if config.get("preferred_agents") else None
+
+    # ── Step 1: Plan first (dry-run) unless --yes or already --dry-run ──
+    if not dry_run and not yes:
+        print(f"  {Colors.DIM}Planning...{Colors.RESET}\n")
+        plan_request = CodingTaskRequest(
+            task=task,
+            project_path=project_path,
+            files_to_read=files or [],
+            run_tests=False,
+            test_command=test_cmd,
+            auto_commit=False,
+            dry_run=True,
+            allowed_agents=allowed_agents,
+        )
+
+        try:
+            plan_result = await engine.execute_task(plan_request)
+        except Exception as e:
+            print(f"\n{Colors.RED}  Planning failed: {e}{Colors.RESET}\n")
+            return
+
+        # Show the plan
+        if plan_result.plan:
+            print(f"  {Colors.BOLD}Plan:{Colors.RESET}")
+            for step in plan_result.plan[:15]:  # Cap display at 15 steps
+                print(f"    {Colors.DIM}{step}{Colors.RESET}")
+            print()
+
+        print(f"  {Colors.DIM}Agents: {', '.join(plan_result.agents_used)}{Colors.RESET}")
+        print()
+
+        # Ask for confirmation (use /dev/tty if stdin is piped)
+        try:
+            if sys.stdin.isatty():
+                confirm = input(f"  {Colors.BOLD}Apply these changes? [y/N]{Colors.RESET} ").strip().lower()
+            else:
+                tty = open("/dev/tty", "r")
+                print(f"  {Colors.BOLD}Apply these changes? [y/N]{Colors.RESET} ", end="", flush=True)
+                confirm = tty.readline().strip().lower()
+                tty.close()
+        except (EOFError, OSError):
+            # Non-interactive (CI, piped) — skip confirmation
+            confirm = "y"
+
+        if confirm != "y":
+            print(f"\n  {Colors.DIM}Cancelled.{Colors.RESET}\n")
+            return
+        print()
+
+    # ── Step 2: Execute for real ─────────────────────────────────────
+    # Create a fresh engine so it gets clean state
+    engine = CodingAgentEngine(team=team, tools=tools)
+
+    request = CodingTaskRequest(
+        task=task,
+        project_path=project_path,
+        files_to_read=files or [],
+        run_tests=not no_tests,
+        test_command=test_cmd,
+        auto_commit=auto_commit,
+        dry_run=dry_run,
+        allowed_agents=allowed_agents,
+    )
+
+    start = _time.time()
+    if not dry_run:
+        print(f"  {Colors.DIM}Applying changes...{Colors.RESET}\n")
+    else:
+        print(f"  {Colors.DIM}Planning...{Colors.RESET}\n")
+
+    try:
+        result = await engine.execute_task(request)
+    except Exception as e:
+        print(f"\n{Colors.RED}  FAILED: {e}{Colors.RESET}\n")
+        import traceback
+        traceback.print_exc()
+        return
+
+    elapsed = _time.time() - start
+
+    # ── Step 3: Save backup for undo/diff ────────────────────────────
+    if not dry_run and engine._backups and result.files_changed:
+        _save_backup(project_path, engine._backups, result.files_changed)
+
+    # ── Display results ──────────────────────────────────────────────
+    print(f"\n{Colors.BOLD}{'─' * 60}{Colors.RESET}")
+
+    status_color = Colors.GREEN if result.status == "success" else (
+        Colors.YELLOW if result.status in ("partial", "dry_run") else Colors.RED
+    )
+    print(f"{status_color}  {result.status.upper()}{Colors.RESET} in {elapsed:.1f}s ({result.iterations} iteration{'s' if result.iterations != 1 else ''})")
+    print(f"  Agents: {', '.join(result.agents_used)}")
+    print(f"{Colors.BOLD}{'─' * 60}{Colors.RESET}\n")
+
+    if result.plan:
+        print(f"  {Colors.BOLD}Plan:{Colors.RESET}")
+        for step in result.plan:
+            print(f"    • {step}")
+        print()
+
+    if result.files_changed:
+        print(f"  {Colors.BOLD}Files changed ({len(result.files_changed)}):{Colors.RESET}")
+        for fc in result.files_changed:
+            icon = {"created": "+", "modified": "~", "deleted": "-"}.get(fc.action, "?")
+            color = {"created": Colors.GREEN, "modified": Colors.YELLOW, "deleted": Colors.RED}.get(fc.action, Colors.RESET)
+            print(f"    {color}{icon} {fc.path}{Colors.RESET} ({fc.lines_changed} lines)")
+        print()
+
+    if result.test_results:
+        tr = result.test_results
+        test_icon = "✅" if tr.passed else "❌"
+        print(f"  {Colors.BOLD}Tests:{Colors.RESET} {test_icon} {tr.command} ({tr.duration_seconds:.1f}s)")
+        if not tr.passed:
+            lines = tr.output.strip().split("\n")
+            for line in lines[-10:]:
+                print(f"    {Colors.DIM}{line}{Colors.RESET}")
+        print()
+
+    if result.git_commit:
+        print(f"  {Colors.GREEN}Committed: {result.git_commit}{Colors.RESET}\n")
+
+    if result.errors:
+        print(f"  {Colors.RED}Errors:{Colors.RESET}")
+        for err in result.errors:
+            print(f"    • {err}")
+        print()
+
+    print(f"  {Colors.BOLD}Summary:{Colors.RESET} {result.summary}\n")
+
+    if not dry_run and result.files_changed:
+        print(f"  {Colors.DIM}Tip: 'elgringo undo' to revert, 'elgringo diff' to review changes{Colors.RESET}\n")
+
+    return result
+
+
 def main():
     """Main CLI entry point"""
+    # Intercept smart subcommands: elgringo review, elgringo debug, etc.
+    if len(sys.argv) > 1 and sys.argv[1] in _SMART_SUBCOMMANDS:
+        subcmd = sys.argv[1]
+        prefix, default_mode, needs_input = _SMART_SUBCOMMANDS[subcmd]
+        extra_args = " ".join(sys.argv[2:]) if len(sys.argv) > 2 else ""
+
+        # Read piped input
+        piped = _read_stdin_if_piped()
+
+        if needs_input and not piped and not extra_args:
+            # Try to read a file if one exists as arg
+            print(f"{Colors.BOLD}Usage:{Colors.RESET} elgringo {subcmd} <file_or_text>")
+            print(f"       cat file.py | elgringo {subcmd}")
+            print(f"       git diff | elgringo {subcmd}")
+            sys.exit(0)
+
+        prompt = prefix
+        if extra_args:
+            # Check if it's a file path
+            if os.path.isfile(extra_args):
+                try:
+                    with open(extra_args, "r") as f:
+                        file_content = f.read(50000)
+                    prompt += f"File: {extra_args}\n```\n{file_content}\n```"
+                except Exception:
+                    prompt += extra_args
+            else:
+                prompt += extra_args
+        if piped:
+            prompt += f"\n```\n{piped}\n```"
+
+        # Gather auto-context and run
+        context = _gather_project_context()
+
+        from elgringo.orchestrator import AIDevTeam
+        team = AIDevTeam(enable_memory=True)
+        if not team.agents:
+            print("No agents available. Set API keys (OPENAI_API_KEY, GOOGLE_API_KEY, XAI_API_KEY)")
+            sys.exit(1)
+
+        result = asyncio.run(run_single_task(team, prompt, default_mode, context=context))
+        sys.exit(0 if result.success else 1)
+
+    # Intercept undo/diff commands
+    if len(sys.argv) > 1 and sys.argv[1] == "undo":
+        _run_undo()
+        sys.exit(0)
+
+    if len(sys.argv) > 1 and sys.argv[1] == "diff":
+        _run_diff()
+        sys.exit(0)
+
+    # Intercept coding subcommands: elgringo fix, elgringo code, elgringo implement
+    if len(sys.argv) > 1 and sys.argv[1] in _CODING_SUBCOMMANDS:
+        subcmd = sys.argv[1]
+        # Parse coding-specific flags
+        remaining = sys.argv[2:]
+        dry_run = "--dry-run" in remaining or "--plan" in remaining
+        auto_commit = "--commit" in remaining
+        no_tests = "--no-tests" in remaining
+        yes = "--yes" in remaining or "-y" in remaining
+        test_cmd = ""
+        files = []
+
+        # Filter out flags, collect files and task text
+        task_parts = []
+        i = 0
+        while i < len(remaining):
+            arg = remaining[i]
+            if arg in ("--dry-run", "--plan", "--commit", "--no-tests", "--yes", "-y"):
+                pass
+            elif arg == "--test-cmd" and i + 1 < len(remaining):
+                test_cmd = remaining[i + 1]
+                i += 1
+            elif os.path.isfile(arg):
+                files.append(arg)
+            else:
+                task_parts.append(arg)
+            i += 1
+
+        # Read piped input as additional context
+        piped = _read_stdin_if_piped()
+
+        task = " ".join(task_parts)
+        if piped:
+            task = f"{task}\n\nContext:\n```\n{piped}\n```" if task else piped
+
+        if not task:
+            print(f"\n{Colors.BOLD}Usage:{Colors.RESET} elgringo {subcmd} \"description of changes\"")
+            print(f"\n{Colors.BOLD}Examples:{Colors.RESET}")
+            print(f"  elgringo fix \"add error handling to the login endpoint\"")
+            print(f"  elgringo code \"add a /health endpoint that returns uptime\" server.py")
+            print(f"  elgringo implement \"add JWT auth middleware\" --commit")
+            print(f"  elgringo fix \"fix the TypeError in utils.py\" utils.py --no-tests")
+            print(f"  elgringo code \"refactor to async\" api.py --dry-run")
+            print(f"\n{Colors.BOLD}Flags:{Colors.RESET}")
+            print(f"  --dry-run, --plan   Plan only, don't write files")
+            print(f"  --commit            Auto-commit if tests pass")
+            print(f"  --no-tests          Skip running tests")
+            print(f"  --yes, -y           Skip confirmation prompt")
+            print(f"  --test-cmd \"cmd\"    Custom test command\n")
+            sys.exit(0)
+
+        asyncio.run(_run_coding_task(
+            task=task,
+            files=files,
+            dry_run=dry_run,
+            auto_commit=auto_commit,
+            test_cmd=test_cmd,
+            no_tests=no_tests,
+            yes=yes,
+        ))
+        sys.exit(0)
+
     # Intercept "build" subcommand before argparse
     if len(sys.argv) > 1 and sys.argv[1] == "build":
         description = " ".join(sys.argv[2:]) if len(sys.argv) > 2 else ""
@@ -1560,15 +2186,50 @@ def main():
         sys.exit(0)
 
     parser = argparse.ArgumentParser(
-        description="AI Team - Multi-Model AI Development Platform",
+        description="El Gringo - Multi-Agent AI Orchestration Platform",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   elgringo                                    # Interactive mode
+  elgringo "Write a REST API"                 # Smart routing (auto)
+  elgringo -m quick "Fix this bug"            # Single best agent
+  elgringo -m deep "Design auth system"       # Full team debate
   elgringo build "a FastAPI app with auth"    # Autonomous build
-  elgringo "Build a REST API"                 # Single task
-  elgringo -m consensus "Design a schema"     # Consensus mode
   elgringo --status                           # Show team status
+
+Pipe support:
+  cat error.log | elgringo debug              # Debug from piped input
+  git diff | elgringo review                  # Review staged changes
+  cat data.csv | elgringo analyze             # Analyze data
+  cat README.md | elgringo summarize          # Summarize a doc
+
+Code subcommands:
+  elgringo review <file>    Code review (team)
+  elgringo debug <error>    Debug an error (quick)
+  elgringo explain <file>   Explain code (quick)
+  elgringo test <file>      Generate tests (team)
+  elgringo refactor <file>  Refactor code (team)
+  elgringo secure <file>    Security audit (deep)
+  elgringo optimize <file>  Optimize perf (quick)
+
+General subcommands:
+  elgringo ask "question"           Ask anything (quick)
+  elgringo write "blog post about"  Write content (quick)
+  elgringo analyze <file>           Analyze data/logs (team)
+  elgringo research "topic"         Deep research (deep)
+  elgringo plan "project idea"      Create action plan (team)
+  elgringo summarize <file>         Summarize content (quick)
+  elgringo convert <file> "to yaml" Convert formats (quick)
+  elgringo deploy "setup nginx"     DevOps guidance (quick)
+
+Coding (writes files — asks before applying):
+  elgringo fix "add error handling"           Edit existing code
+  elgringo code "add /health endpoint" app.py Write new code
+  elgringo implement "add JWT auth" --commit  Implement + auto-commit
+  elgringo fix "fix bug" --dry-run            Plan only, no changes
+  elgringo fix "add logging" --yes            Skip confirmation
+  elgringo undo                               Revert last change
+  elgringo diff                               Show last change diff
         """,
     )
 
@@ -1579,9 +2240,9 @@ Examples:
     )
     parser.add_argument(
         "-m", "--mode",
-        choices=["parallel", "sequential", "consensus"],
-        default="parallel",
-        help="Collaboration mode (default: parallel)",
+        choices=["auto", "quick", "team", "deep", "parallel", "sequential", "debate", "turbo"],
+        default="auto",
+        help="Collaboration mode: auto (smart routing), quick (single agent), team (full collab), deep (debate)",
     )
     parser.add_argument(
         "-p", "--project",
@@ -1604,6 +2265,11 @@ Examples:
         help="Disable memory system",
     )
     parser.add_argument(
+        "--no-context",
+        action="store_true",
+        help="Disable auto project context detection",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Output results as JSON",
@@ -1618,7 +2284,7 @@ Examples:
 
     # Check API keys
     if args.check_keys:
-        print("\n🔑 API Key Status:\n")
+        print("\n API Key Status:\n")
         keys = {
             "anthropic": bool(os.getenv("ANTHROPIC_API_KEY")),
             "openai": bool(os.getenv("OPENAI_API_KEY")),
@@ -1626,7 +2292,7 @@ Examples:
             "grok": bool(os.getenv("XAI_API_KEY") or os.getenv("GROK_API_KEY")),
         }
         for name, configured in keys.items():
-            status = "✓ Configured" if configured else "✗ Not set"
+            status = "Configured" if configured else "Not set"
             print(f"   {name.upper()}: {status}")
         print()
         sys.exit(0)
@@ -1642,22 +2308,35 @@ Examples:
         print_status(team)
         sys.exit(0)
 
-    # Single task mode
-    if args.prompt:
+    # Read piped input for non-interactive use
+    piped_input = _read_stdin_if_piped()
+
+    # Single task mode (prompt given or input piped)
+    if args.prompt or piped_input:
         if not args.json:
             print_banner()
 
         team = AIDevTeam(project_name=args.project, enable_memory=not args.no_memory)
 
         if not team.agents:
-            print("❌ No AI agents available. Please set API keys:")
-            print("   export ANTHROPIC_API_KEY=your_key")
+            print("No AI agents available. Please set API keys:")
             print("   export OPENAI_API_KEY=your_key")
-            print("   export GEMINI_API_KEY=your_key")
+            print("   export GOOGLE_API_KEY=your_key")
             print("   export XAI_API_KEY=your_key")
             sys.exit(1)
 
-        result = asyncio.run(run_single_task(team, args.prompt, args.mode))
+        # Build prompt with piped input
+        prompt = args.prompt or ""
+        if piped_input:
+            if prompt:
+                prompt = f"{prompt}\n\n```\n{piped_input}\n```"
+            else:
+                prompt = f"Analyze this:\n\n```\n{piped_input}\n```"
+
+        # Auto-context: gather project info unless disabled
+        context = "" if args.no_context else _gather_project_context(verbose=args.verbose)
+
+        result = asyncio.run(run_single_task(team, prompt, args.mode, context=context))
 
         if args.json:
             output = {
